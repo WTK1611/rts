@@ -1208,18 +1208,23 @@ export class GameScene extends Phaser.Scene {
     this.showToast(`Stamm von ${goneName} hat das Spiel verlassen`, "leave");
   }
 
-  private showToast(text: string, kind: "join" | "leave"): void {
+  private showToast(
+    text: string,
+    kind: "join" | "leave" | "grow" | "death" | "extinct",
+  ): void {
     const root = document.getElementById("toasts");
     if (!root) return;
     const el = document.createElement("div");
-    el.className = `toast ${kind === "leave" ? "leave" : ""}`.trim();
+    const cls = kind === "join" ? "" : kind;
+    el.className = `toast ${cls}`.trim();
     el.textContent = text;
     root.appendChild(el);
     requestAnimationFrame(() => el.classList.add("show"));
+    const lifetime = kind === "extinct" ? 6000 : 4000;
     setTimeout(() => {
       el.classList.remove("show");
       setTimeout(() => el.remove(), 250);
-    }, 4000);
+    }, lifetime);
   }
 
   private applyState(msg: StateMessage): void {
@@ -1257,6 +1262,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
       let ownGrew = 0;
+      const otherGrew: Record<number, number> = {};
       for (const snap of msg.newUnits) {
         if (this.units.has(snap.id)) continue;
         this.units.set(
@@ -1264,6 +1270,7 @@ export class GameScene extends Phaser.Scene {
           new Unit(this, snap, snap.owner === this.playerId, this.seed),
         );
         if (snap.owner === this.playerId) ownGrew++;
+        else otherGrew[snap.owner] = (otherGrew[snap.owner] ?? 0) + 1;
       }
       const remaining = ownGrew - encounterBirthsForMe;
       if (remaining > 0) {
@@ -1271,7 +1278,17 @@ export class GameScene extends Phaser.Scene {
           remaining === 1
             ? "Dein Stamm wächst: ein neues Mitglied ist dazugekommen"
             : `Dein Stamm wächst: ${remaining} neue Mitglieder sind dazugekommen`;
-        this.showToast(txt, "join");
+        this.showToast(txt, "grow");
+      }
+      for (const ownerStr of Object.keys(otherGrew)) {
+        const owner = Number(ownerStr);
+        const n = otherGrew[owner];
+        const name = this.names[owner] || `Stamm ${owner}`;
+        const txt =
+          n === 1
+            ? `Stamm von ${name} wächst: ein neues Mitglied`
+            : `Stamm von ${name} wächst: ${n} neue Mitglieder`;
+        this.showToast(txt, "grow");
       }
     }
     if (msg.outOfSightUnitIds && msg.outOfSightUnitIds.length > 0) {
