@@ -182,6 +182,12 @@
         color: #e8f0e8; min-width: 320px; text-align: center;
         border: 1px solid rgba(108, 191, 108, 0.25);
       }
+      #lobby-icon {
+        display: block; margin: 0 auto 12px;
+        width: 96px; height: 96px;
+        border-radius: 16px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+      }
       #lobby-card h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: 0.5px; }
       #lobby-title { font-size: 14px; color: #a8c0a8; margin-bottom: 20px; }
       #lobby-status { font-size: 13px; color: #c8d8c8; min-height: 18px; margin-top: 14px; }
@@ -294,6 +300,7 @@
       <canvas id="lobby-map"></canvas>
       <div id="lobby-veil"></div>
       <div id="lobby-card">
+        <img id="lobby-icon" src="/image/js_icon.webp" alt="Jäger und Sammler" width="96" height="96" />
         <h1>Jäger und Sammler</h1>
         <div id="lobby-title">Name eingeben — wir verbinden dich automatisch</div>
         <input id="name-input" maxlength="20" placeholder="Dein Name" autocomplete="off" />
