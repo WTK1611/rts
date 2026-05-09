@@ -166,7 +166,6 @@ export class GameScene extends Phaser.Scene {
   private keyLeft!: Phaser.Input.Keyboard.Key;
   private keyRight!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
-  private tribeMoveCooldown = 0;
   private minimapVisible = true;
 
   private gameStartMs = 0;
@@ -591,25 +590,15 @@ export class GameScene extends Phaser.Scene {
     this.spectateSlot(slot);
   }
 
-  private applyTribeKeys(dt: number): void {
-    const right = this.keyD.isDown || this.keyRight.isDown;
-    const left = this.keyA.isDown || this.keyLeft.isDown;
-    const down = this.keyS.isDown || this.keyDown.isDown;
-    const up = this.keyW.isDown || this.keyUp.isDown;
+  private applyTribeKeys(_dt: number): void {
+    const JustDown = Phaser.Input.Keyboard.JustDown;
+    const right = JustDown(this.keyD) || JustDown(this.keyRight);
+    const left = JustDown(this.keyA) || JustDown(this.keyLeft);
+    const down = JustDown(this.keyS) || JustDown(this.keyDown);
+    const up = JustDown(this.keyW) || JustDown(this.keyUp);
     const dx = (right ? 1 : 0) - (left ? 1 : 0);
     const dy = (down ? 1 : 0) - (up ? 1 : 0);
-    if (dx === 0 && dy === 0) {
-      this.tribeMoveCooldown = 0;
-      return;
-    }
-    this.tribeMoveCooldown -= dt;
-    if (this.tribeMoveCooldown > 0) return;
-    this.tribeMoveCooldown = 0.4;
-
-    const gdx = dx + dy;
-    const gdy = -dx + dy;
-    const len = Math.hypot(gdx, gdy);
-    if (len === 0) return;
+    if (dx === 0 && dy === 0) return;
 
     let chief: Unit | null = null;
     for (const u of this.units.values()) {
@@ -621,9 +610,10 @@ export class GameScene extends Phaser.Scene {
     }
     if (!chief) return;
 
-    const stepDist = 8;
-    const ti = Math.floor(chief.gx + (gdx / len) * stepDist);
-    const tj = Math.floor(chief.gy + (gdy / len) * stepDist);
+    const gdi = dx + dy;
+    const gdj = -dx + dy;
+    const ti = Math.round(chief.gx) + gdi;
+    const tj = Math.round(chief.gy) + gdj;
     this.net.send({ type: "move", unitIds: [chief.id], i: ti, j: tj });
     this.setMoveTarget(ti, tj, "move");
   }
