@@ -116,6 +116,7 @@ const HUNT_RANGE = 1.5;
 const ANIMAL_ATTACK_INTERVAL = 1.0;
 const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
 const GROUP_FIGHT_RANGE = 7;
+const ANIMAL_ESCAPE_RANGE_MULT = 1.8;
 
 interface SimAnimal {
   id: string;
@@ -316,6 +317,14 @@ export class Sim {
         if (!t || t.hp <= 0) {
           a.attackTargetUnitId = null;
         } else if (this.tick > a.aggroExpireTick) {
+          a.attackTargetUnitId = null;
+          a.path = [];
+          a.state = "idle";
+        } else if (
+          spec.detectRange > 0 &&
+          Math.hypot(t.gx - a.gx, t.gy - a.gy) >
+            spec.detectRange * ANIMAL_ESCAPE_RANGE_MULT
+        ) {
           a.attackTargetUnitId = null;
           a.path = [];
           a.state = "idle";
@@ -526,6 +535,19 @@ export class Sim {
     }
   }
 
+  private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
+    for (const u of this.units.values()) {
+      if (u.owner !== hunter.owner) continue;
+      if (u.id === hunter.id) continue;
+      if (u.huntTarget) continue;
+      if (u.harvestTarget) continue;
+      if (u.hp <= 0) continue;
+      const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
+      if (d > GROUP_FIGHT_RANGE) continue;
+      this.startHunt(u, a, new Set<string>());
+    }
+  }
+
   private tickHunt(u: SimUnit, dt: number): boolean {
     if (!u.huntTarget) return false;
     const a = this.animals.get(u.huntTarget);
@@ -552,6 +574,7 @@ export class Sim {
         } else {
           a.state = "flee";
         }
+        this.rallyAlliesToHunt(u, a);
         if (a.hp <= 0) {
           this.resources[u.owner].fleisch += spec.meat;
           this.animals.delete(a.id);
