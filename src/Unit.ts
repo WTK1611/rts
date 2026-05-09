@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
-import { PlayerId, UnitSnapshot } from "../shared/protocol";
+import { PlayerId, UnitGender, UnitSnapshot } from "../shared/protocol";
 import { groundHeight } from "../shared/worldgen";
 
 function shade(color: number, factor: number): number {
@@ -23,6 +23,8 @@ export class Unit {
   body: Phaser.GameObjects.Ellipse;
   head: Phaser.GameObjects.Arc;
   hair: Phaser.GameObjects.Arc;
+  hairBack: Phaser.GameObjects.Ellipse | null = null;
+  beard: Phaser.GameObjects.Ellipse | null = null;
   bodyShadow: Phaser.GameObjects.Ellipse;
   bodyHighlight: Phaser.GameObjects.Ellipse;
   shadow: Phaser.GameObjects.Ellipse;
@@ -38,6 +40,7 @@ export class Unit {
   hp: number;
   hpMax: number;
   ageSec: number;
+  gender: UnitGender;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
@@ -57,6 +60,7 @@ export class Unit {
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
     this.ageSec = snap.ageSec;
+    this.gender = snap.gender;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -79,26 +83,35 @@ export class Unit {
     this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
     this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
 
+    if (snap.gender === "f") {
+      this.hairBack = scene.add.ellipse(0, -20, 14, 18, 0x3a2410);
+    }
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
-    this.hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
+    if (snap.gender === "f") {
+      this.hair = scene.add.arc(0, -27, 7, 180, 360, false, 0x3a2410);
+    } else {
+      this.hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
+      this.beard = scene.add.ellipse(0, -22, 7, 3, 0x3a2410);
+    }
 
     this.hpBarBg = scene.add.rectangle(0, -38, 18, 3, 0x000000, 0.7)
       .setStrokeStyle(0.5, 0x000000, 0.9);
     this.hpBarFill = scene.add.rectangle(-9, -38, 18, 3, 0x4ed44e)
       .setOrigin(0, 0.5);
 
-    this.container = scene.add.container(x, y - h, [
+    const layers: Phaser.GameObjects.GameObject[] = [
       this.shadow,
       this.ownerRing,
       this.selectionRing,
       this.bodyShadow,
       this.body,
       this.bodyHighlight,
-      this.head,
-      this.hair,
-      this.hpBarBg,
-      this.hpBarFill,
-    ]);
+    ];
+    if (this.hairBack) layers.push(this.hairBack);
+    layers.push(this.head, this.hair);
+    if (this.beard) layers.push(this.beard);
+    layers.push(this.hpBarBg, this.hpBarFill);
+    this.container = scene.add.container(x, y - h, layers);
     this.refreshHpBar();
     this.applyLifeCycleVisuals();
     this.container.setSize(28, 36);

@@ -131,6 +131,7 @@ function tick(): void {
   const deadUnitIds = world.sim.consumeDeadUnitIds();
   const newUnits = world.sim.consumeNewUnits();
   const encounters = world.sim.consumeEncounterEvents();
+  const growth = world.sim.growthSnapshot();
   // Drain the sim's per-tick removed-animal queue; per-client diff below
   // already handles deaths (dead ids land in known\visible).
   world.sim.consumeRemovedAnimalIds();
@@ -164,6 +165,8 @@ function tick(): void {
       deadUnitIds,
       newUnits,
       encounters,
+      growthProgress: growth.progress,
+      growthActive: growth.active,
     });
   }
 }

@@ -1,7 +1,10 @@
 export const TICK_RATE = 20;
 export const MAX_PLAYERS = 10;
+export const MAX_TRIBE_SIZE = 12;
 
 export type PlayerId = number;
+
+export type UnitGender = "m" | "f";
 
 export interface UnitSnapshot {
   id: string;
@@ -13,6 +16,7 @@ export interface UnitSnapshot {
   hp: number;
   hpMax: number;
   ageSec: number;
+  gender: UnitGender;
 }
 
 export interface SpawnInfo {
@@ -116,6 +120,8 @@ export interface StateMessage {
   deadUnitIds: string[];
   newUnits: UnitSnapshot[];
   encounters: EncounterEvent[];
+  growthProgress: number[];
+  growthActive: boolean[];
 }
 
 export interface OpponentJoinedMessage {

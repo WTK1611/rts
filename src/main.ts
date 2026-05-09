@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
 import { Net } from "./net";
 import { ServerMessage } from "../shared/protocol";
+import { biomeAt, hasTreeAt } from "../shared/worldgen";
+import { BIOME_MINI_COLOR } from "./biomeColors";
 
 const SERVER_URL = (() => {
   const env = import.meta.env.VITE_SERVER_URL as string | undefined;
@@ -18,6 +20,50 @@ const nameInput = document.getElementById("name-input") as HTMLInputElement;
 const playBtn = document.getElementById("play-btn") as HTMLButtonElement;
 
 nameInput.value = localStorage.getItem("rts-name") ?? "";
+
+const lobbyMap = document.getElementById("lobby-map") as HTMLCanvasElement;
+const LOBBY_PX_PER_TILE = 6;
+
+function drawLobbyMap(seed: number): void {
+  const ctx = lobbyMap.getContext("2d");
+  if (!ctx) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  lobbyMap.width = Math.floor(w * dpr);
+  lobbyMap.height = Math.floor(h * dpr);
+  lobbyMap.style.width = `${w}px`;
+  lobbyMap.style.height = `${h}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const cols = Math.ceil(w / LOBBY_PX_PER_TILE);
+  const rows = Math.ceil(h / LOBBY_PX_PER_TILE);
+  const i0 = -Math.floor(cols / 2);
+  const j0 = -Math.floor(rows / 2);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = i0 + c;
+      const j = j0 + r;
+      const biome = biomeAt(seed, i, j);
+      let color = BIOME_MINI_COLOR[biome];
+      if (hasTreeAt(seed, i, j)) {
+        color = biome === "wald" ? "#0f2a0f" : "#2c5520";
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(
+        c * LOBBY_PX_PER_TILE,
+        r * LOBBY_PX_PER_TILE,
+        LOBBY_PX_PER_TILE,
+        LOBBY_PX_PER_TILE,
+      );
+    }
+  }
+}
+
+const lobbySeed = (Math.random() * 0xffffffff) >>> 0;
+drawLobbyMap(lobbySeed);
+window.addEventListener("resize", () => drawLobbyMap(lobbySeed));
 
 function setStatus(text: string): void {
   lobbyStatus.textContent = text;

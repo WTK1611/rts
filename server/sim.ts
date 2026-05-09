@@ -7,11 +7,13 @@ import {
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   MAX_PLAYERS,
+  MAX_TRIBE_SIZE,
   ObjectKind,
   PlayerId,
   RemovedObject,
   Resources,
   TICK_RATE,
+  UnitGender,
   UnitSnapshot,
 } from "../shared/protocol";
 import {
@@ -38,11 +40,9 @@ const TREE_HARVEST_AMOUNT = 5;
 const BUSH_HARVEST_AMOUNT = 3;
 const MUSH_HARVEST_AMOUNT = 1;
 const FISH_HARVEST_AMOUNT = 1;
-const TRIBE_SIZE = 4;
-const MAX_TRIBE_SIZE = 12;
-const GROWTH_FOOD_PER_UNIT = 6;
+const STARTING_GENDERS: UnitGender[] = ["m", "f", "m", "f"];
+const TRIBE_SIZE = STARTING_GENDERS.length;
 const GROWTH_REQUIRED_SEC = 120;
-const GROWTH_FOOD_COST = 12;
 const ENCOUNTER_RANGE = 5;
 const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
 const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
@@ -80,6 +80,7 @@ interface SimUnit {
   eatCooldown: number;
   autoHuntScanTimer: number;
   ageSec: number;
+  gender: UnitGender;
 }
 
 const MAX_AGE_SEC = 420;
@@ -191,6 +192,7 @@ export class Sim {
   deadUnitIds: string[] = [];
   newUnits: UnitSnapshot[] = [];
   growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
+  growthActive: boolean[] = new Array(MAX_PLAYERS).fill(false);
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
@@ -660,6 +662,7 @@ export class Sim {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
     this.growthTimer[p] = 0;
+    this.growthActive[p] = false;
     this.nextUnitIdx[p] = TRIBE_SIZE;
     const a = this.spawns[p];
     const offsets: Array<[number, number]> = [
@@ -691,6 +694,7 @@ export class Sim {
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
         ageSec: CHILD_AGE_SEC + ageJitter,
+        gender: STARTING_GENDERS[k],
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -710,6 +714,7 @@ export class Sim {
     }
     this.resources[p] = emptyResources();
     this.growthTimer[p] = 0;
+    this.growthActive[p] = false;
     for (const key of [...this.lastEncounterTick.keys()]) {
       const [a, b] = key.split("_").map(Number);
       if (a === p || b === p) this.lastEncounterTick.delete(key);
@@ -737,6 +742,7 @@ export class Sim {
     hp: u.hp,
     hpMax: u.hpMax,
     ageSec: u.ageSec,
+    gender: u.gender,
   });
 
   consumeNewRemovedObjects(): RemovedObject[] {
@@ -1192,10 +1198,18 @@ export class Sim {
   }
 
   private tryFreeBirth(p: PlayerId, list: SimUnit[]): boolean {
-    if (list.length === 0 || list.length >= MAX_TRIBE_SIZE) return false;
+    if (list.length < 2 || list.length >= MAX_TRIBE_SIZE) return false;
+    let males = 0;
+    let females = 0;
     let cx = 0;
     let cy = 0;
-    for (const u of list) { cx += u.gx; cy += u.gy; }
+    for (const u of list) {
+      if (u.gender === "m") males++;
+      else females++;
+      cx += u.gx;
+      cy += u.gy;
+    }
+    if (males < 1 || females < 1) return false;
     this.spawnNewTribeMember(p, cx / list.length, cy / list.length);
     return true;
   }
@@ -1208,45 +1222,47 @@ export class Sim {
 
   private growthCheck(dt: number): void {
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      if (!this.active[p]) continue;
+      if (!this.active[p]) {
+        this.growthActive[p] = false;
+        continue;
+      }
       let count = 0;
+      let males = 0;
+      let females = 0;
       let cx = 0;
       let cy = 0;
       for (const u of this.units.values()) {
         if (u.owner !== p) continue;
         count++;
+        if (u.gender === "m") males++;
+        else females++;
         cx += u.gx;
         cy += u.gy;
       }
-      if (count === 0 || count >= MAX_TRIBE_SIZE) {
+      if (count < 2 || count >= MAX_TRIBE_SIZE || males < 1 || females < 1) {
         this.growthTimer[p] = 0;
+        this.growthActive[p] = false;
         continue;
       }
-      const r = this.resources[p];
-      const food = r.beeren + r.pilze + r.fleisch + r.fisch;
-      if (food >= count * GROWTH_FOOD_PER_UNIT) {
-        this.growthTimer[p] += dt;
-      } else {
-        this.growthTimer[p] = Math.max(0, this.growthTimer[p] - dt);
-      }
+      this.growthActive[p] = true;
+      this.growthTimer[p] += dt;
       if (this.growthTimer[p] >= GROWTH_REQUIRED_SEC) {
         this.growthTimer[p] = 0;
-        this.deductGrowthCost(p);
         this.spawnNewTribeMember(p, cx / count, cy / count);
       }
     }
   }
 
-  private deductGrowthCost(p: PlayerId): void {
-    let need = GROWTH_FOOD_COST;
-    const r = this.resources[p];
-    const order: Array<keyof Resources> = ["beeren", "pilze", "fisch", "fleisch"];
-    for (const k of order) {
-      if (need <= 0) break;
-      const take = Math.min(r[k], need);
-      r[k] -= take;
-      need -= take;
+  growthSnapshot(): { progress: number[]; active: boolean[] } {
+    const progress: number[] = new Array(MAX_PLAYERS);
+    const active: boolean[] = new Array(MAX_PLAYERS);
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      progress[p] = this.active[p]
+        ? Math.min(1, this.growthTimer[p] / GROWTH_REQUIRED_SEC)
+        : 0;
+      active[p] = !!this.growthActive[p];
     }
+    return { progress, active };
   }
 
   private spawnNewTribeMember(p: PlayerId, ax: number, ay: number): void {
@@ -1268,6 +1284,8 @@ export class Sim {
         this.findFreeTileNear(a.cx, a.cy, occupied) ?? { i: a.cx, j: a.cy };
     }
     const k = this.nextUnitIdx[p]++;
+    const gender: UnitGender =
+      rand01(this.seed ^ 0xb1a, p, k) < 0.5 ? "m" : "f";
     const u: SimUnit = {
       id: `u_p${p}_${k}`,
       owner: p,
@@ -1287,6 +1305,7 @@ export class Sim {
       eatCooldown: 0,
       autoHuntScanTimer: 0,
       ageSec: 0,
+      gender,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));

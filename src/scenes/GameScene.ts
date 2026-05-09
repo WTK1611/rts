@@ -13,6 +13,7 @@ import {
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   InitMessage,
+  MAX_TRIBE_SIZE,
   ObjectKind,
   PlayerId,
   RemovedObject,
@@ -24,7 +25,6 @@ import {
 } from "../../shared/protocol";
 import {
   biomeAt,
-  Biome,
   BIOME_PALETTES,
   groundHeight,
   hasBushAt,
@@ -38,6 +38,7 @@ import {
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
+import { BIOME_MINI_COLOR } from "../biomeColors";
 
 interface DragState {
   startX: number;
@@ -65,18 +66,6 @@ export interface GameSceneInit {
 const SIGHT_RADIUS = 5.5;
 const CHUNK_SIZE = 16;
 const VIEW_PAD_TILES = 8;
-
-const BIOME_MINI_COLOR: Record<Biome, string> = {
-  wiesen: "#3a6b3a",
-  wald: "#1e3e1e",
-  savanne: "#9c8a4a",
-  wueste: "#d4b878",
-  lake: "#244a72",
-  river: "#3a78b0",
-  felsen: "#707070",
-  gebirge: "#383838",
-  canyon: "#8a4528",
-};
 
 const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
@@ -157,6 +146,11 @@ export class GameScene extends Phaser.Scene {
   private maxTribeSize = 0;
   private isGameOver = false;
 
+  private growthProgress: number[] = [];
+  private growthActive: boolean[] = [];
+  private growthBeacon!: Phaser.GameObjects.Graphics;
+  private growthBeaconPhase = 0;
+
   private lastFogBoundsKey = "";
   private lastFogVisibleHash = 0;
   private lastFogExploredSize = -1;
@@ -213,6 +207,10 @@ export class GameScene extends Phaser.Scene {
     this.selectionBox = this.add.graphics();
     this.selectionBox.setScrollFactor(0);
     this.selectionBox.setDepth(2_000_000);
+
+    this.growthBeacon = this.add.graphics();
+    this.growthBeacon.setDepth(1_700_000);
+    this.growthBeacon.setVisible(false);
 
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x0a0e0a);
@@ -293,6 +291,53 @@ export class GameScene extends Phaser.Scene {
     this.updateChunks();
     this.updateFog();
     this.drawFootprints();
+    this.updateGrowthBeacon(dt);
+  }
+
+  private updateGrowthBeacon(dt: number): void {
+    const progress = this.growthProgress[this.playerId] ?? 0;
+    const active = this.growthActive[this.playerId] ?? false;
+    if (!active || progress < 0.8) {
+      if (this.growthBeacon.visible) {
+        this.growthBeacon.clear();
+        this.growthBeacon.setVisible(false);
+      }
+      return;
+    }
+    let cx = 0;
+    let cy = 0;
+    let n = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      cx += u.gx;
+      cy += u.gy;
+      n++;
+    }
+    if (n === 0) {
+      if (this.growthBeacon.visible) {
+        this.growthBeacon.clear();
+        this.growthBeacon.setVisible(false);
+      }
+      return;
+    }
+    cx /= n;
+    cy /= n;
+    const center = gridToScreen(cx, cy);
+
+    this.growthBeaconPhase += dt * 1.6;
+    const phase = (Math.sin(this.growthBeaconPhase * Math.PI) + 1) / 2;
+    const baseRadius = TILE_W * 0.55;
+    const r1 = baseRadius * (0.9 + phase * 0.35);
+    const r2 = baseRadius * (1.1 + phase * 0.6);
+    const a1 = 0.45 + phase * 0.3;
+    const a2 = 0.25 * (1 - phase);
+
+    this.growthBeacon.setVisible(true);
+    this.growthBeacon.clear();
+    this.growthBeacon.lineStyle(2, 0xffd84d, a1);
+    this.growthBeacon.strokeEllipse(center.x, center.y - 4, r1 * 2, r1);
+    this.growthBeacon.lineStyle(2, 0xffd84d, a2);
+    this.growthBeacon.strokeEllipse(center.x, center.y - 4, r2 * 2, r2);
   }
 
   private toggleMinimap(): void {
@@ -1101,6 +1146,19 @@ export class GameScene extends Phaser.Scene {
       this.resources = msg.resources.map((r) => ({ ...r }));
       this.updateHud();
     }
+
+    const myProgPrev = this.growthProgress[this.playerId] ?? 0;
+    const myActivePrev = this.growthActive[this.playerId] ?? false;
+    if (msg.growthProgress) this.growthProgress = msg.growthProgress;
+    if (msg.growthActive) this.growthActive = msg.growthActive;
+    const myProg = this.growthProgress[this.playerId] ?? 0;
+    const myActive = this.growthActive[this.playerId] ?? false;
+    if (
+      Math.abs(myProg - myProgPrev) > 0.005 ||
+      myActive !== myActivePrev
+    ) {
+      this.updateHud();
+    }
   }
 
   private spawnAnimalLocal(snap: AnimalSnapshot): void {
@@ -1476,7 +1534,61 @@ export class GameScene extends Phaser.Scene {
       `<div class="me"><span class="swatch" style="background:${myColor}"></span>` +
       `Stamm von ${escapeHtml(myName)}</div>` +
       `<div class="res">${resHtml}</div>` +
+      this.growthHudHtml() +
       othersHtml;
+  }
+
+  private growthHudHtml(): string {
+    let count = 0;
+    let males = 0;
+    let females = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      count++;
+      if (u.gender === "m") males++;
+      else females++;
+    }
+    if (count === 0) return "";
+
+    const progress = this.growthProgress[this.playerId] ?? 0;
+    const active = this.growthActive[this.playerId] ?? false;
+
+    let cls = "growth";
+    let stateLabel: string;
+    let stateCls = "state";
+    let pct = Math.round(progress * 100);
+
+    if (count >= MAX_TRIBE_SIZE) {
+      cls += " full";
+      stateCls += " full";
+      stateLabel = "Stamm voll";
+      pct = 100;
+    } else if (count < 2) {
+      cls += " paused";
+      stateLabel = "zu wenig Stammesmitglieder";
+    } else if (males < 1 || females < 1) {
+      cls += " paused";
+      stateLabel = males < 1 ? "kein Mann im Stamm" : "keine Frau im Stamm";
+    } else if (active && progress >= 0.8) {
+      cls += " imminent";
+      stateCls += " imminent";
+      stateLabel = "Geburt steht bevor";
+    } else if (active) {
+      stateCls += " active";
+      stateLabel = `${pct}%`;
+    } else {
+      cls += " paused";
+      stateLabel = "pausiert";
+    }
+
+    const fillPct = count >= MAX_TRIBE_SIZE ? 100 : Math.round(progress * 100);
+    return (
+      `<div class="${cls}">` +
+      `<div class="label-row"><span>Wachstum</span>` +
+      `<span class="${stateCls}">${escapeHtml(stateLabel)}</span></div>` +
+      `<div class="bar"><div class="fill" style="width:${fillPct}%"></div></div>` +
+      `</div>`
+    );
   }
 
   private checkGameOver(): void {

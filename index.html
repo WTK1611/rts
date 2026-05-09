@@ -42,6 +42,38 @@
       #hud .res .ico.stein   { background: #909090; }
       #hud .res .label { color: #c8d8c8; }
       #hud .res b { color: #f0f5f0; font-weight: 600; }
+      #hud .growth { margin-top: 8px; padding-top: 6px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        font-size: 12px; color: #c8d8c8;
+      }
+      #hud .growth .label-row {
+        display: flex; justify-content: space-between;
+        align-items: baseline; margin-bottom: 4px;
+      }
+      #hud .growth .state { color: #88a088; font-size: 11px; }
+      #hud .growth .state.active { color: #9cd99c; }
+      #hud .growth .state.imminent { color: #ffd84d; font-weight: 600; }
+      #hud .growth .state.full { color: #b8c8b8; }
+      #hud .growth .bar {
+        position: relative;
+        height: 6px; background: rgba(255,255,255,0.08);
+        border-radius: 3px; overflow: hidden;
+      }
+      #hud .growth .fill {
+        position: absolute; inset: 0 auto 0 0;
+        background: #4d8a4d;
+        border-radius: 3px;
+        transition: width 0.25s linear, background 0.2s linear;
+      }
+      #hud .growth.paused .fill { background: #6a7a6a; }
+      #hud .growth.imminent .fill {
+        background: #ffd84d;
+        animation: growthPulse 1s ease-in-out infinite;
+      }
+      @keyframes growthPulse {
+        0%, 100% { box-shadow: 0 0 6px rgba(255, 216, 77, 0.5); }
+        50% { box-shadow: 0 0 12px rgba(255, 216, 77, 1); }
+      }
       #hud .others { margin-top: 8px; padding-top: 6px;
         border-top: 1px solid rgba(255,255,255,0.08);
         font-size: 12px; color: #b8c8b8;
@@ -69,6 +101,11 @@
         }
         #hud .res .item { gap: 4px; }
         #hud .res .ico { width: 8px; height: 8px; flex-basis: 8px; }
+        #hud .growth {
+          margin-top: 4px; padding-top: 4px; font-size: 10px;
+        }
+        #hud .growth .state { font-size: 9px; }
+        #hud .growth .bar { height: 4px; }
         #hud .others {
           margin-top: 4px; padding-top: 4px; font-size: 10px;
         }
@@ -111,14 +148,30 @@
       #lobby {
         position: fixed; inset: 0; display: flex;
         align-items: center; justify-content: center;
-        background: radial-gradient(ellipse at center, #2a4a2a 0%, #0d1a0d 100%);
+        background: #0d1a0d;
         font-family: system-ui, sans-serif;
         z-index: 10;
       }
+      #lobby-map {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%;
+        image-rendering: pixelated;
+        z-index: 0;
+      }
+      #lobby-veil {
+        position: absolute; inset: 0;
+        background: radial-gradient(ellipse at center, rgba(13,26,13,0.15) 0%, rgba(13,26,13,0.7) 100%);
+        pointer-events: none; z-index: 1;
+      }
       #lobby-card {
-        background: #1c2a1c; padding: 32px 36px; border-radius: 12px;
+        position: relative; z-index: 2;
+        background: rgba(28, 42, 28, 0.92);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        padding: 32px 36px; border-radius: 12px;
         box-shadow: 0 12px 40px rgba(0,0,0,0.6);
         color: #e8f0e8; min-width: 320px; text-align: center;
+        border: 1px solid rgba(108, 191, 108, 0.25);
       }
       #lobby-card h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: 0.5px; }
       #lobby-title { font-size: 14px; color: #a8c0a8; margin-bottom: 20px; }
@@ -229,6 +282,8 @@
   <body>
     <div id="game"></div>
     <div id="lobby">
+      <canvas id="lobby-map"></canvas>
+      <div id="lobby-veil"></div>
       <div id="lobby-card">
         <h1>Jäger und Sammler</h1>
         <div id="lobby-title">Name eingeben — wir verbinden dich automatisch</div>
