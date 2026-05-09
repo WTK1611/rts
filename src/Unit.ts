@@ -265,7 +265,7 @@ export class Unit {
       lean = 8 * t;
     }
     const hpFrac = this.hpMax > 0 ? Math.max(0, Math.min(1, this.hp / this.hpMax)) : 0;
-    const fatness = 0.78 + 0.34 * hpFrac;
+    const fatness = 0.55 + 0.55 * hpFrac;
     this.body.setScale(fatness, 1);
     this.bodyShadow.setScale(fatness, 1);
     this.bodyHighlight.setScale(fatness, 1);
