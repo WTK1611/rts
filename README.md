@@ -87,6 +87,9 @@ Browser ──https──▶ nginx/Caddy ──http──▶ Vite-Build (statisc
                               ──ws────▶ rts-server (Container, :8787)
 ```
 
+Der konkrete Plesk-Deploy auf `js.tobis.io` (Pfade, rsync-Schritte, Webroot-Falle)
+ist in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) dokumentiert.
+
 ## Bedienung
 
 Maus + Tastatur:
@@ -135,6 +138,8 @@ Auto-Sammeln, Tribe-Tod) findet sich in [docs/GAMEPLAY.md](docs/GAMEPLAY.md).
 
 ## Weiterführende Doku
 
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — VPS-Pfade und rsync+docker-Deploy
+  für `js.tobis.io`.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Architektur, Netzwerkprotokoll,
   Worldgen, Tickloop, Sichtbarkeit
 - [docs/GAMEPLAY.md](docs/GAMEPLAY.md) — Gameplay-Mechanik, Ressourcen, Tiere,
