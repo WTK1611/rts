@@ -189,6 +189,41 @@
       #gameover-card .go-ico.stein   { background: #909090; }
       #gameover-card .go-label { color: #b8a898; flex: 1; }
       #gameover-card .go-item b { color: #f0e8d8; }
+      #gameover-card .lb {
+        display: flex; flex-direction: column; gap: 2px;
+        font-size: 13px; font-variant-numeric: tabular-nums;
+      }
+      #gameover-card .lb-row {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) 48px 44px 44px 56px;
+        align-items: center; gap: 6px;
+        padding: 4px 8px; border-radius: 4px;
+        background: rgba(255,255,255,0.02);
+      }
+      #gameover-card .lb-row.lb-head {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+        color: #a89488; background: transparent;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        padding-bottom: 6px; margin-bottom: 2px; border-radius: 0;
+      }
+      #gameover-card .lb-row.lb-me {
+        background: rgba(240, 200, 120, 0.15);
+        outline: 1px solid rgba(240, 200, 120, 0.4);
+        color: #ffe7c0;
+      }
+      #gameover-card .lb-rank { color: #a89488; text-align: right; }
+      #gameover-card .lb-row.lb-me .lb-rank { color: #ffd99a; font-weight: 600; }
+      #gameover-card .lb-name {
+        color: #e8e0d8; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; text-align: left;
+      }
+      #gameover-card .lb-stat { color: #c8b8a8; text-align: right; }
+      #gameover-card .lb-score {
+        color: #f0e8d8; font-weight: 600; text-align: right;
+      }
+      #gameover-card .lb-note {
+        margin-top: 6px; font-size: 12px; color: #c8b8a8; text-align: right;
+      }
     </style>
   </head>
   <body>

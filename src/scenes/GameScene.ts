@@ -154,6 +154,7 @@ export class GameScene extends Phaser.Scene {
 
   private gameStartMs = 0;
   private initialTribeSize = 0;
+  private maxTribeSize = 0;
   private isGameOver = false;
 
   private lastFogBoundsKey = "";
@@ -193,6 +194,7 @@ export class GameScene extends Phaser.Scene {
     this.initialTribeSize = [...this.units.values()].filter(
       (u) => u.owner === this.playerId,
     ).length;
+    this.maxTribeSize = this.initialTribeSize;
 
     for (const snap of this.pendingAnimals) {
       this.spawnAnimalLocal(snap);
@@ -1066,6 +1068,12 @@ export class GameScene extends Phaser.Scene {
       this.units.delete(id);
       u.die(() => {});
     }
+    if (msg.newUnits && msg.newUnits.length > 0) {
+      const myCount = [...this.units.values()].filter(
+        (u) => u.owner === this.playerId,
+      ).length;
+      if (myCount > this.maxTribeSize) this.maxTribeSize = myCount;
+    }
     if (msg.deadUnitIds.length > 0) this.checkGameOver();
     for (const snap of msg.animals) {
       const a = this.animals.get(snap.id);
@@ -1507,6 +1515,44 @@ export class GameScene extends Phaser.Scene {
         `<span class="go-label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
     ).join("");
 
+    const myName = this.names[this.playerId] || "Stamm";
+    const entry: ScoreEntry = {
+      name: myName,
+      timeSec: totalSec,
+      collected: totalCollected,
+      tribe: this.maxTribeSize,
+      score: computeScore(totalSec, totalCollected, this.maxTribeSize),
+      ts: Date.now(),
+    };
+    const board = loadLeaderboard();
+    board.push(entry);
+    board.sort((a, b) => b.score - a.score);
+    const trimmed = board.slice(0, 50);
+    saveLeaderboard(trimmed);
+    const myRank = trimmed.indexOf(entry) + 1;
+    const top = trimmed.slice(0, 10);
+
+    const boardRows = top
+      .map((e, idx) => {
+        const isMe = e === entry;
+        const rank = idx + 1;
+        const t = formatTime(e.timeSec);
+        return (
+          `<div class="lb-row${isMe ? " lb-me" : ""}">` +
+          `<span class="lb-rank">${rank}</span>` +
+          `<span class="lb-name">${escapeHtml(e.name)}</span>` +
+          `<span class="lb-stat">${t}</span>` +
+          `<span class="lb-stat">${e.collected}</span>` +
+          `<span class="lb-stat">${e.tribe}</span>` +
+          `<span class="lb-score">${e.score}</span>` +
+          `</div>`
+        );
+      })
+      .join("");
+    const myRankNote = myRank > top.length
+      ? `<div class="lb-note">Dein Platz: #${myRank} von ${trimmed.length}</div>`
+      : "";
+
     const overlay = document.createElement("div");
     overlay.id = "gameover";
     overlay.innerHTML =
@@ -1515,11 +1561,25 @@ export class GameScene extends Phaser.Scene {
       `<div class="go-sub">Statistik</div>` +
       `<div class="go-stats">` +
       `<div class="go-row"><span>Überlebenszeit</span><b>${timeStr}</b></div>` +
-      `<div class="go-row"><span>Stammesmitglieder</span><b>${this.initialTribeSize}</b></div>` +
+      `<div class="go-row"><span>Stammesmitglieder (max.)</span><b>${this.maxTribeSize}</b></div>` +
       `<div class="go-row"><span>Gesammelt gesamt</span><b>${totalCollected}</b></div>` +
+      `<div class="go-row"><span>Punkte</span><b>${entry.score}</b></div>` +
       `</div>` +
       `<div class="go-sub">Ressourcen</div>` +
       `<div class="go-res">${resHtml}</div>` +
+      `<div class="go-sub">Bestenliste</div>` +
+      `<div class="lb">` +
+      `<div class="lb-row lb-head">` +
+      `<span class="lb-rank">#</span>` +
+      `<span class="lb-name">Stamm</span>` +
+      `<span class="lb-stat">Zeit</span>` +
+      `<span class="lb-stat">Sml.</span>` +
+      `<span class="lb-stat">Mitg.</span>` +
+      `<span class="lb-score">Pkt.</span>` +
+      `</div>` +
+      boardRows +
+      `</div>` +
+      myRankNote +
       `<div class="btn-row"><button id="gameover-btn" class="btn">Neu starten</button></div>` +
       `</div>`;
     document.body.appendChild(overlay);
@@ -1555,6 +1615,56 @@ function lerpColor(a: number, b: number, t: number): number {
   const g = Math.round(ag + (bg - ag) * t);
   const bl = Math.round(ab + (bb - ab) * t);
   return (r << 16) | (g << 8) | bl;
+}
+
+interface ScoreEntry {
+  name: string;
+  timeSec: number;
+  collected: number;
+  tribe: number;
+  score: number;
+  ts: number;
+}
+
+const LEADERBOARD_KEY = "rts.leaderboard.v1";
+
+function computeScore(timeSec: number, collected: number, tribe: number): number {
+  return Math.round(timeSec + collected * 5 + tribe * 30);
+}
+
+function formatTime(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function loadLeaderboard(): ScoreEntry[] {
+  try {
+    const raw = localStorage.getItem(LEADERBOARD_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (e): e is ScoreEntry =>
+        !!e &&
+        typeof e === "object" &&
+        typeof (e as ScoreEntry).name === "string" &&
+        typeof (e as ScoreEntry).timeSec === "number" &&
+        typeof (e as ScoreEntry).collected === "number" &&
+        typeof (e as ScoreEntry).tribe === "number" &&
+        typeof (e as ScoreEntry).score === "number",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveLeaderboard(board: ScoreEntry[]): void {
+  try {
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(board));
+  } catch {
+    // ignore storage errors (quota, private mode)
+  }
 }
 
 function escapeHtml(s: string): string {
