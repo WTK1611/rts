@@ -2019,6 +2019,11 @@ export class Sim {
           !this.removedKeys.has(objKey("bush", i, j))
         ) {
           kind = "bush";
+        } else if (
+          hasStoneAt(seed, i, j) &&
+          !this.removedKeys.has(objKey("stone", i, j))
+        ) {
+          kind = "stone";
         }
         if (!kind) continue;
         if (!best || d2 < best.d2) best = { kind, i, j, d2 };

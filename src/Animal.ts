@@ -211,7 +211,31 @@ export class Animal {
   }
 
   destroy(): void {
+    this.scene.tweens.killTweensOf(this.container);
     this.container.destroy();
+  }
+
+  die(): void {
+    this.scene.tweens.killTweensOf(this.container);
+    this.hpBg.setVisible(false);
+    this.hpFg.setVisible(false);
+    this.scene.tweens.add({
+      targets: this.container,
+      angle: 80,
+      y: this.container.y + 4,
+      duration: 500,
+      ease: "Cubic.easeIn",
+    });
+    this.scene.tweens.add({
+      targets: this.container,
+      alpha: 0,
+      delay: 1800,
+      duration: 1200,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        this.container.destroy();
+      },
+    });
   }
 
   private updateDepth(): void {

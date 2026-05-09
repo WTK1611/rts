@@ -1495,8 +1495,8 @@ export class GameScene extends Phaser.Scene {
     for (const id of msg.removedAnimalIds) {
       const a = this.animals.get(id);
       if (a) {
-        a.destroy();
         this.animals.delete(id);
+        a.die();
       }
     }
     let ownDied = 0;
