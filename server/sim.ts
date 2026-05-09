@@ -97,15 +97,16 @@ interface AnimalSpec {
   autoHuntable: boolean;
   autoHuntRange: number;
   attackRange: number;
+  aggroDurationSec: number;
 }
 
 const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5 },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5 },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5 },
-  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5 },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5 },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8 },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0  },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0  },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0  },
+  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8  },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25 },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12 },
 };
 
 const ANIMAL_SPAWN_RADIUS = 220;
@@ -131,6 +132,7 @@ interface SimAnimal {
   attackTargetUnitId: string | null;
   attackTimer: number;
   repathTimer: number;
+  aggroExpireTick: number;
 }
 
 function kindHash(kind: AnimalKind): number {
@@ -158,7 +160,7 @@ function objKey(kind: ObjectKind, i: number, j: number): string {
 export class Sim {
   seed: number;
   spawns: SpawnArea[];
-  units: SimUnit[] = [];
+  units: Map<string, SimUnit> = new Map();
   active: boolean[] = new Array(MAX_PLAYERS).fill(false);
   removedObjects: RemovedObject[] = [];
   removedKeys = new Set<string>();
@@ -211,6 +213,7 @@ export class Sim {
             attackTargetUnitId: null,
             attackTimer: 0,
             repathTimer: 0,
+            aggroExpireTick: 0,
           });
           break;
         }
@@ -251,8 +254,8 @@ export class Sim {
     if (!a) return;
     const claimed = new Set<string>();
     for (const id of unitIds) {
-      const u = this.units.find((x) => x.id === id && x.owner === owner);
-      if (!u) continue;
+      const u = this.units.get(id);
+      if (!u || u.owner !== owner) continue;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHunt(u, a, blocked);
       const last = u.path[u.path.length - 1];
@@ -309,9 +312,13 @@ export class Sim {
       const spec = ANIMAL_SPECS[a.kind];
 
       if (a.attackTargetUnitId) {
-        const t = this.units.find((u) => u.id === a.attackTargetUnitId);
+        const t = this.units.get(a.attackTargetUnitId);
         if (!t || t.hp <= 0) {
           a.attackTargetUnitId = null;
+        } else if (this.tick > a.aggroExpireTick) {
+          a.attackTargetUnitId = null;
+          a.path = [];
+          a.state = "idle";
         } else {
           const homeDist = Math.hypot(
             a.gx - (a.homeI + 0.5),
@@ -327,7 +334,7 @@ export class Sim {
       if (!a.attackTargetUnitId && spec.aggressive && spec.detectRange > 0) {
         let nearest: SimUnit | null = null;
         let nearestDist = spec.detectRange;
-        for (const u of this.units) {
+        for (const u of this.units.values()) {
           if (u.hp <= 0) continue;
           const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
           if (d < nearestDist) {
@@ -339,11 +346,13 @@ export class Sim {
           a.attackTargetUnitId = nearest.id;
           a.path = [];
           a.repathTimer = 0;
+          a.aggroExpireTick =
+            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
         }
       }
 
       if (a.attackTargetUnitId) {
-        const t = this.units.find((u) => u.id === a.attackTargetUnitId);
+        const t = this.units.get(a.attackTargetUnitId);
         if (t) {
           this.stepAnimalAttack(a, t, spec, dt);
           continue;
@@ -416,14 +425,8 @@ export class Sim {
         a.attackTimer = 0;
         if (spec.damage > 0) {
           t.hp = Math.max(0, t.hp - spec.damage);
-          if (t.huntTarget !== a.id) {
-            t.huntTarget = a.id;
-            t.harvestTarget = null;
-            t.huntTimer = 0;
-            t.path = [];
-            t.state = "harvesting";
-          }
-          this.callForHelp(t, a.id);
+          a.aggroExpireTick =
+            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
         }
       }
       return;
@@ -471,7 +474,7 @@ export class Sim {
   private maybeAutoEngage(u: SimUnit): void {
     let allyTarget: string | null = null;
     let allyDist = Infinity;
-    for (const ally of this.units) {
+    for (const ally of this.units.values()) {
       if (ally.owner !== u.owner) continue;
       if (ally.id === u.id) continue;
       if (!ally.huntTarget) continue;
@@ -508,7 +511,7 @@ export class Sim {
   }
 
   private callForHelp(victim: SimUnit, animalId: string): void {
-    for (const u of this.units) {
+    for (const u of this.units.values()) {
       if (u.owner !== victim.owner) continue;
       if (u.id === victim.id) continue;
       if (u.huntTarget) continue;
@@ -632,7 +635,7 @@ export class Sim {
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
       };
-      this.units.push(u);
+      this.units.set(u.id, u);
       created.push(u);
     }
     return created.map(this.snap);
@@ -642,13 +645,12 @@ export class Sim {
     if (!this.active[p]) return [];
     this.active[p] = false;
     const removed: string[] = [];
-    this.units = this.units.filter((u) => {
+    for (const u of this.units.values()) {
       if (u.owner === p) {
         removed.push(u.id);
-        return false;
+        this.units.delete(u.id);
       }
-      return true;
-    });
+    }
     this.resources[p] = emptyResources();
     return removed;
   }
@@ -658,7 +660,9 @@ export class Sim {
   }
 
   unitsSnapshot(): UnitSnapshot[] {
-    return this.units.map(this.snap);
+    const out: UnitSnapshot[] = [];
+    for (const u of this.units.values()) out.push(this.snap(u));
+    return out;
   }
 
   private snap = (u: SimUnit): UnitSnapshot => ({
@@ -693,8 +697,8 @@ export class Sim {
   cmdMove(owner: PlayerId, unitIds: string[], i: number, j: number): void {
     const claimed = new Set<string>();
     for (const id of unitIds) {
-      const u = this.units.find((x) => x.id === id && x.owner === owner);
-      if (!u) continue;
+      const u = this.units.get(id);
+      if (!u || u.owner !== owner) continue;
       const blocked = this.blockedTilesFor(u, claimed);
       let target = { i, j };
       if (blocked.has(`${i},${j}`) || !this.isWalkable(i, j)) {
@@ -717,8 +721,8 @@ export class Sim {
     }
     const claimed = new Set<string>();
     for (const id of unitIds) {
-      const u = this.units.find((x) => x.id === id && x.owner === owner);
-      if (!u) continue;
+      const u = this.units.get(id);
+      if (!u || u.owner !== owner) continue;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHarvest(u, kind, i, j, blocked);
       const last = u.path[u.path.length - 1];
@@ -753,7 +757,7 @@ export class Sim {
 
   private blockedTilesFor(self: SimUnit, claimed: Set<string>): Set<string> {
     const s = new Set<string>(claimed);
-    for (const u of this.units) {
+    for (const u of this.units.values()) {
       if (u.id === self.id) continue;
       const last = u.path[u.path.length - 1];
       const ti = last ? Math.floor(last.gx) : Math.floor(u.gx);
@@ -858,6 +862,18 @@ export class Sim {
     this.newFootprints.push(fp);
     u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_TILE);
     this.tryAutoPick(u, ti, tj);
+    this.tryEngageAnimalOnTile(u, ti, tj);
+  }
+
+  private tryEngageAnimalOnTile(u: SimUnit, ti: number, tj: number): void {
+    if (u.huntTarget) return;
+    for (const a of this.animals.values()) {
+      if (a.hp <= 0) continue;
+      if (Math.floor(a.gx) !== ti) continue;
+      if (Math.floor(a.gy) !== tj) continue;
+      this.startHunt(u, a, new Set<string>());
+      return;
+    }
   }
 
   private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
@@ -1012,24 +1028,13 @@ export class Sim {
   step(dt: number): void {
     this.tick++;
     this.stepAnimals(dt);
-    for (const u of this.units) {
+    for (const u of this.units.values()) {
       u.eatCooldown -= dt;
       if (u.eatCooldown <= 0) {
         u.eatCooldown = EAT_INTERVAL;
         this.autoEat(u);
       }
       u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
-      u.autoHuntScanTimer -= dt;
-      if (
-        u.autoHuntScanTimer <= 0 &&
-        !u.huntTarget &&
-        !u.harvestTarget &&
-        u.state === "idle" &&
-        u.path.length === 0
-      ) {
-        u.autoHuntScanTimer = UNIT_AUTO_HUNT_SCAN_INTERVAL;
-        this.maybeAutoEngage(u);
-      }
       if (u.huntTarget) {
         if (this.tickHunt(u, dt)) continue;
       }
@@ -1076,19 +1081,40 @@ export class Sim {
     this.expireFootprints();
     this.expireRegrows();
     this.reapDeadUnits();
+    this.spreadIdleUnits();
   }
 
   private reapDeadUnits(): void {
-    const survivors: SimUnit[] = [];
-    for (const u of this.units) {
+    for (const u of this.units.values()) {
       if (u.hp <= 0) {
         this.deadUnitIds.push(u.id);
-      } else {
-        survivors.push(u);
+        this.units.delete(u.id);
       }
     }
-    if (survivors.length !== this.units.length) {
-      this.units = survivors;
+  }
+
+  private spreadIdleUnits(): void {
+    const occupants = new Map<string, SimUnit>();
+    for (const u of this.units.values()) {
+      if (u.state !== "idle") {
+        occupants.set(`${Math.floor(u.gx)},${Math.floor(u.gy)}`, u);
+      }
+    }
+    for (const u of this.units.values()) {
+      if (u.state !== "idle") continue;
+      const ti = Math.floor(u.gx);
+      const tj = Math.floor(u.gy);
+      const key = `${ti},${tj}`;
+      const existing = occupants.get(key);
+      if (!existing) {
+        occupants.set(key, u);
+        continue;
+      }
+      const blocked = new Set<string>(occupants.keys());
+      const free = this.findFreeTileNear(ti, tj, blocked);
+      if (!free) continue;
+      this.startMove(u, free.i, free.j, blocked);
+      occupants.set(`${free.i},${free.j}`, u);
     }
   }
 

@@ -1,11 +1,13 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Sim } from "./sim";
 import {
+  AnimalSnapshot,
   ClientMessage,
   MAX_PLAYERS,
   PlayerId,
   ServerMessage,
   TICK_RATE,
+  UnitSnapshot,
 } from "../shared/protocol";
 
 interface PlayerSlot {
@@ -14,10 +16,17 @@ interface PlayerSlot {
   id: PlayerId;
 }
 
+const ANIMAL_VIEW_RADIUS = 10;
+const ANIMAL_VIEW_RADIUS_SQ = ANIMAL_VIEW_RADIUS * ANIMAL_VIEW_RADIUS;
+
 const world = {
   sim: new Sim((Date.now() ^ Math.floor(Math.random() * 0xffffff)) >>> 0),
   players: new Array<PlayerSlot | null>(MAX_PLAYERS).fill(null),
   lastTick: Date.now(),
+  knownAnimals: Array.from(
+    { length: MAX_PLAYERS },
+    () => new Set<string>(),
+  ),
 };
 
 const slots = new Map<WebSocket, PlayerSlot>();
@@ -37,6 +46,28 @@ function namesOf(): string[] {
   return world.players.map((p) => p?.name ?? "");
 }
 
+function visibleAnimalsFor(
+  ownerId: PlayerId,
+  units: UnitSnapshot[],
+  allAnimals: AnimalSnapshot[],
+): AnimalSnapshot[] {
+  const myUnits: UnitSnapshot[] = [];
+  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
+  if (myUnits.length === 0) return [];
+  const out: AnimalSnapshot[] = [];
+  for (const a of allAnimals) {
+    for (const u of myUnits) {
+      const dx = a.gx - u.gx;
+      const dy = a.gy - u.gy;
+      if (dx * dx + dy * dy <= ANIMAL_VIEW_RADIUS_SQ) {
+        out.push(a);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 function joinPlayer(ws: WebSocket, name: string): void {
   const slotId = world.players.findIndex((p) => p === null);
   if (slotId === -1) {
@@ -52,21 +83,28 @@ function joinPlayer(ws: WebSocket, name: string): void {
   slots.set(ws, slot);
   world.sim.addPlayer(slotId);
 
+  const allUnits = world.sim.unitsSnapshot();
+  const allAnimals = world.sim.animalsSnapshot();
+  const visibleAnimals = visibleAnimalsFor(slotId, allUnits, allAnimals);
+  const known = world.knownAnimals[slotId];
+  known.clear();
+  for (const a of visibleAnimals) known.add(a.id);
+
   send(ws, {
     type: "init",
     playerId: slotId,
     seed: world.sim.seed,
     tick: world.sim.tick,
-    units: world.sim.unitsSnapshot(),
+    units: allUnits,
     removedObjects: [...world.sim.removedObjects],
     spawn: world.sim.spawns[slotId],
     resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
     footprints: [...world.sim.footprints],
-    animals: world.sim.animalsSnapshot(),
+    animals: visibleAnimals,
   });
 
-  const newUnits = world.sim.unitsSnapshot().filter((u) => u.owner === slotId);
+  const newUnits = allUnits.filter((u) => u.owner === slotId);
   for (const other of world.players) {
     if (!other || other.id === slotId) continue;
     send(other.ws, {
@@ -83,18 +121,47 @@ function tick(): void {
   const dt = (now - world.lastTick) / 1000;
   world.lastTick = now;
   world.sim.step(dt);
-  broadcast({
-    type: "state",
-    tick: world.sim.tick,
-    units: world.sim.unitsSnapshot(),
-    resources: world.sim.resources.map((r) => ({ ...r })),
-    newRemovedObjects: world.sim.consumeNewRemovedObjects(),
-    respawnedObjects: world.sim.consumeRespawnedObjects(),
-    newFootprints: world.sim.consumeNewFootprints(),
-    animals: world.sim.animalsSnapshot(),
-    removedAnimalIds: world.sim.consumeRemovedAnimalIds(),
-    deadUnitIds: world.sim.consumeDeadUnitIds(),
-  });
+
+  const units = world.sim.unitsSnapshot();
+  const allAnimals = world.sim.animalsSnapshot();
+  const resources = world.sim.resources.map((r) => ({ ...r }));
+  const newRemovedObjects = world.sim.consumeNewRemovedObjects();
+  const respawnedObjects = world.sim.consumeRespawnedObjects();
+  const newFootprints = world.sim.consumeNewFootprints();
+  const deadUnitIds = world.sim.consumeDeadUnitIds();
+  // Drain the sim's per-tick removed-animal queue; per-client diff below
+  // already handles deaths (dead ids land in known\visible).
+  world.sim.consumeRemovedAnimalIds();
+  const tickNo = world.sim.tick;
+
+  for (const slot of world.players) {
+    if (!slot) continue;
+    if (slot.ws.readyState !== slot.ws.OPEN) continue;
+
+    const visible = visibleAnimalsFor(slot.id, units, allAnimals);
+    const visibleIds = new Set<string>();
+    for (const a of visible) visibleIds.add(a.id);
+
+    const known = world.knownAnimals[slot.id];
+    const removedAnimalIds: string[] = [];
+    for (const id of known) {
+      if (!visibleIds.has(id)) removedAnimalIds.push(id);
+    }
+    world.knownAnimals[slot.id] = visibleIds;
+
+    send(slot.ws, {
+      type: "state",
+      tick: tickNo,
+      units,
+      resources,
+      newRemovedObjects,
+      respawnedObjects,
+      newFootprints,
+      animals: visible,
+      removedAnimalIds,
+      deadUnitIds,
+    });
+  }
 }
 
 setInterval(tick, 1000 / TICK_RATE);
@@ -104,6 +171,7 @@ function disconnect(ws: WebSocket): void {
   if (!slot) return;
   slots.delete(ws);
   world.players[slot.id] = null;
+  world.knownAnimals[slot.id] = new Set();
   const removedUnitIds = world.sim.removePlayer(slot.id);
   for (const other of world.players) {
     if (!other) continue;
