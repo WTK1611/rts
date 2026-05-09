@@ -25,6 +25,9 @@ export class GameScene extends Phaser.Scene {
   private wood = 0;
   private hud: HTMLElement | null = null;
 
+  private camTargetX = 0;
+  private camTargetY = 0;
+
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
@@ -62,8 +65,11 @@ export class GameScene extends Phaser.Scene {
     this.selectionBox.setDepth(2_000_000);
 
     const cam = this.cameras.main;
+    cam.setBackgroundColor(0x1f3a1f);
     cam.centerOn(0, (MAP_SIZE * TILE_H) / 2);
     cam.setZoom(1);
+    this.camTargetX = cam.scrollX;
+    this.camTargetY = cam.scrollY;
 
     const kb = this.input.keyboard!;
     this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
@@ -98,10 +104,13 @@ export class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
-    if (this.keyW.isDown) cam.scrollY -= speed * dt;
-    if (this.keyS.isDown) cam.scrollY += speed * dt;
-    if (this.keyA.isDown) cam.scrollX -= speed * dt;
-    if (this.keyD.isDown) cam.scrollX += speed * dt;
+    if (this.keyW.isDown) this.camTargetY -= speed * dt;
+    if (this.keyS.isDown) this.camTargetY += speed * dt;
+    if (this.keyA.isDown) this.camTargetX -= speed * dt;
+    if (this.keyD.isDown) this.camTargetX += speed * dt;
+    const lerp = 1 - Math.pow(0.001, dt);
+    cam.scrollX += (this.camTargetX - cam.scrollX) * lerp;
+    cam.scrollY += (this.camTargetY - cam.scrollY) * lerp;
   }
 
   private spawnTrees(reserved: Array<[number, number]>): void {
@@ -212,14 +221,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawTiles(): void {
+    const palette = [0x355d35, 0x3a6b3a, 0x437a43, 0x2f5a2f, 0x4d8a4d, 0x335a33];
     const g = this.add.graphics();
     g.setDepth(-100000);
     for (let j = 0; j < MAP_SIZE; j++) {
       for (let i = 0; i < MAP_SIZE; i++) {
         const { x, y } = gridToScreen(i, j);
-        const fill = (i + j) % 2 === 0 ? 0x3a6b3a : 0x356635;
+        const h = (i * 374761393 + j * 668265263) >>> 0;
+        const fill = palette[h % palette.length];
         g.fillStyle(fill, 1);
-        g.lineStyle(1, 0x2a4a2a, 1);
+        g.lineStyle(1, 0x244524, 0.18);
         g.beginPath();
         g.moveTo(x, y);
         g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
@@ -228,6 +239,26 @@ export class GameScene extends Phaser.Scene {
         g.closePath();
         g.fillPath();
         g.strokePath();
+
+        if ((h >> 3) % 7 === 0) {
+          const dx = (((h >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.35;
+          const dy = (((h >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.35;
+          g.fillStyle(0x6cbf6c, 0.45);
+          g.fillCircle(x + dx, y + TILE_H / 2 + dy, 1.6);
+          g.fillCircle(x + dx + 2, y + TILE_H / 2 + dy + 1, 1.2);
+        } else if ((h >> 3) % 23 === 0) {
+          const dx = (((h >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.4;
+          const dy = (((h >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.4;
+          g.fillStyle(0xf2e07a, 0.85);
+          g.fillCircle(x + dx, y + TILE_H / 2 + dy, 1.4);
+        } else if ((h >> 3) % 31 === 0) {
+          const dx = (((h >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.4;
+          const dy = (((h >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.4;
+          g.fillStyle(0x7e7466, 0.8);
+          g.fillCircle(x + dx, y + TILE_H / 2 + dy, 2);
+          g.fillStyle(0x5a5345, 0.7);
+          g.fillCircle(x + dx + 1, y + TILE_H / 2 + dy + 1, 1.2);
+        }
       }
     }
   }
@@ -236,13 +267,19 @@ export class GameScene extends Phaser.Scene {
     this.hoverTile.clear();
     if (!this.map.inBounds(i, j)) return;
     const { x, y } = gridToScreen(i, j);
-    this.hoverTile.lineStyle(2, 0xffff66, 0.9);
-    this.hoverTile.beginPath();
-    this.hoverTile.moveTo(x, y);
-    this.hoverTile.lineTo(x + TILE_W / 2, y + TILE_H / 2);
-    this.hoverTile.lineTo(x, y + TILE_H);
-    this.hoverTile.lineTo(x - TILE_W / 2, y + TILE_H / 2);
-    this.hoverTile.closePath();
+    const drawDiamond = () => {
+      this.hoverTile.beginPath();
+      this.hoverTile.moveTo(x, y);
+      this.hoverTile.lineTo(x + TILE_W / 2, y + TILE_H / 2);
+      this.hoverTile.lineTo(x, y + TILE_H);
+      this.hoverTile.lineTo(x - TILE_W / 2, y + TILE_H / 2);
+      this.hoverTile.closePath();
+    };
+    this.hoverTile.fillStyle(0xffff66, 0.12);
+    drawDiamond();
+    this.hoverTile.fillPath();
+    this.hoverTile.lineStyle(1.5, 0xffff66, 0.6);
+    drawDiamond();
     this.hoverTile.strokePath();
   }
 
