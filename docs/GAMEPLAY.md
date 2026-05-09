@@ -115,8 +115,8 @@ Stein und Fisch respawnen aktuell nicht.
 
 Jede Einheit hat `hpMax = 100` HP. Sie verliert HP durch:
 
-- `UNIT_HP_LOSS_PER_TILE = 0,4` pro betretenem Tile (also Bewegung kostet HP),
-- `UNIT_HP_LOSS_PER_SEC_IDLE = 0,25` pro Sekunde stehend (langsamer Hunger),
+- `UNIT_HP_LOSS_PER_TILE = 0,2` pro betretenem Tile (also Bewegung kostet HP),
+- `UNIT_HP_LOSS_PER_SEC_IDLE = 0,12` pro Sekunde stehend (langsamer Hunger),
 - Tier-Angriffe (`spec.damage`).
 
 Alle `EAT_INTERVAL = 1 s` versucht jede Einheit, sich automatisch zu heilen,

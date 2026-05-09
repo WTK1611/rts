@@ -106,6 +106,7 @@ export interface StateMessage {
   animals: AnimalSnapshot[];
   removedAnimalIds: string[];
   deadUnitIds: string[];
+  newUnits: UnitSnapshot[];
 }
 
 export interface OpponentJoinedMessage {

@@ -38,6 +38,10 @@ const BUSH_HARVEST_AMOUNT = 3;
 const MUSH_HARVEST_AMOUNT = 1;
 const FISH_HARVEST_AMOUNT = 1;
 const TRIBE_SIZE = 4;
+const MAX_TRIBE_SIZE = 12;
+const GROWTH_FOOD_PER_UNIT = 6;
+const GROWTH_REQUIRED_SEC = 120;
+const GROWTH_FOOD_COST = 12;
 const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
 const MUSHROOM_AUTOPICK_GAIN = 1;
 const BUSH_REGROW_TICKS = TICK_RATE * 90;
@@ -75,8 +79,8 @@ interface SimUnit {
 }
 
 const UNIT_HP_MAX = 100;
-const UNIT_HP_LOSS_PER_TILE = 0.4;
-const UNIT_HP_LOSS_PER_SEC_IDLE = 0.25;
+const UNIT_HP_LOSS_PER_TILE = 0.2;
+const UNIT_HP_LOSS_PER_SEC_IDLE = 0.12;
 const EAT_INTERVAL = 1.0;
 const HP_GAIN_FLEISCH = 15;
 const HP_GAIN_FISCH = 12;
@@ -177,6 +181,9 @@ export class Sim {
   animals: Map<string, SimAnimal> = new Map();
   removedAnimalIds: string[] = [];
   deadUnitIds: string[] = [];
+  newUnits: UnitSnapshot[] = [];
+  growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
+  nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
   tick = 0;
 
   constructor(seed: number) {
@@ -237,6 +244,12 @@ export class Sim {
   consumeDeadUnitIds(): string[] {
     const out = this.deadUnitIds;
     this.deadUnitIds = [];
+    return out;
+  }
+
+  consumeNewUnits(): UnitSnapshot[] {
+    const out = this.newUnits;
+    this.newUnits = [];
     return out;
   }
 
@@ -629,6 +642,8 @@ export class Sim {
   addPlayer(p: PlayerId): UnitSnapshot[] {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
+    this.growthTimer[p] = 0;
+    this.nextUnitIdx[p] = TRIBE_SIZE;
     const a = this.spawns[p];
     const offsets: Array<[number, number]> = [
       [0, 0],
@@ -675,6 +690,7 @@ export class Sim {
       }
     }
     this.resources[p] = emptyResources();
+    this.growthTimer[p] = 0;
     return removed;
   }
 
@@ -1104,7 +1120,93 @@ export class Sim {
     this.expireFootprints();
     this.expireRegrows();
     this.reapDeadUnits();
+    this.growthCheck(dt);
     this.spreadIdleUnits();
+  }
+
+  private growthCheck(dt: number): void {
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!this.active[p]) continue;
+      let count = 0;
+      let cx = 0;
+      let cy = 0;
+      for (const u of this.units.values()) {
+        if (u.owner !== p) continue;
+        count++;
+        cx += u.gx;
+        cy += u.gy;
+      }
+      if (count === 0 || count >= MAX_TRIBE_SIZE) {
+        this.growthTimer[p] = 0;
+        continue;
+      }
+      const r = this.resources[p];
+      const food = r.beeren + r.pilze + r.fleisch + r.fisch;
+      if (food >= count * GROWTH_FOOD_PER_UNIT) {
+        this.growthTimer[p] += dt;
+      } else {
+        this.growthTimer[p] = Math.max(0, this.growthTimer[p] - dt);
+      }
+      if (this.growthTimer[p] >= GROWTH_REQUIRED_SEC) {
+        this.growthTimer[p] = 0;
+        this.deductGrowthCost(p);
+        this.spawnNewTribeMember(p, cx / count, cy / count);
+      }
+    }
+  }
+
+  private deductGrowthCost(p: PlayerId): void {
+    let need = GROWTH_FOOD_COST;
+    const r = this.resources[p];
+    const order: Array<keyof Resources> = ["beeren", "pilze", "fisch", "fleisch"];
+    for (const k of order) {
+      if (need <= 0) break;
+      const take = Math.min(r[k], need);
+      r[k] -= take;
+      need -= take;
+    }
+  }
+
+  private spawnNewTribeMember(p: PlayerId, ax: number, ay: number): void {
+    const occupied = new Set<string>();
+    for (const u of this.units.values()) {
+      occupied.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
+    }
+    const ti = Math.floor(ax);
+    const tj = Math.floor(ay);
+    let spot: { i: number; j: number } | null = null;
+    if (this.isWalkable(ti, tj) && !occupied.has(`${ti},${tj}`)) {
+      spot = { i: ti, j: tj };
+    } else {
+      spot = this.findFreeTileNear(ti, tj, occupied);
+    }
+    if (!spot) {
+      const a = this.spawns[p];
+      spot =
+        this.findFreeTileNear(a.cx, a.cy, occupied) ?? { i: a.cx, j: a.cy };
+    }
+    const k = this.nextUnitIdx[p]++;
+    const u: SimUnit = {
+      id: `u_p${p}_${k}`,
+      owner: p,
+      gx: spot.i + 0.5,
+      gy: spot.j + 0.5,
+      speed: 3.5,
+      color: PLAYER_COLORS[p % PLAYER_COLORS.length],
+      state: "idle",
+      path: [],
+      harvestTarget: null,
+      huntTarget: null,
+      huntTimer: 0,
+      harvestTimer: 0,
+      lastFootprintTile: { i: spot.i, j: spot.j },
+      hp: UNIT_HP_MAX,
+      hpMax: UNIT_HP_MAX,
+      eatCooldown: 0,
+      autoHuntScanTimer: 0,
+    };
+    this.units.set(u.id, u);
+    this.newUnits.push(this.snap(u));
   }
 
   private reapDeadUnits(): void {
