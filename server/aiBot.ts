@@ -23,6 +23,7 @@ const DANGER_DETECT: Partial<Record<AnimalKind, number>> = {
   bison: 4,
   caveLion: 7,
   mammoth: 3,
+  alligator: 5,
 };
 
 interface BotUnitMem {
@@ -139,7 +140,10 @@ export class AIBot {
     }
     if (!nearest) return false;
 
-    const lethal = nearest.a.kind === "mammoth" || nearest.a.kind === "caveLion";
+    const lethal =
+      nearest.a.kind === "mammoth" ||
+      nearest.a.kind === "caveLion" ||
+      nearest.a.kind === "alligator";
     const lowHp = u.hp < RETREAT_HP_THRESHOLD;
     if (!lethal && !lowHp) return false;
     if (nearest.d > nearest.range + 1) return false;

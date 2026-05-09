@@ -20,6 +20,7 @@ const LOOKS: Record<AnimalKind, AnimalLook> = {
   bison:       { bodyW: 22, bodyH: 13, bodyColor: 0x3a2b1c, bellyColor: 0x4d3a25, legH: 8,  shadowW: 28, scale: 1 },
   caveLion:    { bodyW: 18, bodyH: 8,  bodyColor: 0xc28a48, bellyColor: 0xe6b878, legH: 7,  shadowW: 22, scale: 1 },
   mammoth:     { bodyW: 28, bodyH: 16, bodyColor: 0x4a352a, bellyColor: 0x6a4a35, legH: 12, shadowW: 36, scale: 1 },
+  alligator:   { bodyW: 24, bodyH: 6,  bodyColor: 0x3d5a2a, bellyColor: 0x6d8a48, legH: 2,  shadowW: 26, scale: 1 },
 };
 
 const KIND_LABELS: Record<AnimalKind, string> = {
@@ -29,6 +30,7 @@ const KIND_LABELS: Record<AnimalKind, string> = {
   bison: "Bison",
   caveLion: "Höhlenlöwe",
   mammoth: "Mamut",
+  alligator: "Alligator",
 };
 
 export function animalLabel(kind: AnimalKind): string {
@@ -171,6 +173,31 @@ export class Animal {
       // tail with tuft
       out.push(sc.add.line(0, 0, -look.bodyW * 0.5, bodyY, -look.bodyW * 0.7, bodyY - 2, dark, 1).setLineWidth(1.2));
       out.push(sc.add.circle(-look.bodyW * 0.7, bodyY - 2, 1.3, dark));
+    }
+
+    if (kind === "alligator") {
+      // long body
+      out.push(sc.add.ellipse(0, bodyY, look.bodyW, look.bodyH, look.bodyColor).setStrokeStyle(0.8, dark));
+      out.push(sc.add.ellipse(0, bodyY + 1, look.bodyW * 0.85, look.bodyH * 0.55, look.bellyColor, 0.7));
+      // back ridge / scales
+      for (const ox of [-look.bodyW * 0.3, -look.bodyW * 0.1, look.bodyW * 0.1]) {
+        out.push(sc.add.triangle(ox, bodyY - look.bodyH * 0.5, -1.4, 1, 1.4, 1, 0, -2, dark));
+      }
+      // tail
+      out.push(sc.add.triangle(
+        -look.bodyW * 0.5 - 3, bodyY,
+        0, -look.bodyH * 0.5,
+        0, look.bodyH * 0.5,
+        -7, 0,
+        look.bodyColor,
+      ).setStrokeStyle(0.6, dark));
+      // snout
+      out.push(sc.add.rectangle(headX + 3, headY + 1, 6, look.bodyH * 0.55, look.bodyColor).setStrokeStyle(0.6, dark));
+      // eyes
+      out.push(sc.add.circle(headX - 1, headY - 1.2, 0.7, 0xffd96b));
+      // teeth glint
+      out.push(sc.add.rectangle(headX + 5, headY + 1.5, 3, 0.6, 0xfff2c2));
+      return out;
     }
 
     if (kind === "mammoth") {

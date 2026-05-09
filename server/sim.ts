@@ -140,15 +140,17 @@ interface AnimalSpec {
   matureAgeSec: number;
   gestationSec: number;
   maxAgeSec: number;
+  aquatic: boolean;
 }
 
 const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140 },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260 },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300 },
-  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320 },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280 },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420 },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, aquatic: false },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, aquatic: false },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300, aquatic: false },
+  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, aquatic: false },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, aquatic: false },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
+  alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
 };
 
 function pickHuntWeapon(res: Resources): HuntWeapon {
@@ -388,10 +390,13 @@ export class Sim {
     const counts: Map<AnimalKind, number> = new Map();
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
-        if (!isLandTile(this.seed, i, j)) continue;
         const b = biomeAt(this.seed, i, j);
+        const isWater = b === "lake" || b === "river";
+        const isLand = isLandTile(this.seed, i, j);
+        if (!isWater && !isLand) continue;
         for (const kind of kinds) {
           const spec = ANIMAL_SPECS[kind];
+          if (spec.aquatic ? !isWater : !isLand) continue;
           if (!spec.biomes.includes(b)) continue;
           const r01 = rand01(this.seed ^ kindHash(kind), i, j);
           if (r01 > spec.density) continue;
@@ -622,9 +627,9 @@ export class Sim {
             const fd = CAMPFIRE_REPEL_RADIUS + 2;
             const ti = Math.floor(a.gx + (dx / d) * fd);
             const tj = Math.floor(a.gy + (dy / d) * fd);
-            if (this.isWalkable(ti, tj)) {
+            if (this.animalWalkable(spec, ti, tj)) {
               const path = findPath(
-                (x, y) => this.isWalkable(x, y),
+                (x, y) => this.animalWalkable(spec, x, y),
                 Math.floor(a.gx),
                 Math.floor(a.gy),
                 ti,
@@ -784,9 +789,9 @@ export class Sim {
             const fd = PREY_FLEE_RANGE;
             const ti = Math.floor(a.gx + (dx / d) * fd);
             const tj = Math.floor(a.gy + (dy / d) * fd);
-            if (this.isWalkable(ti, tj)) {
+            if (this.animalWalkable(spec, ti, tj)) {
               const path = findPath(
-                (x, y) => this.isWalkable(x, y),
+                (x, y) => this.animalWalkable(spec, x, y),
                 Math.floor(a.gx),
                 Math.floor(a.gy),
                 ti,
@@ -827,9 +832,9 @@ export class Sim {
           const r = spec.wanderRadius;
           const ti = a.homeI + Math.floor((Math.random() * 2 - 1) * r);
           const tj = a.homeJ + Math.floor((Math.random() * 2 - 1) * r);
-          if (this.isWalkable(ti, tj) && biomeAt(this.seed, ti, tj) !== "lake" && biomeAt(this.seed, ti, tj) !== "river") {
+          if (this.animalWalkable(spec, ti, tj)) {
             const path = findPath(
-              (x, y) => this.isWalkable(x, y),
+              (x, y) => this.animalWalkable(spec, x, y),
               Math.floor(a.gx),
               Math.floor(a.gy),
               ti,
@@ -921,7 +926,7 @@ export class Sim {
     const spec = ANIMAL_SPECS[parent.kind];
     const ti = Math.floor(parent.gx);
     const tj = Math.floor(parent.gy);
-    if (!this.isWalkable(ti, tj)) return null;
+    if (!this.animalWalkable(spec, ti, tj)) return null;
     const id = `a_${parent.kind[0]}c${this.nextAnimalIdx++}`;
     return {
       id,
@@ -972,8 +977,13 @@ export class Sim {
     }
 
     a.repathTimer -= dt;
-    const ti = Math.floor(t.gx);
-    const tj = Math.floor(t.gy);
+    const tgtTile = this.aquaticPathTarget(spec, Math.floor(t.gx), Math.floor(t.gy));
+    if (!tgtTile) {
+      a.path = [];
+      return;
+    }
+    const ti = tgtTile.i;
+    const tj = tgtTile.j;
     const last = a.path[a.path.length - 1];
     const lastTile = last
       ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
@@ -981,7 +991,7 @@ export class Sim {
     if (a.repathTimer <= 0 || lastTile !== `${ti},${tj}`) {
       a.repathTimer = 0.5;
       const path = findPath(
-        (x, y) => this.isWalkable(x, y),
+        (x, y) => this.animalWalkable(spec, x, y),
         Math.floor(a.gx),
         Math.floor(a.gy),
         ti,
@@ -1040,8 +1050,13 @@ export class Sim {
     }
 
     a.repathTimer -= dt;
-    const ti = Math.floor(t.gx);
-    const tj = Math.floor(t.gy);
+    const tgtTile = this.aquaticPathTarget(spec, Math.floor(t.gx), Math.floor(t.gy));
+    if (!tgtTile) {
+      a.path = [];
+      return;
+    }
+    const ti = tgtTile.i;
+    const tj = tgtTile.j;
     const last = a.path[a.path.length - 1];
     const lastTile = last
       ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
@@ -1049,7 +1064,7 @@ export class Sim {
     if (a.repathTimer <= 0 || lastTile !== `${ti},${tj}`) {
       a.repathTimer = 0.4;
       const path = findPath(
-        (x, y) => this.isWalkable(x, y),
+        (x, y) => this.animalWalkable(spec, x, y),
         Math.floor(a.gx),
         Math.floor(a.gy),
         ti,
@@ -1393,6 +1408,45 @@ export class Sim {
 
   isWalkable(i: number, j: number): boolean {
     return isLandTile(this.seed, i, j);
+  }
+
+  private isWaterTile(i: number, j: number): boolean {
+    const b = biomeAt(this.seed, i, j);
+    return b === "lake" || b === "river";
+  }
+
+  private animalWalkable(spec: AnimalSpec, i: number, j: number): boolean {
+    if (spec.aquatic) return this.isWaterTile(i, j);
+    return this.isWalkable(i, j);
+  }
+
+  private aquaticPathTarget(
+    spec: AnimalSpec,
+    ti: number,
+    tj: number,
+  ): { i: number; j: number } | null {
+    if (!spec.aquatic) return { i: ti, j: tj };
+    if (this.isWaterTile(ti, tj)) return { i: ti, j: tj };
+    const maxR = 4;
+    let best: { i: number; j: number } | null = null;
+    let bestD = Infinity;
+    for (let r = 1; r <= maxR; r++) {
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+          const wi = ti + di;
+          const wj = tj + dj;
+          if (!this.isWaterTile(wi, wj)) continue;
+          const d = di * di + dj * dj;
+          if (d < bestD) {
+            bestD = d;
+            best = { i: wi, j: wj };
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
   }
 
   unitsSnapshot(): UnitSnapshot[] {

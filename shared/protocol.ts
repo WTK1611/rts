@@ -65,7 +65,8 @@ export type AnimalKind =
   | "megaloceros"
   | "bison"
   | "caveLion"
-  | "mammoth";
+  | "mammoth"
+  | "alligator";
 
 export interface AnimalSnapshot {
   id: string;
