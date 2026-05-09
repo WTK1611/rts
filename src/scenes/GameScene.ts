@@ -524,19 +524,19 @@ export class GameScene extends Phaser.Scene {
     if (len === 0) return;
 
     let chief: Unit | null = null;
-    const followers: Unit[] = [];
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
-      if (u.isChief) chief = u;
-      else followers.push(u);
+      if (u.isChief) {
+        chief = u;
+        break;
+      }
     }
     if (!chief) return;
 
     const stepDist = 8;
     const ti = Math.floor(chief.gx + (gdx / len) * stepDist);
     const tj = Math.floor(chief.gy + (gdy / len) * stepDist);
-    const ids: string[] = [chief.id, ...followers.map((u) => u.id)];
-    this.net.send({ type: "move", unitIds: ids, i: ti, j: tj });
+    this.net.send({ type: "move", unitIds: [chief.id], i: ti, j: tj });
   }
 
   private applyTribeFollow(): void {
