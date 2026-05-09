@@ -21,6 +21,7 @@ import {
   RemovedObject,
   Resources,
   TICK_RATE,
+  TribeSplit,
   UnitGender,
   UnitSnapshot,
 } from "../shared/protocol";
@@ -150,7 +151,7 @@ const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
   bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, aquatic: false },
   caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, aquatic: false },
   mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
-  alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
+  alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
 };
 
 function pickHuntWeapon(res: Resources): HuntWeapon {
@@ -562,8 +563,11 @@ export class Sim {
   ): ReturnType<typeof findPath> {
     const ti = Math.floor(a.gx);
     const tj = Math.floor(a.gy);
+    const aquaticTarget = ANIMAL_SPECS[a.kind].aquatic;
+    const walkable = (x: number, y: number) =>
+      aquaticTarget ? this.unitHuntWalkable(x, y) : this.isWalkable(x, y);
     const candidates: Array<{ i: number; j: number }> = [];
-    if (this.isWalkable(ti, tj)) candidates.push({ i: ti, j: tj });
+    if (walkable(ti, tj)) candidates.push({ i: ti, j: tj });
     const adj: Array<[number, number]> = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
@@ -571,13 +575,13 @@ export class Sim {
     for (const [di, dj] of adj) {
       const ni = ti + di;
       const nj = tj + dj;
-      if (this.isWalkable(ni, nj)) candidates.push({ i: ni, j: nj });
+      if (walkable(ni, nj)) candidates.push({ i: ni, j: nj });
     }
     let bestPath: ReturnType<typeof findPath> = null;
     for (const c of candidates) {
       if (blocked.has(`${c.i},${c.j}`)) continue;
       const p = findPath(
-        (x, y) => this.isWalkable(x, y),
+        walkable,
         Math.floor(u.gx),
         Math.floor(u.gy),
         c.i,
@@ -1413,6 +1417,20 @@ export class Sim {
   private isWaterTile(i: number, j: number): boolean {
     const b = biomeAt(this.seed, i, j);
     return b === "lake" || b === "river";
+  }
+
+  private isShallowWater(i: number, j: number): boolean {
+    if (!this.isWaterTile(i, j)) return false;
+    return (
+      this.isWalkable(i + 1, j) ||
+      this.isWalkable(i - 1, j) ||
+      this.isWalkable(i, j + 1) ||
+      this.isWalkable(i, j - 1)
+    );
+  }
+
+  private unitHuntWalkable(i: number, j: number): boolean {
+    return this.isWalkable(i, j) || this.isShallowWater(i, j);
   }
 
   private animalWalkable(spec: AnimalSpec, i: number, j: number): boolean {
