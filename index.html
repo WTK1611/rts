@@ -53,6 +53,28 @@
         border-top: 1px solid rgba(255,255,255,0.08);
         font-size: 11px; color: #88a088; line-height: 1.4;
       }
+      @media (pointer: coarse) {
+        #hud {
+          top: 6px; left: 6px;
+          padding: 6px 8px; border-radius: 6px;
+          min-width: 0;
+        }
+        #hud .me {
+          font-size: 12px; margin-bottom: 4px; gap: 6px;
+        }
+        #hud .me .swatch { width: 9px; height: 9px; flex-basis: 9px; }
+        #hud .res {
+          grid-template-columns: repeat(2, auto);
+          gap: 2px 8px; font-size: 11px;
+        }
+        #hud .res .item { gap: 4px; }
+        #hud .res .ico { width: 8px; height: 8px; flex-basis: 8px; }
+        #hud .others {
+          margin-top: 4px; padding-top: 4px; font-size: 10px;
+        }
+        #hud .others .row { gap: 6px; line-height: 1.3; }
+        #hud .others .swatch { width: 6px; height: 6px; flex-basis: 6px; }
+      }
       #toasts {
         position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
         display: flex; flex-direction: column; gap: 6px;

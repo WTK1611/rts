@@ -242,14 +242,20 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = document.getElementById("hud");
     this.minimapWrap = document.getElementById("minimap-wrap");
-    this.minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement | null;
-    if (this.minimapCanvas) this.minimapCtx = this.minimapCanvas.getContext("2d");
-    if (this.minimapWrap) this.minimapWrap.style.display = "block";
-    if (this.minimapCanvas) {
-      this.minimapCanvas.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        this.onMinimapClick(e);
-      });
+    const isMobile = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    if (isMobile) {
+      this.minimapVisible = false;
+      if (this.minimapWrap) this.minimapWrap.style.display = "none";
+    } else {
+      this.minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement | null;
+      if (this.minimapCanvas) this.minimapCtx = this.minimapCanvas.getContext("2d");
+      if (this.minimapWrap) this.minimapWrap.style.display = "block";
+      if (this.minimapCanvas) {
+        this.minimapCanvas.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          this.onMinimapClick(e);
+        });
+      }
     }
 
     this.updateChunks();
@@ -291,6 +297,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private toggleMinimap(): void {
+    if (!this.minimapCanvas) return;
     this.minimapVisible = !this.minimapVisible;
     if (this.minimapWrap) {
       this.minimapWrap.style.display = this.minimapVisible ? "block" : "none";

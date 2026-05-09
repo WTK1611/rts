@@ -10,7 +10,9 @@
       "Bash(curl -sv http://localhost:5173/)",
       "Bash(curl -sI http://localhost:5173/index.html)",
       "Bash(curl -sI http://localhost:5173/src/main.ts)",
-      "Bash(kill 91928 91997)"
+      "Bash(kill 91928 91997)",
+      "Bash(git -C /Users/tobias/rts/rts ls-files)",
+      "Bash(grep -E \"^\\\\.env$\")"
     ]
   }
 }
