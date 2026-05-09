@@ -62,6 +62,7 @@ export interface Strings {
   toastCampfireNotVisible: string;
   toastCampfireMissingResources: string;
   toastCampfireNotHere: string;
+  toastCampfireTooFar: string;
   toastArtifactOwn: (reward: string) => string;
   toastArtifactOther: (name: string, reward: string) => string;
 
@@ -153,6 +154,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Lagerfeuer hier nicht sichtbar",
     toastCampfireMissingResources: "Nicht genug Holz und Stein für ein Lagerfeuer",
     toastCampfireNotHere: "Hier kann kein Lagerfeuer entzündet werden",
+    toastCampfireTooFar: "Zu weit weg vom Stamm für ein Lagerfeuer",
     toastArtifactOwn: (r) => `Mythisches Artefakt entdeckt! Belohnung: ${r}`,
     toastArtifactOther: (n, r) =>
       `Stamm von ${n} hat ein mythisches Artefakt entdeckt (${r})`,
@@ -239,6 +241,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Campfire not visible here",
     toastCampfireMissingResources: "Not enough wood and stone for a campfire",
     toastCampfireNotHere: "Cannot light a campfire here",
+    toastCampfireTooFar: "Too far from your tribe for a campfire",
     toastArtifactOwn: (r) => `Mythic artifact discovered! Reward: ${r}`,
     toastArtifactOther: (n, r) =>
       `${n}'s tribe discovered a mythic artifact (${r})`,
@@ -325,6 +328,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Falò non visibile qui",
     toastCampfireMissingResources: "Legno e pietra insufficienti per un falò",
     toastCampfireNotHere: "Qui non si può accendere un falò",
+    toastCampfireTooFar: "Troppo lontano dalla tribù per un falò",
     toastArtifactOwn: (r) => `Artefatto mitico scoperto! Ricompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribù di ${n} ha scoperto un artefatto mitico (${r})`,
@@ -411,6 +415,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Hoguera no visible aquí",
     toastCampfireMissingResources: "Madera y piedra insuficientes para una hoguera",
     toastCampfireNotHere: "Aquí no se puede encender una hoguera",
+    toastCampfireTooFar: "Demasiado lejos de tu tribu para una hoguera",
     toastArtifactOwn: (r) => `¡Artefacto mítico descubierto! Recompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribu de ${n} ha descubierto un artefacto mítico (${r})`,
@@ -497,6 +502,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Fogueira não visível aqui",
     toastCampfireMissingResources: "Madeira e pedra insuficientes para uma fogueira",
     toastCampfireNotHere: "Aqui não se pode acender uma fogueira",
+    toastCampfireTooFar: "Demasiado longe da tribo para uma fogueira",
     toastArtifactOwn: (r) => `Artefacto mítico descoberto! Recompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `A tribo de ${n} descobriu um artefacto mítico (${r})`,
@@ -583,6 +589,7 @@ const STRINGS: Record<Language, Strings> = {
     toastCampfireNotVisible: "Feu de camp non visible ici",
     toastCampfireMissingResources: "Pas assez de bois et de pierre pour un feu de camp",
     toastCampfireNotHere: "Impossible d'allumer un feu de camp ici",
+    toastCampfireTooFar: "Trop loin de ta tribu pour un feu de camp",
     toastArtifactOwn: (r) => `Artefact mythique découvert ! Récompense : ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribu de ${n} a découvert un artefact mythique (${r})`,

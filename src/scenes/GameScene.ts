@@ -2026,7 +2026,7 @@ export class GameScene extends Phaser.Scene {
       if (d2 < nearestSq) nearestSq = d2;
     }
     if (nearestSq > 100) {
-      this.showToast("Zu weit weg vom Stamm für ein Lagerfeuer", "death");
+      this.showToast(s.toastCampfireTooFar, "death");
       return;
     }
     this.net.send({ type: "igniteCampfire", i, j });
@@ -2339,7 +2339,7 @@ export class GameScene extends Phaser.Scene {
     }
     const othersHtml = otherRows.length
       ? `<div class="others">${otherRows.join("")}</div>`
-      : `<div class="others">Warte auf weitere Stämme …</div>`;
+      : `<div class="others">${escapeHtml(s.hudWaitingForOthers)}</div>`;
 
     const myFlag = this.flagFor(this.playerId);
     const meActive = this.spectatorTarget === null ? " active" : "";
@@ -2347,7 +2347,7 @@ export class GameScene extends Phaser.Scene {
       `<div class="hud-drag-handle"></div>` +
       `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
       `<span class="swatch" style="background:${myColor}"></span>` +
-      `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
+      `${escapeHtml(s.hudTribeOf(myName))}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
       `${countChip(tribeCounts[this.playerId] ?? 0)}</div>` +
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
@@ -2375,6 +2375,7 @@ export class GameScene extends Phaser.Scene {
     const progress = this.growthProgress[this.playerId] ?? 0;
     const active = this.growthActive[this.playerId] ?? false;
 
+    const s = t();
     let cls = "growth";
     let stateLabel: string;
     let stateCls = "state";
@@ -2383,30 +2384,30 @@ export class GameScene extends Phaser.Scene {
     if (count >= MAX_TRIBE_SIZE) {
       cls += " full";
       stateCls += " full";
-      stateLabel = "Stamm voll";
+      stateLabel = s.growthFull;
       pct = 100;
     } else if (count < 2) {
       cls += " paused";
-      stateLabel = "zu wenig Stammesmitglieder";
+      stateLabel = s.growthTooFew;
     } else if (males < 1 || females < 1) {
       cls += " paused";
-      stateLabel = males < 1 ? "kein Mann im Stamm" : "keine Frau im Stamm";
+      stateLabel = males < 1 ? s.growthNoMan : s.growthNoWoman;
     } else if (active && progress >= 0.8) {
       cls += " imminent";
       stateCls += " imminent";
-      stateLabel = "Geburt steht bevor";
+      stateLabel = s.growthImminent;
     } else if (active) {
       stateCls += " active";
       stateLabel = `${pct}%`;
     } else {
       cls += " paused";
-      stateLabel = "pausiert";
+      stateLabel = s.growthPaused;
     }
 
     const fillPct = count >= MAX_TRIBE_SIZE ? 100 : Math.round(progress * 100);
     return (
       `<div class="${cls}">` +
-      `<div class="label-row"><span class="lbl">Wachstum</span>` +
+      `<div class="label-row"><span class="lbl">${escapeHtml(s.growthLabel)}</span>` +
       `<span class="${stateCls}">${escapeHtml(stateLabel)}</span></div>` +
       `<div class="bar"><div class="fill" style="width:${fillPct}%"></div></div>` +
       `</div>`
@@ -2426,18 +2427,19 @@ export class GameScene extends Phaser.Scene {
     const elapsedMs = Date.now() - this.gameStartMs;
     const totalSec = Math.floor(elapsedMs / 1000);
     const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    const timeStr = `${m}:${s.toString().padStart(2, "0")}`;
+    const sec = totalSec % 60;
+    const timeStr = `${m}:${sec.toString().padStart(2, "0")}`;
+    const tr = t();
 
     const collected = this.collectedTotals;
     const labels: Record<keyof Resources, string> = {
-      holz: "Holz",
-      wasser: "Wasser",
-      beeren: "Beeren",
-      pilze: "Pilze",
-      fleisch: "Fleisch",
-      fisch: "Fisch",
-      stein: "Stein",
+      holz: tr.resHolz,
+      wasser: tr.resWasser,
+      beeren: tr.resBeeren,
+      pilze: tr.resPilze,
+      fleisch: tr.resFleisch,
+      fisch: tr.resFisch,
+      stein: tr.resStein,
     };
     const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(
@@ -2446,7 +2448,7 @@ export class GameScene extends Phaser.Scene {
         `<span class="go-label">${labels[k]}</span><b>${collected[k]}</b></div>`,
     ).join("");
 
-    const myName = this.names[this.playerId] || "Stamm";
+    const myName = this.names[this.playerId] || tr.hudTribeFallback(this.playerId);
     const entry: ScoreEntry = {
       name: myName,
       timeSec: totalSec,
@@ -2461,30 +2463,30 @@ export class GameScene extends Phaser.Scene {
     overlay.id = "gameover";
     overlay.innerHTML =
       `<div id="gameover-card">` +
-      `<h1>Dein Stamm ist ausgestorben</h1>` +
-      `<div class="go-sub">Statistik</div>` +
+      `<h1>${escapeHtml(tr.goTitle)}</h1>` +
+      `<div class="go-sub">${escapeHtml(tr.goStatistics)}</div>` +
       `<div class="go-stats">` +
-      `<div class="go-row"><span>Überlebenszeit</span><b>${timeStr}</b></div>` +
-      `<div class="go-row"><span>Stammesmitglieder (max.)</span><b>${this.maxTribeSize}</b></div>` +
-      `<div class="go-row"><span>Gesammelt gesamt</span><b>${totalCollected}</b></div>` +
-      `<div class="go-row"><span>Punkte</span><b>${entry.score}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goSurvival)}</span><b>${timeStr}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goMaxTribe)}</span><b>${this.maxTribeSize}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goCollectedTotal)}</span><b>${totalCollected}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goPoints)}</span><b>${entry.score}</b></div>` +
       `</div>` +
-      `<div class="go-sub">Ressourcen</div>` +
+      `<div class="go-sub">${escapeHtml(tr.goResources)}</div>` +
       `<div class="go-res">${resHtml}</div>` +
-      `<div class="go-sub">Bestenliste</div>` +
+      `<div class="go-sub">${escapeHtml(tr.goLeaderboard)}</div>` +
       `<div class="lb" id="gameover-lb">` +
       `<div class="lb-row lb-head">` +
-      `<span class="lb-rank">#</span>` +
-      `<span class="lb-name">Stamm</span>` +
-      `<span class="lb-stat">Zeit</span>` +
-      `<span class="lb-stat">Sml.</span>` +
-      `<span class="lb-stat">Mitg.</span>` +
-      `<span class="lb-score">Pkt.</span>` +
+      `<span class="lb-rank">${escapeHtml(tr.lbHeaderRank)}</span>` +
+      `<span class="lb-name">${escapeHtml(tr.lbHeaderTribe)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderTime)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderCollected)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderMembers)}</span>` +
+      `<span class="lb-score">${escapeHtml(tr.lbHeaderScore)}</span>` +
       `</div>` +
-      `<div class="lb-loading">Bestenliste lädt …</div>` +
+      `<div class="lb-loading">${escapeHtml(tr.lbLoading)}</div>` +
       `</div>` +
       `<div id="gameover-rank-note"></div>` +
-      `<div class="btn-row"><button id="gameover-btn" class="btn">Neu starten</button></div>` +
+      `<div class="btn-row"><button id="gameover-btn" class="btn">${escapeHtml(tr.goRestart)}</button></div>` +
       `</div>`;
     document.body.appendChild(overlay);
     const btn = document.getElementById("gameover-btn");
@@ -2501,18 +2503,19 @@ export class GameScene extends Phaser.Scene {
     const lb = document.getElementById("gameover-lb");
     const rankNote = document.getElementById("gameover-rank-note");
     if (!lb) return;
+    const tr = t();
     const entry = this.pendingScoreEntry;
     const top = msg.entries.slice(0, 10);
     const rows = top
       .map((e, idx) => {
         const isMe = !!entry && e.ts === msg.myEntryTs && e.score === entry.score;
         const rank = idx + 1;
-        const t = formatTime(e.timeSec);
+        const timeStr = formatTime(e.timeSec);
         return (
           `<div class="lb-row${isMe ? " lb-me" : ""}">` +
           `<span class="lb-rank">${rank}</span>` +
           `<span class="lb-name">${escapeHtml(e.name)}</span>` +
-          `<span class="lb-stat">${t}</span>` +
+          `<span class="lb-stat">${timeStr}</span>` +
           `<span class="lb-stat">${e.collected}</span>` +
           `<span class="lb-stat">${e.tribe}</span>` +
           `<span class="lb-score">${e.score}</span>` +
@@ -2522,17 +2525,17 @@ export class GameScene extends Phaser.Scene {
       .join("");
     lb.innerHTML =
       `<div class="lb-row lb-head">` +
-      `<span class="lb-rank">#</span>` +
-      `<span class="lb-name">Stamm</span>` +
-      `<span class="lb-stat">Zeit</span>` +
-      `<span class="lb-stat">Sml.</span>` +
-      `<span class="lb-stat">Mitg.</span>` +
-      `<span class="lb-score">Pkt.</span>` +
+      `<span class="lb-rank">${escapeHtml(tr.lbHeaderRank)}</span>` +
+      `<span class="lb-name">${escapeHtml(tr.lbHeaderTribe)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderTime)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderCollected)}</span>` +
+      `<span class="lb-stat">${escapeHtml(tr.lbHeaderMembers)}</span>` +
+      `<span class="lb-score">${escapeHtml(tr.lbHeaderScore)}</span>` +
       `</div>` +
-      (rows || `<div class="lb-loading">Noch keine Einträge.</div>`);
+      (rows || `<div class="lb-loading">${escapeHtml(tr.lbEmpty)}</div>`);
     if (rankNote && entry && msg.myRank > top.length) {
       rankNote.innerHTML =
-        `<div class="lb-note">Dein Platz: #${msg.myRank}</div>`;
+        `<div class="lb-note">${escapeHtml(tr.lbYourRank(msg.myRank))}</div>`;
     } else if (rankNote) {
       rankNote.innerHTML = "";
     }
