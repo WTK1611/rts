@@ -156,6 +156,13 @@ export class GameScene extends Phaser.Scene {
   private initialTribeSize = 0;
   private isGameOver = false;
 
+  private lastFogBoundsKey = "";
+  private lastFogVisibleHash = 0;
+  private lastFogExploredSize = -1;
+  private lastFootprintsTick = -1;
+  private lastFootprintsBoundsKey = "";
+  private lastFootprintsCount = -1;
+
   constructor() {
     super("GameScene");
   }
@@ -251,21 +258,8 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = document.getElementById("hud");
     this.minimapWrap = document.getElementById("minimap-wrap");
-    const isMobile = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-    if (isMobile) {
-      this.minimapVisible = false;
-      if (this.minimapWrap) this.minimapWrap.style.display = "none";
-    } else {
-      this.minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement | null;
-      if (this.minimapCanvas) this.minimapCtx = this.minimapCanvas.getContext("2d");
-      if (this.minimapWrap) this.minimapWrap.style.display = "block";
-      if (this.minimapCanvas) {
-        this.minimapCanvas.addEventListener("pointerdown", (e) => {
-          e.preventDefault();
-          this.onMinimapClick(e);
-        });
-      }
-    }
+    this.minimapVisible = false;
+    if (this.minimapWrap) this.minimapWrap.style.display = "none";
 
     this.updateChunks();
     this.updateFog();
@@ -297,12 +291,6 @@ export class GameScene extends Phaser.Scene {
     this.updateChunks();
     this.updateFog();
     this.drawFootprints();
-
-    this.minimapAccum += dt;
-    if (this.minimapAccum >= 0.1) {
-      this.minimapAccum = 0;
-      this.drawMinimap();
-    }
   }
 
   private toggleMinimap(): void {
@@ -698,6 +686,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateFog(): void {
     this.visible.clear();
+    let visHash = 0;
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
       const r = SIGHT_RADIUS;
@@ -714,37 +703,53 @@ export class GameScene extends Phaser.Scene {
           const dy = j + 0.5 - cy;
           if (dx * dx + dy * dy <= r2) {
             const k = `${i},${j}`;
-            this.visible.add(k);
-            this.explored.add(k);
+            if (!this.visible.has(k)) {
+              this.visible.add(k);
+              visHash = (Math.imul(visHash, 31) + i) | 0;
+              visHash = (Math.imul(visHash, 31) + j) | 0;
+              this.explored.add(k);
+            }
           }
         }
       }
     }
 
     const { i0, i1, j0, j1 } = this.viewTileBounds();
-    this.fog.clear();
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const k = `${i},${j}`;
-        if (this.visible.has(k)) continue;
-        const ex = this.explored.has(k);
-        const { x, y } = gridToScreen(i, j);
-        const hN = heightAt(this.seed, i, j);
-        const hE = heightAt(this.seed, i + 1, j);
-        const hS = heightAt(this.seed, i + 1, j + 1);
-        const hW = heightAt(this.seed, i, j + 1);
-        if (ex) {
-          this.fog.fillStyle(0x808080, 0.55);
-        } else {
-          this.fog.fillStyle(0x000000, 1);
+    const boundsKey = `${i0},${i1},${j0},${j1}`;
+    const exploredSize = this.explored.size;
+    const fogChanged =
+      boundsKey !== this.lastFogBoundsKey ||
+      visHash !== this.lastFogVisibleHash ||
+      exploredSize !== this.lastFogExploredSize;
+
+    if (fogChanged) {
+      this.lastFogBoundsKey = boundsKey;
+      this.lastFogVisibleHash = visHash;
+      this.lastFogExploredSize = exploredSize;
+      this.fog.clear();
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const k = `${i},${j}`;
+          if (this.visible.has(k)) continue;
+          const ex = this.explored.has(k);
+          const { x, y } = gridToScreen(i, j);
+          const hN = heightAt(this.seed, i, j);
+          const hE = heightAt(this.seed, i + 1, j);
+          const hS = heightAt(this.seed, i + 1, j + 1);
+          const hW = heightAt(this.seed, i, j + 1);
+          if (ex) {
+            this.fog.fillStyle(0x808080, 0.55);
+          } else {
+            this.fog.fillStyle(0x000000, 1);
+          }
+          this.fog.beginPath();
+          this.fog.moveTo(x, y - hN);
+          this.fog.lineTo(x + TILE_W / 2, y + TILE_H / 2 - hE);
+          this.fog.lineTo(x, y + TILE_H - hS);
+          this.fog.lineTo(x - TILE_W / 2, y + TILE_H / 2 - hW);
+          this.fog.closePath();
+          this.fog.fillPath();
         }
-        this.fog.beginPath();
-        this.fog.moveTo(x, y - hN);
-        this.fog.lineTo(x + TILE_W / 2, y + TILE_H / 2 - hE);
-        this.fog.lineTo(x, y + TILE_H - hS);
-        this.fog.lineTo(x - TILE_W / 2, y + TILE_H / 2 - hW);
-        this.fog.closePath();
-        this.fog.fillPath();
       }
     }
 
@@ -798,13 +803,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawFootprints(): void {
-    this.footprintsGfx.clear();
-    if (this.footprints.length === 0) return;
-    const { i0, i1, j0, j1 } = this.viewTileBounds();
     const cutoff = this.serverTick - FOOTPRINT_LIFETIME_TICKS;
     let drop = 0;
     while (drop < this.footprints.length && this.footprints[drop].t < cutoff) drop++;
     if (drop > 0) this.footprints.splice(0, drop);
+
+    const { i0, i1, j0, j1 } = this.viewTileBounds();
+    const boundsKey = `${i0},${i1},${j0},${j1}`;
+    const changed =
+      this.serverTick !== this.lastFootprintsTick ||
+      boundsKey !== this.lastFootprintsBoundsKey ||
+      this.footprints.length !== this.lastFootprintsCount;
+    if (!changed) return;
+    this.lastFootprintsTick = this.serverTick;
+    this.lastFootprintsBoundsKey = boundsKey;
+    this.lastFootprintsCount = this.footprints.length;
+
+    this.footprintsGfx.clear();
+    if (this.footprints.length === 0) return;
 
     for (const fp of this.footprints) {
       if (fp.i < i0 || fp.i > i1 || fp.j < j0 || fp.j > j1) continue;
