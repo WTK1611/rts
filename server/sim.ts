@@ -2,6 +2,7 @@ import { findPath } from "../shared/pathfinding";
 import {
   AnimalKind,
   AnimalSnapshot,
+  CampfireSnapshot,
   EncounterEvent,
   emptyResources,
   Footprint,
@@ -44,6 +45,7 @@ const FISH_HARVEST_AMOUNT = 1;
 const STARTING_GENDERS: UnitGender[] = ["m", "f", "m", "f"];
 const TRIBE_SIZE = STARTING_GENDERS.length;
 const GROWTH_REQUIRED_SEC = 120;
+const PREGNANCY_HEALTH_MIN_FRAC = 0.33;
 const ENCOUNTER_RANGE = 5;
 const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
 const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
@@ -56,6 +58,13 @@ const STONE_AUTOPICK_GAIN = 1;
 const STONE_HARVEST_AMOUNT = 2;
 const FISH_AUTOPICK_GAIN = 1;
 const WATER_AUTOPICK_GAIN = 1;
+
+const CAMPFIRE_IGNITE_DELAY_SEC = 8;
+const CAMPFIRE_IGNITE_MIN_UNITS = 2;
+const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
+const CAMPFIRE_RANGE = 2.5;
+const CAMPFIRE_BURN_PER_FUEL_SEC = 25;
+const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -84,6 +93,7 @@ export interface SimUnit {
   gender: UnitGender;
   firstName: string;
   isChief: boolean;
+  idleSec: number;
 }
 
 const MAX_AGE_SEC = 420;
@@ -133,6 +143,16 @@ const ANIMAL_ATTACK_INTERVAL = 1.0;
 const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
 const GROUP_FIGHT_RANGE = 7;
 const ANIMAL_ESCAPE_RANGE_MULT = 1.8;
+const TRIBE_COHESION_RADIUS = 6;
+const TRIBE_COHESION_IDLE_SEC = 2.0;
+
+export interface SimCampfire {
+  id: string;
+  owner: PlayerId;
+  gx: number;
+  gy: number;
+  fuelTimer: number;
+}
 
 export interface SimAnimal {
   id: string;
@@ -194,13 +214,18 @@ export class Sim {
   removedAnimalIds: string[] = [];
   deadUnitIds: string[] = [];
   extinctTribes: PlayerId[] = [];
+  respawnedTribes: PlayerId[] = [];
   newUnits: UnitSnapshot[] = [];
-  growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
-  growthActive: boolean[] = new Array(MAX_PLAYERS).fill(false);
+  pregnancyTimer: Map<string, number> = new Map();
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
   tribeLanguage: Language[] = new Array(MAX_PLAYERS).fill("de");
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
+  campfires: Map<string, SimCampfire> = new Map();
+  campfireIgniteSec: number[] = new Array(MAX_PLAYERS).fill(0);
+  campfireIgniteCx: number[] = new Array(MAX_PLAYERS).fill(0);
+  campfireIgniteCy: number[] = new Array(MAX_PLAYERS).fill(0);
+  removedCampfireIds: string[] = [];
   tick = 0;
 
   constructor(seed: number) {
@@ -270,9 +295,43 @@ export class Sim {
     return out;
   }
 
+  consumeRespawnedTribes(): PlayerId[] {
+    const out = this.respawnedTribes;
+    this.respawnedTribes = [];
+    return out;
+  }
+
+  tribeCounts(): number[] {
+    const out = new Array(MAX_PLAYERS).fill(0);
+    for (const u of this.units.values()) {
+      if (u.owner >= 0 && u.owner < out.length) out[u.owner]++;
+    }
+    return out;
+  }
+
   consumeNewUnits(): UnitSnapshot[] {
     const out = this.newUnits;
     this.newUnits = [];
+    return out;
+  }
+
+  consumeRemovedCampfireIds(): string[] {
+    const out = this.removedCampfireIds;
+    this.removedCampfireIds = [];
+    return out;
+  }
+
+  campfiresSnapshot(): CampfireSnapshot[] {
+    const out: CampfireSnapshot[] = [];
+    for (const f of this.campfires.values()) {
+      out.push({
+        id: f.id,
+        owner: f.owner,
+        gx: f.gx,
+        gy: f.gy,
+        fuel: Math.max(0, Math.min(1, f.fuelTimer / CAMPFIRE_BURN_PER_FUEL_SEC)),
+      });
+    }
     return out;
   }
 
@@ -686,8 +745,7 @@ export class Sim {
   addPlayer(p: PlayerId, language?: Language): UnitSnapshot[] {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
-    this.growthTimer[p] = 0;
-    this.growthActive[p] = false;
+    this.clearPregnanciesFor(p);
     this.nextUnitIdx[p] = TRIBE_SIZE;
     this.tribeLanguage[p] = language ?? languageForSlot(this.seed, p);
     const a = this.spawns[p];
@@ -725,11 +783,71 @@ export class Sim {
         gender,
         firstName: pickFirstName(this.seed, lang, gender, p, k),
         isChief: false,
+        idleSec: 0,
       };
       this.units.set(u.id, u);
       created.push(u);
     }
     this.updateChiefs();
+    return created.map(this.snap);
+  }
+
+  respawnTribe(p: PlayerId, language?: Language): UnitSnapshot[] {
+    this.active[p] = true;
+    this.clearPregnanciesFor(p);
+    this.resources[p] = emptyResources();
+    this.campfireIgniteSec[p] = 0;
+    const fid = this.campfireIdFor(p);
+    if (this.campfires.has(fid)) {
+      this.campfires.delete(fid);
+      this.removedCampfireIds.push(fid);
+    }
+    this.tribeLanguage[p] = language ?? languageForSlot(this.seed, p);
+    const a = this.spawns[p];
+    const offsets: Array<[number, number]> = [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ];
+    const created: SimUnit[] = [];
+    const lang = this.tribeLanguage[p];
+    const base = this.nextUnitIdx[p];
+    for (let k = 0; k < TRIBE_SIZE; k++) {
+      const [di, dj] = offsets[k % offsets.length];
+      const idx = base + k;
+      const ageJitter = rand01(this.seed ^ 0xa6e, idx, p) * 180;
+      const gender = STARTING_GENDERS[k];
+      const u: SimUnit = {
+        id: `u_p${p}_${idx}`,
+        owner: p,
+        gx: a.cx + di + 0.5,
+        gy: a.cy + dj + 0.5,
+        speed: 3.5,
+        color: PLAYER_COLORS[p % PLAYER_COLORS.length],
+        state: "idle",
+        path: [],
+        harvestTarget: null,
+        huntTarget: null,
+        huntTimer: 0,
+        harvestTimer: 0,
+        lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
+        hp: UNIT_HP_MAX,
+        hpMax: UNIT_HP_MAX,
+        eatCooldown: 0,
+        autoHuntScanTimer: rand01(this.seed ^ 0xb33, idx, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
+        ageSec: CHILD_AGE_SEC + ageJitter,
+        gender,
+        firstName: pickFirstName(this.seed, lang, gender, p, idx),
+        isChief: false,
+        idleSec: 0,
+      };
+      this.units.set(u.id, u);
+      created.push(u);
+    }
+    this.nextUnitIdx[p] = base + TRIBE_SIZE;
+    this.updateChiefs();
+    this.respawnedTribes.push(p);
     return created.map(this.snap);
   }
 
@@ -744,13 +862,22 @@ export class Sim {
       }
     }
     this.resources[p] = emptyResources();
-    this.growthTimer[p] = 0;
-    this.growthActive[p] = false;
+    this.clearPregnanciesFor(p);
+    this.campfireIgniteSec[p] = 0;
+    const fid = this.campfireIdFor(p);
+    if (this.campfires.has(fid)) {
+      this.campfires.delete(fid);
+      this.removedCampfireIds.push(fid);
+    }
     for (const key of [...this.lastEncounterTick.keys()]) {
       const [a, b] = key.split("_").map(Number);
       if (a === p || b === p) this.lastEncounterTick.delete(key);
     }
     return removed;
+  }
+
+  private campfireIdFor(p: PlayerId): string {
+    return `cf_p${p}`;
   }
 
   isWalkable(i: number, j: number): boolean {
@@ -1136,7 +1263,11 @@ export class Sim {
         u.eatCooldown = EAT_INTERVAL;
         this.autoEat(u);
       }
-      u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
+      if (this.unitAtOwnFire(u)) {
+        u.hp = Math.min(u.hpMax, u.hp + CAMPFIRE_HP_REGEN_PER_SEC * dt);
+      } else {
+        u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
+      }
       u.ageSec += dt;
       if (u.ageSec >= MAX_AGE_SEC) u.hp = 0;
       if (u.huntTarget) {
@@ -1181,6 +1312,16 @@ export class Sim {
           this.applyHarvestTick(u, tgt);
         }
       }
+      if (
+        u.state === "idle" &&
+        u.path.length === 0 &&
+        !u.harvestTarget &&
+        !u.huntTarget
+      ) {
+        u.idleSec += dt;
+      } else {
+        u.idleSec = 0;
+      }
     }
     this.expireFootprints();
     this.expireRegrows();
@@ -1188,7 +1329,120 @@ export class Sim {
     this.growthCheck(dt);
     this.encounterCheck();
     this.spreadIdleUnits();
+    this.cohereTribes();
     this.updateChiefs();
+    this.campfireStep(dt);
+  }
+
+  private unitAtOwnFire(u: SimUnit): boolean {
+    const f = this.campfires.get(this.campfireIdFor(u.owner));
+    if (!f) return false;
+    const dx = f.gx - u.gx;
+    const dy = f.gy - u.gy;
+    return dx * dx + dy * dy <= CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+  }
+
+  private campfireStep(dt: number): void {
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!this.active[p]) {
+        this.campfireIgniteSec[p] = 0;
+        continue;
+      }
+      this.tickIgniteFor(p, dt);
+    }
+
+    for (const f of [...this.campfires.values()]) {
+      f.fuelTimer -= dt;
+      if (f.fuelTimer > 0) continue;
+      let nearby = 0;
+      for (const u of this.units.values()) {
+        if (u.owner !== f.owner) continue;
+        const dx = u.gx - f.gx;
+        const dy = u.gy - f.gy;
+        if (dx * dx + dy * dy <= CAMPFIRE_RANGE * CAMPFIRE_RANGE) {
+          nearby++;
+          break;
+        }
+      }
+      const r = this.resources[f.owner];
+      if (nearby > 0 && r.holz >= 1 && r.stein >= 1) {
+        r.holz -= 1;
+        r.stein -= 1;
+        f.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
+      } else {
+        this.campfires.delete(f.id);
+        this.removedCampfireIds.push(f.id);
+      }
+    }
+  }
+
+  private tickIgniteFor(p: PlayerId, dt: number): void {
+    if (this.campfires.has(this.campfireIdFor(p))) {
+      this.campfireIgniteSec[p] = 0;
+      return;
+    }
+    let cx = 0;
+    let cy = 0;
+    let stationary = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== p) continue;
+      if (u.path.length > 0) continue;
+      if (u.huntTarget) continue;
+      if (u.harvestTarget) continue;
+      cx += u.gx;
+      cy += u.gy;
+      stationary++;
+    }
+    if (stationary < CAMPFIRE_IGNITE_MIN_UNITS) {
+      this.campfireIgniteSec[p] = 0;
+      return;
+    }
+    cx /= stationary;
+    cy /= stationary;
+    let cluster = 0;
+    const r2 = CAMPFIRE_IGNITE_CLUSTER_RADIUS * CAMPFIRE_IGNITE_CLUSTER_RADIUS;
+    for (const u of this.units.values()) {
+      if (u.owner !== p) continue;
+      if (u.path.length > 0) continue;
+      if (u.huntTarget) continue;
+      if (u.harvestTarget) continue;
+      const dx = u.gx - cx;
+      const dy = u.gy - cy;
+      if (dx * dx + dy * dy <= r2) cluster++;
+    }
+    if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) {
+      this.campfireIgniteSec[p] = 0;
+      return;
+    }
+    if (this.campfireIgniteSec[p] <= 0) {
+      this.campfireIgniteCx[p] = cx;
+      this.campfireIgniteCy[p] = cy;
+    } else {
+      const ax = this.campfireIgniteCx[p];
+      const ay = this.campfireIgniteCy[p];
+      const dx = cx - ax;
+      const dy = cy - ay;
+      if (dx * dx + dy * dy > r2) {
+        this.campfireIgniteCx[p] = cx;
+        this.campfireIgniteCy[p] = cy;
+        this.campfireIgniteSec[p] = 0;
+      }
+    }
+    this.campfireIgniteSec[p] += dt;
+    if (this.campfireIgniteSec[p] < CAMPFIRE_IGNITE_DELAY_SEC) return;
+    const r = this.resources[p];
+    if (r.holz < 1 || r.stein < 1) return;
+    r.holz -= 1;
+    r.stein -= 1;
+    const id = this.campfireIdFor(p);
+    this.campfires.set(id, {
+      id,
+      owner: p,
+      gx: this.campfireIgniteCx[p],
+      gy: this.campfireIgniteCy[p],
+      fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+    });
+    this.campfireIgniteSec[p] = 0;
   }
 
   private encounterCheck(): void {
@@ -1227,18 +1481,8 @@ export class Sim {
         const { aToB, bToA } = this.transferWomenForBalance(
           a, b, byPlayer[a], byPlayer[b],
         );
-        const listA = (aToB > 0 || bToA > 0)
-          ? byPlayer[a].filter((u) => u.owner === a)
-              .concat(byPlayer[b].filter((u) => u.owner === a))
-          : byPlayer[a];
-        const listB = (aToB > 0 || bToA > 0)
-          ? byPlayer[b].filter((u) => u.owner === b)
-              .concat(byPlayer[a].filter((u) => u.owner === b))
-          : byPlayer[b];
-        const bornForA = this.tryFreeBirth(a, listA);
-        const bornForB = this.tryFreeBirth(b, listB);
         this.encounterEvents.push({
-          a, b, bornForA, bornForB,
+          a, b,
           transfersAtoB: aToB,
           transfersBtoA: bToA,
         });
@@ -1303,25 +1547,9 @@ export class Sim {
       u.huntTimer = 0;
       u.harvestTimer = 0;
       u.state = "idle";
+      this.pregnancyTimer.delete(u.id);
       moved++;
     }
-  }
-
-  private tryFreeBirth(p: PlayerId, list: SimUnit[]): boolean {
-    if (list.length < 2 || list.length >= MAX_TRIBE_SIZE) return false;
-    let males = 0;
-    let females = 0;
-    let cx = 0;
-    let cy = 0;
-    for (const u of list) {
-      if (u.gender === "m") males++;
-      else females++;
-      cx += u.gx;
-      cy += u.gy;
-    }
-    if (males < 1 || females < 1) return false;
-    this.spawnNewTribeMember(p, cx / list.length, cy / list.length);
-    return true;
   }
 
   consumeEncounterEvents(): EncounterEvent[] {
@@ -1334,6 +1562,7 @@ export class Sim {
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!this.active[p]) {
         this.growthActive[p] = false;
+        this.pregnantUnitId[p] = null;
         continue;
       }
       let count = 0;
@@ -1341,23 +1570,57 @@ export class Sim {
       let females = 0;
       let cx = 0;
       let cy = 0;
+      let healthyFemale: SimUnit | null = null;
       for (const u of this.units.values()) {
         if (u.owner !== p) continue;
         count++;
         if (u.gender === "m") males++;
-        else females++;
+        else {
+          females++;
+          if (!healthyFemale) {
+            const frac = u.hpMax > 0 ? u.hp / u.hpMax : 0;
+            if (frac >= PREGNANCY_HEALTH_MIN_FRAC) healthyFemale = u;
+          }
+        }
         cx += u.gx;
         cy += u.gy;
       }
       if (count < 2 || count >= MAX_TRIBE_SIZE || males < 1 || females < 1) {
         this.growthTimer[p] = 0;
         this.growthActive[p] = false;
+        this.pregnantUnitId[p] = null;
         continue;
       }
+
+      let pregId = this.pregnantUnitId[p];
+      if (pregId) {
+        const pu = this.units.get(pregId);
+        if (!pu || pu.owner !== p || pu.gender !== "f") {
+          pregId = null;
+          this.growthTimer[p] = 0;
+        } else {
+          const frac = pu.hpMax > 0 ? pu.hp / pu.hpMax : 0;
+          if (frac < PREGNANCY_HEALTH_MIN_FRAC) {
+            pregId = null;
+            this.growthTimer[p] = 0;
+          }
+        }
+      }
+      if (!pregId) {
+        if (!healthyFemale) {
+          this.growthActive[p] = false;
+          this.pregnantUnitId[p] = null;
+          continue;
+        }
+        pregId = healthyFemale.id;
+      }
+
+      this.pregnantUnitId[p] = pregId;
       this.growthActive[p] = true;
       this.growthTimer[p] += dt;
       if (this.growthTimer[p] >= GROWTH_REQUIRED_SEC) {
         this.growthTimer[p] = 0;
+        this.pregnantUnitId[p] = null;
         this.spawnNewTribeMember(p, cx / count, cy / count);
       }
     }
@@ -1419,6 +1682,7 @@ export class Sim {
       gender,
       firstName: pickFirstName(this.seed, lang, gender, p, k),
       isChief: false,
+      idleSec: 0,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));
@@ -1506,6 +1770,47 @@ export class Sim {
         }
         const last = u.path[u.path.length - 1];
         if (last) blocked.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      }
+    }
+  }
+
+  private cohereTribes(): void {
+    const byOwner: SimUnit[][] = Array.from(
+      { length: MAX_PLAYERS },
+      () => [] as SimUnit[],
+    );
+    for (const u of this.units.values()) byOwner[u.owner].push(u);
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      const list = byOwner[p];
+      if (list.length < 2) continue;
+      let cx = 0, cy = 0;
+      for (const u of list) { cx += u.gx; cy += u.gy; }
+      cx /= list.length;
+      cy /= list.length;
+      const r2 = TRIBE_COHESION_RADIUS * TRIBE_COHESION_RADIUS;
+      const claimed = new Set<string>();
+      for (const u of list) {
+        if (u.path.length > 0) continue;
+        if (u.harvestTarget || u.huntTarget) continue;
+        if (u.state !== "idle") continue;
+        if (u.idleSec < TRIBE_COHESION_IDLE_SEC) continue;
+        const dx = u.gx - cx;
+        const dy = u.gy - cy;
+        if (dx * dx + dy * dy <= r2) continue;
+        const ti = Math.floor(cx);
+        const tj = Math.floor(cy);
+        const blocked = this.blockedTilesFor(u, claimed);
+        let target: { i: number; j: number } | null = null;
+        if (this.isWalkable(ti, tj) && !blocked.has(`${ti},${tj}`)) {
+          target = { i: ti, j: tj };
+        } else {
+          target = this.findFreeTileNear(ti, tj, blocked);
+        }
+        if (!target) continue;
+        this.startMove(u, target.i, target.j, blocked);
+        u.idleSec = 0;
+        const last = u.path[u.path.length - 1];
+        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       }
     }
   }

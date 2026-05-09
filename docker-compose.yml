@@ -7,3 +7,6 @@ services:
       - "127.0.0.1:8787:8787"
     environment:
       PORT: "8787"
+      RTS_DB_PATH: "/app/data/rts.db"
+    volumes:
+      - ./data:/app/data

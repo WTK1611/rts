@@ -97,7 +97,7 @@ Maus + Tastatur:
 - **Linksklick auf Einheit** — Einzelauswahl
 - **Linksklick + Ziehen** — Boxauswahl
 - **Rechtsklick** auf Boden → Bewegen, auf Ressource → Sammeln, auf Tier → Jagen
-- **WASD** — gesamten Stamm in eine Richtung bewegen
+- **WASD** oder **Pfeiltasten** — gesamten Stamm in eine Richtung bewegen
 - **Mausrad** — Zoom
 - **M** — Minimap ein/aus
 - Mauszeiger an den Bildschirmrand → Edge-Pan

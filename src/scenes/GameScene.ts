@@ -7,18 +7,23 @@ import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
 import { Animal } from "../Animal";
+import { Campfire } from "../Campfire";
 import { Net } from "../net";
 import {
   AnimalSnapshot,
+  CampfireSnapshot,
+  emptyResources,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   InitMessage,
+  LeaderboardMessage,
   MAX_TRIBE_SIZE,
   ObjectKind,
   PlayerId,
   RemovedObject,
   RESOURCE_KEYS,
   Resources,
+  ScoreEntry,
   ServerMessage,
   StateMessage,
   TICK_RATE,
@@ -103,6 +108,7 @@ export class GameScene extends Phaser.Scene {
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
   private animals: Map<string, Animal> = new Map();
+  private campfires: Map<string, Campfire> = new Map();
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -115,6 +121,8 @@ export class GameScene extends Phaser.Scene {
 
   private drag: DragState | null = null;
   private resources: Resources[] = [];
+  private collectedTotals: Resources = emptyResources();
+  private pendingScoreEntry: ScoreEntry | null = null;
   private hud: HTMLElement | null = null;
   private minimapWrap: HTMLElement | null = null;
   private minimapCanvas: HTMLCanvasElement | null = null;
@@ -124,6 +132,7 @@ export class GameScene extends Phaser.Scene {
   private footprints: Footprint[] = [];
   private playerColors: Record<number, number> = {};
   private pendingAnimals: AnimalSnapshot[] = [];
+  private pendingCampfires: CampfireSnapshot[] = [];
 
   private camTargetX = 0;
   private camTargetY = 0;
@@ -140,6 +149,10 @@ export class GameScene extends Phaser.Scene {
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
+  private keyUp!: Phaser.Input.Keyboard.Key;
+  private keyDown!: Phaser.Input.Keyboard.Key;
+  private keyLeft!: Phaser.Input.Keyboard.Key;
+  private keyRight!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
   private tribeMoveCooldown = 0;
   private minimapVisible = true;
@@ -151,8 +164,11 @@ export class GameScene extends Phaser.Scene {
 
   private growthProgress: number[] = [];
   private growthActive: boolean[] = [];
+  private tribeCounts: number[] = [];
   private growthBeacon!: Phaser.GameObjects.Graphics;
   private growthBeaconPhase = 0;
+  private tribeRallyGfx!: Phaser.GameObjects.Graphics;
+  private tribeRallyPhase = 0;
 
   private lastFogBoundsKey = "";
   private lastFogVisibleHash = 0;
@@ -178,6 +194,7 @@ export class GameScene extends Phaser.Scene {
     this.seed = data.init.seed;
     this.serverTick = data.init.tick;
     this.resources = data.init.resources.map((r) => ({ ...r }));
+    this.collectedTotals = { ...(this.resources[this.playerId] ?? emptyResources()) };
     this.names = data.init.names;
     this.tribeLanguages = data.init.languages ?? [];
     this.botSlots = data.init.botSlots ?? [];
@@ -186,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.footprints = [...data.init.footprints];
     this.pendingAnimals = data.init.animals;
+    this.pendingCampfires = data.init.campfires ?? [];
   }
 
   create(): void {
@@ -206,6 +224,10 @@ export class GameScene extends Phaser.Scene {
       this.spawnAnimalLocal(snap);
     }
     this.pendingAnimals = [];
+    for (const snap of this.pendingCampfires) {
+      this.applyCampfireSnap(snap);
+    }
+    this.pendingCampfires = [];
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
@@ -224,6 +246,9 @@ export class GameScene extends Phaser.Scene {
     this.growthBeacon.setDepth(1_700_000);
     this.growthBeacon.setVisible(false);
 
+    this.tribeRallyGfx = this.add.graphics();
+    this.tribeRallyGfx.setDepth(1_650_000);
+
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x0a0e0a);
     const spawn = initData.init.spawn;
@@ -238,6 +263,11 @@ export class GameScene extends Phaser.Scene {
     this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyS = kb.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keyD = kb.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    this.keyUp = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+    this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+    this.keyLeft = kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
+    this.keyRight = kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+    kb.addCapture("UP,DOWN,LEFT,RIGHT");
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
 
@@ -299,6 +329,7 @@ export class GameScene extends Phaser.Scene {
     const dt = deltaMs / 1000;
     for (const u of this.units.values()) u.update(dt);
     for (const a of this.animals.values()) a.update(dt);
+    for (const f of this.campfires.values()) f.update(dt);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -320,6 +351,50 @@ export class GameScene extends Phaser.Scene {
     this.updateFog();
     this.drawFootprints();
     this.updateGrowthBeacon(dt);
+    this.updateTribeRally(dt);
+  }
+
+  private updateTribeRally(dt: number): void {
+    this.tribeRallyPhase = (this.tribeRallyPhase + dt * 1.4) % (Math.PI * 2);
+    const pulse = 0.55 + 0.35 * Math.sin(this.tribeRallyPhase);
+    const g = this.tribeRallyGfx;
+    g.clear();
+
+    const centers = new Map<number, { cx: number; cy: number; n: number }>();
+    for (const u of this.units.values()) {
+      let c = centers.get(u.owner);
+      if (!c) {
+        c = { cx: 0, cy: 0, n: 0 };
+        centers.set(u.owner, c);
+      }
+      c.cx += u.gx;
+      c.cy += u.gy;
+      c.n++;
+    }
+
+    for (const [owner, c] of centers) {
+      if (c.n < 2) continue;
+      const ax = c.cx / c.n;
+      const ay = c.cy / c.n;
+      const ti = Math.floor(ax);
+      const tj = Math.floor(ay);
+      const color = this.playerColors[owner] ?? 0xffffff;
+      const { x, y } = gridToScreen(ti, tj);
+      const drawDiamond = () => {
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
+        g.lineTo(x, y + TILE_H);
+        g.lineTo(x - TILE_W / 2, y + TILE_H / 2);
+        g.closePath();
+      };
+      g.fillStyle(color, 0.18 * pulse + 0.1);
+      drawDiamond();
+      g.fillPath();
+      g.lineStyle(2, color, 0.55 + 0.3 * pulse);
+      drawDiamond();
+      g.strokePath();
+    }
   }
 
   private updateGrowthBeacon(dt: number): void {
@@ -429,8 +504,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyTribeKeys(dt: number): void {
-    const dx = (this.keyD.isDown ? 1 : 0) - (this.keyA.isDown ? 1 : 0);
-    const dy = (this.keyS.isDown ? 1 : 0) - (this.keyW.isDown ? 1 : 0);
+    const right = this.keyD.isDown || this.keyRight.isDown;
+    const left = this.keyA.isDown || this.keyLeft.isDown;
+    const down = this.keyS.isDown || this.keyDown.isDown;
+    const up = this.keyW.isDown || this.keyUp.isDown;
+    const dx = (right ? 1 : 0) - (left ? 1 : 0);
+    const dy = (down ? 1 : 0) - (up ? 1 : 0);
     if (dx === 0 && dy === 0) {
       this.tribeMoveCooldown = 0;
       return;
@@ -1001,6 +1080,16 @@ export class GameScene extends Phaser.Scene {
       cache.set(key, v);
       a.container.setVisible(v);
     }
+    for (const f of this.campfires.values()) {
+      const key = `cf:${f.id}`;
+      const i = Math.floor(f.gx);
+      const j = Math.floor(f.gy);
+      const v = this.visible.has(`${i},${j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      f.container.setVisible(v);
+      f.shadow.setVisible(v);
+    }
   }
 
   private drawFootprints(): void {
@@ -1157,6 +1246,7 @@ export class GameScene extends Phaser.Scene {
     if (msg.type === "state") this.applyState(msg);
     else if (msg.type === "opponentJoined") this.onOpponentJoined(msg);
     else if (msg.type === "opponentLeft") this.onOpponentLeft(msg);
+    else if (msg.type === "leaderboard") this.onLeaderboard(msg);
   }
 
   private onOpponentJoined(msg: {
@@ -1368,6 +1458,18 @@ export class GameScene extends Phaser.Scene {
       if (a) a.applySnapshot(snap);
       else this.spawnAnimalLocal(snap);
     }
+    if (msg.campfires) {
+      for (const snap of msg.campfires) this.applyCampfireSnap(snap);
+    }
+    if (msg.removedCampfireIds) {
+      for (const id of msg.removedCampfireIds) {
+        const f = this.campfires.get(id);
+        if (!f) continue;
+        f.remove();
+        this.campfires.delete(id);
+        this.visObjectCache.delete(`cf:${id}`);
+      }
+    }
     let resChanged = msg.resources.length !== this.resources.length;
     if (!resChanged) {
       outer: for (let i = 0; i < msg.resources.length; i++) {
@@ -1386,6 +1488,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (resChanged) {
+      const myPrev = this.resources[this.playerId];
+      const myNew = msg.resources[this.playerId];
+      if (myPrev && myNew) {
+        for (const k of RESOURCE_KEYS) {
+          const delta = myNew[k] - myPrev[k];
+          if (delta > 0) this.collectedTotals[k] += delta;
+        }
+      }
       this.resources = msg.resources;
       this.updateHud();
     }
@@ -1396,29 +1506,7 @@ export class GameScene extends Phaser.Scene {
     if (msg.growthActive) this.growthActive = msg.growthActive;
     const myProg = this.growthProgress[this.playerId] ?? 0;
     const myActive = this.growthActive[this.playerId] ?? false;
-    let countsChanged = false;
-    if (msg.tribeCounts) {
-      if (msg.tribeCounts.length !== this.tribeCounts.length) {
-        countsChanged = true;
-      } else {
-        for (let i = 0; i < msg.tribeCounts.length; i++) {
-          if (msg.tribeCounts[i] !== this.tribeCounts[i]) {
-            countsChanged = true;
-            break;
-          }
-        }
-      }
-      this.tribeCounts = msg.tribeCounts;
-    }
-    if (msg.respawnedTribes && msg.respawnedTribes.length > 0) {
-      for (const owner of msg.respawnedTribes) {
-        if (owner === this.playerId) continue;
-        const name = this.names[owner] || `Stamm ${owner}`;
-        this.showToast(`Stamm von ${name} ist zurückgekehrt`, "join");
-      }
-    }
     if (
-      countsChanged ||
       Math.abs(myProg - myProgPrev) > 0.005 ||
       myActive !== myActivePrev
     ) {
@@ -1429,6 +1517,16 @@ export class GameScene extends Phaser.Scene {
   private spawnAnimalLocal(snap: AnimalSnapshot): void {
     const a = new Animal(this, snap, this.seed);
     this.animals.set(snap.id, a);
+  }
+
+  private applyCampfireSnap(snap: CampfireSnapshot): void {
+    const existing = this.campfires.get(snap.id);
+    if (existing) {
+      existing.applyState(snap.gx, snap.gy, snap.fuel);
+      return;
+    }
+    const f = new Campfire(this, snap.id, snap.gx, snap.gy, snap.fuel, this.seed);
+    this.campfires.set(snap.id, f);
   }
 
   private animalAt(i: number, j: number): string | null {
@@ -1786,10 +1884,7 @@ export class GameScene extends Phaser.Scene {
         `<span class="label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
     ).join("");
 
-    const tribeCounts: number[] = new Array(this.names.length).fill(0);
-    for (const u of this.units.values()) {
-      if (u.owner >= 0 && u.owner < tribeCounts.length) tribeCounts[u.owner]++;
-    }
+    const tribeCounts = this.tribeCounts;
     const countChip = (n: number) =>
       `<span class="count" title="Stammesmitglieder">👥 ${n}</span>`;
 
@@ -1905,10 +2000,7 @@ export class GameScene extends Phaser.Scene {
     const s = totalSec % 60;
     const timeStr = `${m}:${s.toString().padStart(2, "0")}`;
 
-    const myRes = this.resources[this.playerId] ?? {
-      holz: 0, wasser: 0, beeren: 0, pilze: 0,
-      fleisch: 0, fisch: 0, stein: 0,
-    };
+    const collected = this.collectedTotals;
     const labels: Record<keyof Resources, string> = {
       holz: "Holz",
       wasser: "Wasser",
@@ -1918,11 +2010,11 @@ export class GameScene extends Phaser.Scene {
       fisch: "Fisch",
       stein: "Stein",
     };
-    const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (myRes[k] ?? 0), 0);
+    const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(
       (k) =>
         `<div class="go-item"><span class="go-ico ${k}"></span>` +
-        `<span class="go-label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
+        `<span class="go-label">${labels[k]}</span><b>${collected[k]}</b></div>`,
     ).join("");
 
     const myName = this.names[this.playerId] || "Stamm";
@@ -1934,34 +2026,7 @@ export class GameScene extends Phaser.Scene {
       score: computeScore(totalSec, totalCollected, this.maxTribeSize),
       ts: Date.now(),
     };
-    const board = loadLeaderboard();
-    board.push(entry);
-    board.sort((a, b) => b.score - a.score);
-    const trimmed = board.slice(0, 50);
-    saveLeaderboard(trimmed);
-    const myRank = trimmed.indexOf(entry) + 1;
-    const top = trimmed.slice(0, 10);
-
-    const boardRows = top
-      .map((e, idx) => {
-        const isMe = e === entry;
-        const rank = idx + 1;
-        const t = formatTime(e.timeSec);
-        return (
-          `<div class="lb-row${isMe ? " lb-me" : ""}">` +
-          `<span class="lb-rank">${rank}</span>` +
-          `<span class="lb-name">${escapeHtml(e.name)}</span>` +
-          `<span class="lb-stat">${t}</span>` +
-          `<span class="lb-stat">${e.collected}</span>` +
-          `<span class="lb-stat">${e.tribe}</span>` +
-          `<span class="lb-score">${e.score}</span>` +
-          `</div>`
-        );
-      })
-      .join("");
-    const myRankNote = myRank > top.length
-      ? `<div class="lb-note">Dein Platz: #${myRank} von ${trimmed.length}</div>`
-      : "";
+    this.pendingScoreEntry = entry;
 
     const overlay = document.createElement("div");
     overlay.id = "gameover";
@@ -1978,7 +2043,7 @@ export class GameScene extends Phaser.Scene {
       `<div class="go-sub">Ressourcen</div>` +
       `<div class="go-res">${resHtml}</div>` +
       `<div class="go-sub">Bestenliste</div>` +
-      `<div class="lb">` +
+      `<div class="lb" id="gameover-lb">` +
       `<div class="lb-row lb-head">` +
       `<span class="lb-rank">#</span>` +
       `<span class="lb-name">Stamm</span>` +
@@ -1987,14 +2052,61 @@ export class GameScene extends Phaser.Scene {
       `<span class="lb-stat">Mitg.</span>` +
       `<span class="lb-score">Pkt.</span>` +
       `</div>` +
-      boardRows +
+      `<div class="lb-loading">Bestenliste lädt …</div>` +
       `</div>` +
-      myRankNote +
+      `<div id="gameover-rank-note"></div>` +
       `<div class="btn-row"><button id="gameover-btn" class="btn">Neu starten</button></div>` +
       `</div>`;
     document.body.appendChild(overlay);
     const btn = document.getElementById("gameover-btn");
     btn?.addEventListener("click", () => window.location.reload());
+
+    try {
+      this.net.send({ type: "submitScore", entry });
+    } catch {
+      // ignore — leaderboard will simply remain in loading state
+    }
+  }
+
+  private onLeaderboard(msg: LeaderboardMessage): void {
+    const lb = document.getElementById("gameover-lb");
+    const rankNote = document.getElementById("gameover-rank-note");
+    if (!lb) return;
+    const entry = this.pendingScoreEntry;
+    const top = msg.entries.slice(0, 10);
+    const rows = top
+      .map((e, idx) => {
+        const isMe = !!entry && e.ts === msg.myEntryTs && e.score === entry.score;
+        const rank = idx + 1;
+        const t = formatTime(e.timeSec);
+        return (
+          `<div class="lb-row${isMe ? " lb-me" : ""}">` +
+          `<span class="lb-rank">${rank}</span>` +
+          `<span class="lb-name">${escapeHtml(e.name)}</span>` +
+          `<span class="lb-stat">${t}</span>` +
+          `<span class="lb-stat">${e.collected}</span>` +
+          `<span class="lb-stat">${e.tribe}</span>` +
+          `<span class="lb-score">${e.score}</span>` +
+          `</div>`
+        );
+      })
+      .join("");
+    lb.innerHTML =
+      `<div class="lb-row lb-head">` +
+      `<span class="lb-rank">#</span>` +
+      `<span class="lb-name">Stamm</span>` +
+      `<span class="lb-stat">Zeit</span>` +
+      `<span class="lb-stat">Sml.</span>` +
+      `<span class="lb-stat">Mitg.</span>` +
+      `<span class="lb-score">Pkt.</span>` +
+      `</div>` +
+      (rows || `<div class="lb-loading">Noch keine Einträge.</div>`);
+    if (rankNote && entry && msg.myRank > top.length) {
+      rankNote.innerHTML =
+        `<div class="lb-note">Dein Platz: #${msg.myRank}</div>`;
+    } else if (rankNote) {
+      rankNote.innerHTML = "";
+    }
   }
 
   private playerColorCss(p: PlayerId): string {
@@ -2027,17 +2139,6 @@ function lerpColor(a: number, b: number, t: number): number {
   return (r << 16) | (g << 8) | bl;
 }
 
-interface ScoreEntry {
-  name: string;
-  timeSec: number;
-  collected: number;
-  tribe: number;
-  score: number;
-  ts: number;
-}
-
-const LEADERBOARD_KEY = "rts.leaderboard.v1";
-
 function computeScore(timeSec: number, collected: number, tribe: number): number {
   return Math.round(timeSec + collected * 5 + tribe * 30);
 }
@@ -2046,35 +2147,6 @@ function formatTime(totalSec: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function loadLeaderboard(): ScoreEntry[] {
-  try {
-    const raw = localStorage.getItem(LEADERBOARD_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e): e is ScoreEntry =>
-        !!e &&
-        typeof e === "object" &&
-        typeof (e as ScoreEntry).name === "string" &&
-        typeof (e as ScoreEntry).timeSec === "number" &&
-        typeof (e as ScoreEntry).collected === "number" &&
-        typeof (e as ScoreEntry).tribe === "number" &&
-        typeof (e as ScoreEntry).score === "number",
-    );
-  } catch {
-    return [];
-  }
-}
-
-function saveLeaderboard(board: ScoreEntry[]): void {
-  try {
-    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(board));
-  } catch {
-    // ignore storage errors (quota, private mode)
-  }
 }
 
 function escapeHtml(s: string): string {

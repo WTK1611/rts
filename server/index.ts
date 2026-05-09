@@ -3,14 +3,32 @@ import { Sim } from "./sim";
 import { AIBot } from "./aiBot";
 import {
   AnimalSnapshot,
+  CampfireSnapshot,
   ClientMessage,
   MAX_PLAYERS,
   PlayerId,
+  ScoreEntry,
   ServerMessage,
   TICK_RATE,
   UnitSnapshot,
 } from "../shared/protocol";
 import { Language, languageForSlot } from "../shared/names";
+import { addScore, rankFor, topScores } from "./db";
+
+const LEADERBOARD_TOP_N = 50;
+
+function sanitizeScore(raw: unknown): ScoreEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const e = raw as Record<string, unknown>;
+  const name = typeof e.name === "string" ? e.name.trim().slice(0, 20) : "";
+  const timeSec = typeof e.timeSec === "number" ? Math.max(0, Math.floor(e.timeSec)) : -1;
+  const collected = typeof e.collected === "number" ? Math.max(0, Math.floor(e.collected)) : -1;
+  const tribe = typeof e.tribe === "number" ? Math.max(0, Math.floor(e.tribe)) : -1;
+  const score = typeof e.score === "number" ? Math.max(0, Math.floor(e.score)) : -1;
+  const ts = typeof e.ts === "number" && Number.isFinite(e.ts) ? Math.floor(e.ts) : Date.now();
+  if (!name || timeSec < 0 || collected < 0 || tribe < 0 || score < 0) return null;
+  return { name, timeSec, collected, tribe, score, ts };
+}
 
 interface PlayerSlot {
   ws: WebSocket | null;
@@ -21,6 +39,8 @@ interface PlayerSlot {
 }
 
 const BOT_COUNT = 3;
+const BOT_RESPAWN_DELAY_MS = 12000;
+const pendingBotRespawns: Map<PlayerId, number> = new Map();
 
 const TRIBE_NAMES_BY_LANG: Record<Language, string[]> = {
   de: [
@@ -80,6 +100,10 @@ const world = {
     () => new Set<string>(),
   ),
   knownUnits: Array.from(
+    { length: MAX_PLAYERS },
+    () => new Set<string>(),
+  ),
+  knownCampfires: Array.from(
     { length: MAX_PLAYERS },
     () => new Set<string>(),
   ),
@@ -162,6 +186,32 @@ function botSlotIds(): PlayerId[] {
   return out;
 }
 
+function visibleCampfiresFor(
+  ownerId: PlayerId,
+  units: UnitSnapshot[],
+  allCampfires: CampfireSnapshot[],
+): CampfireSnapshot[] {
+  const myUnits: UnitSnapshot[] = [];
+  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
+  const out: CampfireSnapshot[] = [];
+  for (const f of allCampfires) {
+    if (f.owner === ownerId) {
+      out.push(f);
+      continue;
+    }
+    if (myUnits.length === 0) continue;
+    for (const u of myUnits) {
+      const dx = f.gx - u.gx;
+      const dy = f.gy - u.gy;
+      if (dx * dx + dy * dy <= UNIT_VIEW_RADIUS_SQ) {
+        out.push(f);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 function visibleUnitsFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
@@ -212,7 +262,9 @@ function joinPlayer(ws: WebSocket, name: string): void {
 
   const allUnits = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
+  const allCampfires = world.sim.campfiresSnapshot();
   const visibleAnimals = visibleAnimalsFor(slotId, allUnits, allAnimals);
+  const visibleCampfires = visibleCampfiresFor(slotId, allUnits, allCampfires);
   const known = world.knownAnimals[slotId];
   known.clear();
   for (const a of visibleAnimals) known.add(a.id);
@@ -220,6 +272,10 @@ function joinPlayer(ws: WebSocket, name: string): void {
   const knownU = world.knownUnits[slotId];
   knownU.clear();
   for (const u of allUnits) knownU.add(u.id);
+
+  const knownF = world.knownCampfires[slotId];
+  knownF.clear();
+  for (const f of visibleCampfires) knownF.add(f.id);
 
   send(ws, {
     type: "init",
@@ -235,6 +291,8 @@ function joinPlayer(ws: WebSocket, name: string): void {
     botSlots: botSlotIds(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
+    campfires: visibleCampfires,
+    tribeCounts: world.sim.tribeCounts(),
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -260,20 +318,43 @@ function tick(): void {
   for (const bot of world.bots) bot.update(dt);
   world.sim.step(dt);
 
+  const deadUnitIds = world.sim.consumeDeadUnitIds();
+  const extinctTribes = world.sim.consumeExtinctTribes();
+  for (const p of extinctTribes) {
+    const slot = world.players[p];
+    if (slot && slot.bot) {
+      pendingBotRespawns.set(p, now + BOT_RESPAWN_DELAY_MS);
+    }
+  }
+  for (const [p, when] of [...pendingBotRespawns.entries()]) {
+    if (now < when) continue;
+    pendingBotRespawns.delete(p);
+    const slot = world.players[p];
+    if (!slot || !slot.bot) continue;
+    world.sim.respawnTribe(p, slot.language);
+    const fresh = new AIBot(world.sim, p);
+    const idx = world.bots.findIndex((b) => b.id === p);
+    if (idx >= 0) world.bots[idx] = fresh;
+    else world.bots.push(fresh);
+    slot.bot = fresh;
+  }
+  const respawnedTribes = world.sim.consumeRespawnedTribes();
+
   const units = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
+  const allCampfires = world.sim.campfiresSnapshot();
+  const diedCampfireIds = world.sim.consumeRemovedCampfireIds();
   const resources = world.sim.resources.map((r) => ({ ...r }));
   const newRemovedObjects = world.sim.consumeNewRemovedObjects();
   const respawnedObjects = world.sim.consumeRespawnedObjects();
   const newFootprints = world.sim.consumeNewFootprints();
-  const deadUnitIds = world.sim.consumeDeadUnitIds();
-  const extinctTribes = world.sim.consumeExtinctTribes();
   const newUnits = world.sim.consumeNewUnits();
   const encounters = world.sim.consumeEncounterEvents();
   const growth = world.sim.growthSnapshot();
   // Drain the sim's per-tick removed-animal queue; per-client diff below
   // already handles deaths (dead ids land in known\visible).
   world.sim.consumeRemovedAnimalIds();
+  const tribeCounts = world.sim.tribeCounts();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -313,6 +394,21 @@ function tick(): void {
       }
     }
 
+    const visibleCampfires = visibleCampfiresFor(slot.id, units, allCampfires);
+    const visibleCampfireIds = new Set<string>();
+    for (const f of visibleCampfires) visibleCampfireIds.add(f.id);
+    const knownF = world.knownCampfires[slot.id];
+    const removedCampfireIds: string[] = [];
+    for (const id of diedCampfireIds) {
+      if (knownF.has(id)) removedCampfireIds.push(id);
+    }
+    for (const id of knownF) {
+      if (!visibleCampfireIds.has(id) && !removedCampfireIds.includes(id)) {
+        removedCampfireIds.push(id);
+      }
+    }
+    world.knownCampfires[slot.id] = visibleCampfireIds;
+
     send(slot.ws, {
       type: "state",
       tick: tickNo,
@@ -330,6 +426,10 @@ function tick(): void {
       growthProgress: growth.progress,
       growthActive: growth.active,
       extinctTribes,
+      respawnedTribes,
+      campfires: visibleCampfires,
+      removedCampfireIds,
+      tribeCounts,
     });
   }
 }
@@ -343,6 +443,7 @@ function disconnect(ws: WebSocket): void {
   world.players[slot.id] = null;
   world.knownAnimals[slot.id] = new Set();
   world.knownUnits[slot.id] = new Set();
+  world.knownCampfires[slot.id] = new Set();
   const removedUnitIds = world.sim.removePlayer(slot.id);
   for (const other of world.players) {
     if (!other || !other.ws) continue;
@@ -378,6 +479,32 @@ wss.on("connection", (ws) => {
       }
       const name = (msg.name || "Spieler").trim().slice(0, 20) || "Spieler";
       joinPlayer(ws, name);
+      return;
+    }
+
+    if (msg.type === "fetchLeaderboard") {
+      send(ws, {
+        type: "leaderboard",
+        entries: topScores(LEADERBOARD_TOP_N),
+        myRank: 0,
+        myEntryTs: 0,
+      });
+      return;
+    }
+
+    if (msg.type === "submitScore") {
+      const entry = sanitizeScore(msg.entry);
+      if (!entry) {
+        send(ws, { type: "error", message: "invalid score" });
+        return;
+      }
+      addScore(entry);
+      send(ws, {
+        type: "leaderboard",
+        entries: topScores(LEADERBOARD_TOP_N),
+        myRank: rankFor(entry.score, entry.ts),
+        myEntryTs: entry.ts,
+      });
       return;
     }
 

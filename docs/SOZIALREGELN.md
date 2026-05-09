@@ -105,6 +105,49 @@ Logik in [`encounterCheck`](../server/sim.ts#L1194), läuft **jeden Tick**.
   Ein Treffen kann den eigenen Stamm in dem Fall nur vergrößern.
 - Volle Stämme (`|Stamm| = MAX_TRIBE_SIZE`) nehmen keine weiteren Frauen auf.
 
+## Lagerfeuer
+
+Logik in [`campfireStep`](../server/sim.ts) — Konstanten am Datei-Anfang:
+
+- `CAMPFIRE_IGNITE_DELAY_SEC = 8` — wie lange ein Stamm ruhig zusammenstehen muss.
+- `CAMPFIRE_IGNITE_MIN_UNITS = 2` — mindestens zwei Stammesmitglieder im Cluster.
+- `CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2,5` Tiles — Clusterradius um den Schwerpunkt.
+- `CAMPFIRE_RANGE = 2,5` Tiles — Heil-/Schutzradius um das Feuer.
+- `CAMPFIRE_BURN_PER_FUEL_SEC = 25` — Brenndauer je Brennstoff-Paar (1 Holz + 1 Stein).
+- `CAMPFIRE_HP_REGEN_PER_SEC = 1,2` — Heilung pro Sekunde am Feuer.
+
+### Entzünden
+
+- Pro Stamm gibt es **maximal ein** Lagerfeuer.
+- Stehen ≥ 2 Mitglieder eines Stamms ohne Bewegung, Harvest- oder Hunt-Ziel
+  innerhalb des Clusterradius zusammen, läuft ein Ignite-Timer.
+- Verlässt der Cluster die Position oder fällt unter zwei Mitglieder, wird der
+  Timer zurückgesetzt.
+- Erreicht der Timer `CAMPFIRE_IGNITE_DELAY_SEC` und der Stamm hat ≥ 1 Holz und
+  ≥ 1 Stein im Vorrat, wird das Feuer am Cluster-Schwerpunkt entzündet:
+  - 1 Holz und 1 Stein werden verbraucht.
+  - Brennstoff-Timer startet bei `CAMPFIRE_BURN_PER_FUEL_SEC`.
+
+### Brennen, Nachlegen, Erlöschen
+
+- Pro Tick zählt der Brennstoff-Timer dt herunter.
+- Läuft er ab, wird **nur dann** nachgelegt, wenn mindestens eine eigene Einheit
+  innerhalb von `CAMPFIRE_RANGE` steht **und** der Stamm noch 1 Holz + 1 Stein
+  hat. Dann werden Holz und Stein verbraucht und der Timer wieder aufgefüllt.
+- Andernfalls erlischt das Feuer.
+
+### Wirkung am Feuer
+
+Befindet sich eine Einheit innerhalb von `CAMPFIRE_RANGE` zum eigenen Lagerfeuer:
+
+- **Kein Idle-HP-Verfall** (`UNIT_HP_LOSS_PER_SEC_IDLE` greift nicht).
+- **Heilung** mit `CAMPFIRE_HP_REGEN_PER_SEC` HP/s, ohne Vorrat zu verbrauchen.
+
+Die normale `autoEat`-Logik läuft weiter, greift aber nur, wenn `hp < hpMax` —
+durch die stete Regeneration sind Einheiten am Feuer fast immer voll und essen
+in der Praxis nichts. Bewegt sich eine Einheit aus dem Radius, gilt sofort
+wieder normaler Stoffwechsel.
+
 ## Aussterben
 
 - Erkannt im Reaper: war `before[p] > 0` und ist `after[p] === 0`, gilt der Stamm

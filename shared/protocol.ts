@@ -79,6 +79,14 @@ export interface RemovedObject {
   j: number;
 }
 
+export interface CampfireSnapshot {
+  id: string;
+  owner: PlayerId;
+  gx: number;
+  gy: number;
+  fuel: number;
+}
+
 export interface Footprint {
   o: PlayerId;
   i: number;
@@ -102,13 +110,13 @@ export interface InitMessage {
   botSlots: PlayerId[];
   footprints: Footprint[];
   animals: AnimalSnapshot[];
+  campfires: CampfireSnapshot[];
+  tribeCounts: number[];
 }
 
 export interface EncounterEvent {
   a: PlayerId;
   b: PlayerId;
-  bornForA: boolean;
-  bornForB: boolean;
   transfersAtoB: number;
   transfersBtoA: number;
 }
@@ -130,6 +138,10 @@ export interface StateMessage {
   growthProgress: number[];
   growthActive: boolean[];
   extinctTribes: PlayerId[];
+  respawnedTribes: PlayerId[];
+  campfires: CampfireSnapshot[];
+  removedCampfireIds: string[];
+  tribeCounts: number[];
 }
 
 export interface OpponentJoinedMessage {
@@ -151,12 +163,29 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface ScoreEntry {
+  name: string;
+  timeSec: number;
+  collected: number;
+  tribe: number;
+  score: number;
+  ts: number;
+}
+
+export interface LeaderboardMessage {
+  type: "leaderboard";
+  entries: ScoreEntry[];
+  myRank: number;
+  myEntryTs: number;
+}
+
 export type ServerMessage =
   | InitMessage
   | StateMessage
   | OpponentJoinedMessage
   | OpponentLeftMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | LeaderboardMessage;
 
 export interface JoinCommand {
   type: "join";
@@ -183,4 +212,19 @@ export interface HuntCommand {
   animalId: string;
 }
 
-export type ClientMessage = JoinCommand | MoveCommand | HarvestCommand | HuntCommand;
+export interface SubmitScoreCommand {
+  type: "submitScore";
+  entry: ScoreEntry;
+}
+
+export interface FetchLeaderboardCommand {
+  type: "fetchLeaderboard";
+}
+
+export type ClientMessage =
+  | JoinCommand
+  | MoveCommand
+  | HarvestCommand
+  | HuntCommand
+  | SubmitScoreCommand
+  | FetchLeaderboardCommand;
