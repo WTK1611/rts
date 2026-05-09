@@ -1306,7 +1306,6 @@ export class GameScene extends Phaser.Scene {
     const i = Math.floor(gx);
     const j = Math.floor(gy);
     const k = `${i},${j}`;
-    if (!this.explored.has(k)) return;
     const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
     if (animalId) {
       this.net.send({ type: "hunt", unitIds: ids, animalId });
@@ -1326,7 +1325,6 @@ export class GameScene extends Phaser.Scene {
     const i = Math.floor(gx);
     const j = Math.floor(gy);
     const k = `${i},${j}`;
-    if (!this.explored.has(k)) return;
     const ids = selected.map((u) => u.id);
     const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
     if (animalId) {
