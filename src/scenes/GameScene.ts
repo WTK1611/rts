@@ -1573,7 +1573,6 @@ export class GameScene extends Phaser.Scene {
           this.showToast(parts.join(": "), "join", [this.playerId, otherId]);
           continue;
         }
-        if (ev.transfersAtoB === 0 && ev.transfersBtoA === 0) continue;
         const s = t();
         const aName = this.names[ev.a] || s.hudTribeFallback(ev.a);
         const bName = this.names[ev.b] || s.hudTribeFallback(ev.b);
@@ -1592,7 +1591,10 @@ export class GameScene extends Phaser.Scene {
               : s.toastWomenMovedTo(ev.transfersBtoA, aName),
           );
         }
-        const text = s.toastEncounterTribes(aName, bName, moves.join(", "));
+        const text =
+          moves.length > 0
+            ? s.toastEncounterTribes(aName, bName, moves.join(", "))
+            : s.toastEncounterTribesMet(aName, bName);
         this.showToast(text, "join", [ev.a, ev.b]);
       }
     }

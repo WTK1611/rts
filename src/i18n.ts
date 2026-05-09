@@ -48,6 +48,7 @@ export interface Strings {
   toastWomenMovedToSing: (name: string) => string;
   toastWomenMovedTo: (n: number, name: string) => string;
   toastEncounterTribes: (a: string, b: string, moves: string) => string;
+  toastEncounterTribesMet: (a: string, b: string) => string;
   toastOwnGrewSing: string;
   toastOwnGrew: (n: number) => string;
   toastOtherGrewSing: (name: string) => string;
@@ -138,6 +139,7 @@ const STRINGS: Record<Language, Strings> = {
       `${n} Frauen wechselten zum Stamm von ${name}`,
     toastEncounterTribes: (a, b, moves) =>
       `Begegnung der Stämme ${a} und ${b}: ${moves}`,
+    toastEncounterTribesMet: (a, b) => `Stamm ${a} trifft Stamm ${b}`,
     toastOwnGrewSing: "Dein Stamm wächst: ein neues Mitglied ist dazugekommen",
     toastOwnGrew: (n) =>
       `Dein Stamm wächst: ${n} neue Mitglieder sind dazugekommen`,
@@ -227,6 +229,7 @@ const STRINGS: Record<Language, Strings> = {
     toastWomenMovedTo: (n, name) => `${n} women moved to ${name}'s tribe`,
     toastEncounterTribes: (a, b, moves) =>
       `Encounter between ${a} and ${b}: ${moves}`,
+    toastEncounterTribesMet: (a, b) => `${a}'s tribe meets ${b}'s tribe`,
     toastOwnGrewSing: "Your tribe grows: a new member has joined",
     toastOwnGrew: (n) => `Your tribe grows: ${n} new members have joined`,
     toastOtherGrewSing: (n) => `${n}'s tribe grows: a new member`,
@@ -314,6 +317,8 @@ const STRINGS: Record<Language, Strings> = {
     toastWomenMovedTo: (n, name) => `${n} donne sono passate alla tribù di ${name}`,
     toastEncounterTribes: (a, b, moves) =>
       `Incontro tra le tribù di ${a} e ${b}: ${moves}`,
+    toastEncounterTribesMet: (a, b) =>
+      `La tribù di ${a} incontra la tribù di ${b}`,
     toastOwnGrewSing: "La tua tribù cresce: un nuovo membro si è aggiunto",
     toastOwnGrew: (n) => `La tua tribù cresce: ${n} nuovi membri si sono aggiunti`,
     toastOtherGrewSing: (n) => `La tribù di ${n} cresce: un nuovo membro`,
@@ -401,6 +406,8 @@ const STRINGS: Record<Language, Strings> = {
     toastWomenMovedTo: (n, name) => `${n} mujeres se han unido a la tribu de ${name}`,
     toastEncounterTribes: (a, b, moves) =>
       `Encuentro entre las tribus de ${a} y ${b}: ${moves}`,
+    toastEncounterTribesMet: (a, b) =>
+      `La tribu de ${a} se encuentra con la tribu de ${b}`,
     toastOwnGrewSing: "Tu tribu crece: un nuevo miembro se ha incorporado",
     toastOwnGrew: (n) => `Tu tribu crece: ${n} nuevos miembros se han incorporado`,
     toastOtherGrewSing: (n) => `La tribu de ${n} crece: un nuevo miembro`,
@@ -488,6 +495,8 @@ const STRINGS: Record<Language, Strings> = {
     toastWomenMovedTo: (n, name) => `${n} mulheres passaram para a tribo de ${name}`,
     toastEncounterTribes: (a, b, moves) =>
       `Encontro entre as tribos de ${a} e ${b}: ${moves}`,
+    toastEncounterTribesMet: (a, b) =>
+      `A tribo de ${a} encontra a tribo de ${b}`,
     toastOwnGrewSing: "A tua tribo cresce: um novo membro juntou-se",
     toastOwnGrew: (n) => `A tua tribo cresce: ${n} novos membros juntaram-se`,
     toastOtherGrewSing: (n) => `A tribo de ${n} cresce: um novo membro`,
@@ -575,6 +584,8 @@ const STRINGS: Record<Language, Strings> = {
     toastWomenMovedTo: (n, name) => `${n} femmes ont rejoint la tribu de ${name}`,
     toastEncounterTribes: (a, b, moves) =>
       `Rencontre entre les tribus de ${a} et ${b} : ${moves}`,
+    toastEncounterTribesMet: (a, b) =>
+      `La tribu de ${a} rencontre la tribu de ${b}`,
     toastOwnGrewSing: "Ta tribu grandit : un nouveau membre est arrivé",
     toastOwnGrew: (n) => `Ta tribu grandit : ${n} nouveaux membres sont arrivés`,
     toastOtherGrewSing: (n) => `La tribu de ${n} grandit : un nouveau membre`,
