@@ -6,8 +6,10 @@ import { Bush } from "../Bush";
 import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
+import { Animal } from "../Animal";
 import { Net } from "../net";
 import {
+  AnimalSnapshot,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   InitMessage,
@@ -108,6 +110,7 @@ export class GameScene extends Phaser.Scene {
   private mushrooms: Map<string, Mushroom> = new Map();
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
+  private animals: Map<string, Animal> = new Map();
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -128,6 +131,7 @@ export class GameScene extends Phaser.Scene {
 
   private footprints: Footprint[] = [];
   private playerColors: Record<number, number> = {};
+  private pendingAnimals: AnimalSnapshot[] = [];
 
   private camTargetX = 0;
   private camTargetY = 0;
@@ -158,6 +162,7 @@ export class GameScene extends Phaser.Scene {
       data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
     );
     this.footprints = [...data.init.footprints];
+    this.pendingAnimals = data.init.animals;
   }
 
   create(): void {
@@ -167,6 +172,11 @@ export class GameScene extends Phaser.Scene {
       this.units.set(u.id, new Unit(this, u, u.owner === this.playerId, this.seed));
       this.playerColors[u.owner] = u.color;
     }
+
+    for (const snap of this.pendingAnimals) {
+      this.spawnAnimalLocal(snap);
+    }
+    this.pendingAnimals = [];
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
@@ -241,6 +251,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
     for (const u of this.units.values()) u.update(dt);
+    for (const a of this.animals.values()) a.update(dt);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -741,6 +752,12 @@ export class GameScene extends Phaser.Scene {
       s.container.setVisible(v);
       s.shadow.setVisible(v);
     }
+    for (const a of this.animals.values()) {
+      const i = Math.floor(a.gx);
+      const j = Math.floor(a.gy);
+      const k = `${i},${j}`;
+      a.container.setVisible(this.visible.has(k));
+    }
   }
 
   private drawFootprints(): void {
@@ -949,6 +966,18 @@ export class GameScene extends Phaser.Scene {
     for (const fp of msg.newFootprints) {
       this.footprints.push(fp);
     }
+    for (const id of msg.removedAnimalIds) {
+      const a = this.animals.get(id);
+      if (a) {
+        a.destroy();
+        this.animals.delete(id);
+      }
+    }
+    for (const snap of msg.animals) {
+      const a = this.animals.get(snap.id);
+      if (a) a.applySnapshot(snap);
+      else this.spawnAnimalLocal(snap);
+    }
     let resChanged = msg.resources.length !== this.resources.length;
     if (!resChanged) {
       outer: for (let i = 0; i < msg.resources.length; i++) {
@@ -970,6 +999,23 @@ export class GameScene extends Phaser.Scene {
       this.resources = msg.resources.map((r) => ({ ...r }));
       this.updateHud();
     }
+  }
+
+  private spawnAnimalLocal(snap: AnimalSnapshot): void {
+    const a = new Animal(this, snap, this.seed);
+    this.animals.set(snap.id, a);
+  }
+
+  private animalAt(i: number, j: number): string | null {
+    let best: { id: string; d: number } | null = null;
+    for (const a of this.animals.values()) {
+      if (Math.floor(a.gx) !== i || Math.floor(a.gy) !== j) continue;
+      const dx = a.gx - (i + 0.5);
+      const dy = a.gy - (j + 0.5);
+      const d = dx * dx + dy * dy;
+      if (!best || d < best.d) best = { id: a.id, d };
+    }
+    return best?.id ?? null;
   }
 
   private applyRemoved(ro: RemovedObject): void {
@@ -1109,7 +1155,10 @@ export class GameScene extends Phaser.Scene {
     const k = `${i},${j}`;
     if (!this.explored.has(k)) return;
     const ids = selected.map((u) => u.id);
-    if (this.visible.has(k) && this.harvestableAt(i, j)) {
+    const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
+    if (animalId) {
+      this.net.send({ type: "hunt", unitIds: ids, animalId });
+    } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
       this.net.send({ type: "harvest", unitIds: ids, i, j });
     } else {
       this.net.send({ type: "move", unitIds: ids, i, j });

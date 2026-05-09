@@ -63,6 +63,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
     resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
     footprints: [...world.sim.footprints],
+    animals: world.sim.animalsSnapshot(),
   });
 
   const newUnits = world.sim.unitsSnapshot().filter((u) => u.owner === slotId);
@@ -90,6 +91,8 @@ function tick(): void {
     newRemovedObjects: world.sim.consumeNewRemovedObjects(),
     respawnedObjects: world.sim.consumeRespawnedObjects(),
     newFootprints: world.sim.consumeNewFootprints(),
+    animals: world.sim.animalsSnapshot(),
+    removedAnimalIds: world.sim.consumeRemovedAnimalIds(),
   });
 }
 
@@ -142,6 +145,8 @@ wss.on("connection", (ws) => {
       world.sim.cmdMove(slot.id, msg.unitIds, msg.i, msg.j);
     } else if (msg.type === "harvest") {
       world.sim.cmdHarvest(slot.id, msg.unitIds, msg.i, msg.j);
+    } else if (msg.type === "hunt") {
+      world.sim.cmdHunt(slot.id, msg.unitIds, msg.animalId);
     }
   });
 

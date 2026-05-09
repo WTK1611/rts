@@ -46,6 +46,24 @@ export function emptyResources(): Resources {
 
 export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone";
 
+export type AnimalKind =
+  | "hare"
+  | "reindeer"
+  | "megaloceros"
+  | "bison"
+  | "caveLion"
+  | "mammoth";
+
+export interface AnimalSnapshot {
+  id: string;
+  kind: AnimalKind;
+  gx: number;
+  gy: number;
+  hp: number;
+  hpMax: number;
+  state: "idle" | "wander" | "flee" | "hunt";
+}
+
 export interface RemovedObject {
   kind: ObjectKind;
   i: number;
@@ -72,6 +90,7 @@ export interface InitMessage {
   resources: Resources[];
   names: string[];
   footprints: Footprint[];
+  animals: AnimalSnapshot[];
 }
 
 export interface StateMessage {
@@ -82,6 +101,8 @@ export interface StateMessage {
   newRemovedObjects: RemovedObject[];
   respawnedObjects: RemovedObject[];
   newFootprints: Footprint[];
+  animals: AnimalSnapshot[];
+  removedAnimalIds: string[];
 }
 
 export interface OpponentJoinedMessage {
@@ -128,4 +149,10 @@ export interface HarvestCommand {
   j: number;
 }
 
-export type ClientMessage = JoinCommand | MoveCommand | HarvestCommand;
+export interface HuntCommand {
+  type: "hunt";
+  unitIds: string[];
+  animalId: string;
+}
+
+export type ClientMessage = JoinCommand | MoveCommand | HarvestCommand | HuntCommand;

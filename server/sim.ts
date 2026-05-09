@@ -1,5 +1,7 @@
 import { findPath } from "../shared/pathfinding";
 import {
+  AnimalKind,
+  AnimalSnapshot,
   emptyResources,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
@@ -12,6 +14,7 @@ import {
   UnitSnapshot,
 } from "../shared/protocol";
 import {
+  Biome,
   biomeAt,
   bushBerriesAt,
   fishMeatAt,
@@ -22,6 +25,7 @@ import {
   hasTreeAt,
   isLandTile,
   mushroomBerriesAt,
+  rand01,
   spawnsFromSeed,
   SpawnArea,
   stoneAmountAt,
@@ -60,8 +64,55 @@ interface SimUnit {
   state: "idle" | "moving" | "harvesting";
   path: Array<{ gx: number; gy: number }>;
   harvestTarget: { kind: ObjectKind; i: number; j: number } | null;
+  huntTarget: string | null;
+  huntTimer: number;
   harvestTimer: number;
   lastFootprintTile: { i: number; j: number } | null;
+}
+
+interface AnimalSpec {
+  hp: number;
+  speed: number;
+  meat: number;
+  biomes: Biome[];
+  density: number;
+  wanderRadius: number;
+}
+
+const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald"],            density: 0.0040, wanderRadius: 6 },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],            density: 0.0010, wanderRadius: 10 },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald"],                      density: 0.0006, wanderRadius: 8 },
+  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen"],         density: 0.0008, wanderRadius: 8 },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne"], density: 0.0004, wanderRadius: 12 },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne"],         density: 0.0003, wanderRadius: 6 },
+};
+
+const ANIMAL_SPAWN_RADIUS = 220;
+const HUNT_INTERVAL = 0.9;
+const HUNT_DAMAGE = 2;
+const HUNT_RANGE = 1.5;
+
+interface SimAnimal {
+  id: string;
+  kind: AnimalKind;
+  hp: number;
+  hpMax: number;
+  gx: number;
+  gy: number;
+  homeI: number;
+  homeJ: number;
+  state: "idle" | "wander" | "flee" | "hunt";
+  path: Array<{ gx: number; gy: number }>;
+  decisionTimer: number;
+}
+
+function kindHash(kind: AnimalKind): number {
+  let h = 0x12345;
+  for (let i = 0; i < kind.length; i++) {
+    h = (Math.imul(h ^ kind.charCodeAt(i), 0x9e3779b1) >>> 0);
+  }
+  return h;
 }
 
 function objKey(kind: ObjectKind, i: number, j: number): string {
@@ -94,11 +145,252 @@ export class Sim {
   regrow: Map<string, number> = new Map();
   footprints: Footprint[] = [];
   newFootprints: Footprint[] = [];
+  animals: Map<string, SimAnimal> = new Map();
+  removedAnimalIds: string[] = [];
   tick = 0;
 
   constructor(seed: number) {
     this.seed = seed;
     this.spawns = spawnsFromSeed(seed);
+    this.spawnAnimals();
+  }
+
+  private spawnAnimals(): void {
+    const r = ANIMAL_SPAWN_RADIUS;
+    const kinds = Object.keys(ANIMAL_SPECS) as AnimalKind[];
+    let counter = 0;
+    for (let j = -r; j <= r; j++) {
+      for (let i = -r; i <= r; i++) {
+        if (!isLandTile(this.seed, i, j)) continue;
+        const b = biomeAt(this.seed, i, j);
+        for (const kind of kinds) {
+          const spec = ANIMAL_SPECS[kind];
+          if (!spec.biomes.includes(b)) continue;
+          const r01 = rand01(this.seed ^ kindHash(kind), i, j);
+          if (r01 > spec.density) continue;
+          const id = `a_${kind[0]}${counter++}`;
+          this.animals.set(id, {
+            id,
+            kind,
+            hp: spec.hp,
+            hpMax: spec.hp,
+            gx: i + 0.5,
+            gy: j + 0.5,
+            homeI: i,
+            homeJ: j,
+            state: "idle",
+            path: [],
+            decisionTimer: rand01(this.seed ^ 0xa17, i, j) * 4,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  animalsSnapshot(): AnimalSnapshot[] {
+    const out: AnimalSnapshot[] = [];
+    for (const a of this.animals.values()) out.push(this.animalSnap(a));
+    return out;
+  }
+
+  consumeRemovedAnimalIds(): string[] {
+    const out = this.removedAnimalIds;
+    this.removedAnimalIds = [];
+    return out;
+  }
+
+  private animalSnap = (a: SimAnimal): AnimalSnapshot => ({
+    id: a.id,
+    kind: a.kind,
+    gx: a.gx,
+    gy: a.gy,
+    hp: a.hp,
+    hpMax: a.hpMax,
+    state: a.state,
+  });
+
+  cmdHunt(owner: PlayerId, unitIds: string[], animalId: string): void {
+    const a = this.animals.get(animalId);
+    if (!a) return;
+    const claimed = new Set<string>();
+    for (const id of unitIds) {
+      const u = this.units.find((x) => x.id === id && x.owner === owner);
+      if (!u) continue;
+      const blocked = this.blockedTilesFor(u, claimed);
+      this.startHunt(u, a, blocked);
+      const last = u.path[u.path.length - 1];
+      if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
+    }
+  }
+
+  private startHunt(u: SimUnit, a: SimAnimal, blocked: Set<string>): void {
+    const ti = Math.floor(a.gx);
+    const tj = Math.floor(a.gy);
+    const candidates: Array<{ i: number; j: number }> = [];
+    if (this.isWalkable(ti, tj)) candidates.push({ i: ti, j: tj });
+    const adj: Array<[number, number]> = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1],
+    ];
+    for (const [di, dj] of adj) {
+      const ni = ti + di;
+      const nj = tj + dj;
+      if (this.isWalkable(ni, nj)) candidates.push({ i: ni, j: nj });
+    }
+    let bestPath: ReturnType<typeof findPath> = null;
+    for (const c of candidates) {
+      if (blocked.has(`${c.i},${c.j}`)) continue;
+      const p = findPath(
+        (x, y) => this.isWalkable(x, y),
+        Math.floor(u.gx),
+        Math.floor(u.gy),
+        c.i,
+        c.j,
+        blocked,
+      );
+      if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
+    }
+    if (!bestPath) return;
+    u.path =
+      bestPath.length > 1
+        ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
+        : [];
+    u.huntTarget = a.id;
+    u.harvestTarget = null;
+    u.huntTimer = 0;
+    u.state = u.path.length > 0 ? "moving" : "harvesting";
+  }
+
+  private stepAnimals(dt: number): void {
+    const dead: string[] = [];
+    for (const a of this.animals.values()) {
+      if (a.hp <= 0) {
+        dead.push(a.id);
+        continue;
+      }
+      const spec = ANIMAL_SPECS[a.kind];
+      a.decisionTimer -= dt;
+      if (a.path.length === 0 && a.decisionTimer <= 0) {
+        a.decisionTimer = 2 + Math.random() * 5;
+        if (Math.random() < 0.5) {
+          const r = spec.wanderRadius;
+          const ti = a.homeI + Math.floor((Math.random() * 2 - 1) * r);
+          const tj = a.homeJ + Math.floor((Math.random() * 2 - 1) * r);
+          if (this.isWalkable(ti, tj) && biomeAt(this.seed, ti, tj) !== "lake" && biomeAt(this.seed, ti, tj) !== "river") {
+            const path = findPath(
+              (x, y) => this.isWalkable(x, y),
+              Math.floor(a.gx),
+              Math.floor(a.gy),
+              ti,
+              tj,
+              new Set<string>(),
+            );
+            if (path && path.length > 1) {
+              a.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
+              a.state = "wander";
+            }
+          }
+        }
+      }
+      if (a.path.length > 0) {
+        const wp = a.path[0];
+        const dx = wp.gx - a.gx;
+        const dy = wp.gy - a.gy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.04) {
+          a.gx = wp.gx;
+          a.gy = wp.gy;
+          a.path.shift();
+          if (a.path.length === 0) a.state = "idle";
+        } else {
+          const moveSpeed = spec.speed * 0.5;
+          const step = Math.min(moveSpeed * dt, dist);
+          a.gx += (dx / dist) * step;
+          a.gy += (dy / dist) * step;
+        }
+      } else {
+        a.state = "idle";
+      }
+    }
+    for (const id of dead) {
+      this.animals.delete(id);
+      this.removedAnimalIds.push(id);
+    }
+  }
+
+  private tickHunt(u: SimUnit, dt: number): boolean {
+    if (!u.huntTarget) return false;
+    const a = this.animals.get(u.huntTarget);
+    if (!a) {
+      u.huntTarget = null;
+      u.state = "idle";
+      u.path = [];
+      return true;
+    }
+    const dx = a.gx - u.gx;
+    const dy = a.gy - u.gy;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist <= HUNT_RANGE) {
+      u.path = [];
+      u.state = "harvesting";
+      u.huntTimer += dt;
+      if (u.huntTimer >= HUNT_INTERVAL) {
+        u.huntTimer = 0;
+        a.hp -= HUNT_DAMAGE;
+        a.state = "flee";
+        if (a.hp <= 0) {
+          const spec = ANIMAL_SPECS[a.kind];
+          this.resources[u.owner].fleisch += spec.meat;
+          this.animals.delete(a.id);
+          this.removedAnimalIds.push(a.id);
+          u.huntTarget = null;
+          u.state = "idle";
+        }
+      }
+      return true;
+    }
+
+    const ti = Math.floor(a.gx);
+    const tj = Math.floor(a.gy);
+    const last = u.path[u.path.length - 1];
+    const lastTile = last
+      ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
+      : null;
+    if (lastTile !== `${ti},${tj}`) {
+      const path = findPath(
+        (x, y) => this.isWalkable(x, y),
+        Math.floor(u.gx),
+        Math.floor(u.gy),
+        ti,
+        tj,
+        new Set<string>(),
+      );
+      if (path && path.length > 1) {
+        u.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
+      }
+    }
+    u.state = "moving";
+
+    if (u.path.length > 0) {
+      const wp = u.path[0];
+      const ddx = wp.gx - u.gx;
+      const ddy = wp.gy - u.gy;
+      const sd = Math.hypot(ddx, ddy);
+      if (sd < 0.02) {
+        u.gx = wp.gx;
+        u.gy = wp.gy;
+        u.path.shift();
+      } else {
+        const step = Math.min(u.speed * dt, sd);
+        u.gx += (ddx / sd) * step;
+        u.gy += (ddy / sd) * step;
+      }
+      this.maybeFootprint(u);
+    }
+    return true;
   }
 
   addPlayer(p: PlayerId): UnitSnapshot[] {
@@ -124,6 +416,8 @@ export class Sim {
         state: "idle",
         path: [],
         harvestTarget: null,
+        huntTarget: null,
+        huntTimer: 0,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
       };
@@ -288,12 +582,14 @@ export class Sim {
     if (!path || path.length < 2) {
       u.path = [];
       u.harvestTarget = null;
+      u.huntTarget = null;
       u.state = "idle";
       return;
     }
     u.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
     u.state = "moving";
     u.harvestTarget = null;
+    u.huntTarget = null;
   }
 
   private startHarvest(
@@ -333,6 +629,7 @@ export class Sim {
         ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
         : [];
     u.harvestTarget = { kind, i: ti, j: tj };
+    u.huntTarget = null;
     u.harvestTimer = 0;
     u.state = u.path.length > 0 ? "moving" : "harvesting";
   }
@@ -475,10 +772,16 @@ export class Sim {
 
   step(dt: number): void {
     this.tick++;
+    this.stepAnimals(dt);
     for (const u of this.units) {
+      if (u.huntTarget) {
+        if (this.tickHunt(u, dt)) continue;
+      }
       if (u.state === "moving") {
         if (u.path.length === 0) {
-          if (u.harvestTarget && this.objectStillThere(u.harvestTarget)) {
+          if (u.huntTarget) {
+            u.state = "idle";
+          } else if (u.harvestTarget && this.objectStillThere(u.harvestTarget)) {
             u.state = "harvesting";
           } else {
             u.harvestTarget = null;
