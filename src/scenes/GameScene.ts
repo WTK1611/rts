@@ -1724,11 +1724,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private describeReward(reward: ArtifactReward): string {
-    if (reward.kind === "newMember") return "ein neues Stammesmitglied";
-    if (reward.kind === "fleisch") return `${reward.amount} Fleisch`;
-    if (reward.kind === "fisch") return `${reward.amount} Fisch`;
-    if (reward.kind === "beeren") return `${reward.amount} Beeren`;
-    if (reward.kind === "pilze") return `${reward.amount} Pilze`;
+    const s = t();
+    if (reward.kind === "newMember") return s.rewardNewMember;
+    if (reward.kind === "fleisch") return s.rewardAmount(s.resFleisch, reward.amount);
+    if (reward.kind === "fisch") return s.rewardAmount(s.resFisch, reward.amount);
+    if (reward.kind === "beeren") return s.rewardAmount(s.resBeeren, reward.amount);
+    if (reward.kind === "pilze") return s.rewardAmount(s.resPilze, reward.amount);
     return `${reward.amount}`;
   }
 
@@ -1737,16 +1738,13 @@ export class GameScene extends Phaser.Scene {
       const art = this.artifacts.get(ev.id);
       if (art) art.markFound();
       const rewardText = this.describeReward(ev.reward);
+      const s = t();
       if (ev.finder === this.playerId) {
-        this.showToast(
-          `Mythisches Artefakt entdeckt! Belohnung: ${rewardText}`,
-          "artifact",
-          ev.finder,
-        );
+        this.showToast(s.toastArtifactOwn(rewardText), "artifact", ev.finder);
       } else {
-        const name = this.names[ev.finder] || `Stamm ${ev.finder}`;
+        const name = this.names[ev.finder] || s.hudTribeFallback(ev.finder);
         this.showToast(
-          `Stamm von ${name} hat ein mythisches Artefakt entdeckt (${rewardText})`,
+          s.toastArtifactOther(name, rewardText),
           "artifact",
           ev.finder,
         );
@@ -2005,20 +2003,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryIgniteCampfireAt(i: number, j: number): void {
+    const s = t();
     if (!this.visible.has(`${i},${j}`)) {
-      this.showToast("Lagerfeuer hier nicht sichtbar", "death");
+      this.showToast(s.toastCampfireNotVisible, "death");
       return;
     }
     const res = this.resources[this.playerId];
     if (!res || res.holz < 1 || res.stein < 1) {
-      this.showToast(
-        "Nicht genug Holz und Stein für ein Lagerfeuer",
-        "death",
-      );
+      this.showToast(s.toastCampfireMissingResources, "death");
       return;
     }
     if (this.harvestableAt(i, j) || !this.tileIsLand(i, j)) {
-      this.showToast("Hier kann kein Lagerfeuer entzündet werden", "death");
+      this.showToast(s.toastCampfireNotHere, "death");
       return;
     }
     let nearestSq = Infinity;
@@ -2294,20 +2290,21 @@ export class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     if (!this.hud) return;
-    const myName = this.names[this.playerId] ?? "Du";
+    const s = t();
+    const myName = this.names[this.playerId] ?? s.hudYou;
     const myColor = this.playerColorCss(this.playerId);
     const myRes = this.resources[this.playerId] ?? {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
       fleisch: 0, fisch: 0, stein: 0,
     };
     const labels: Record<keyof Resources, string> = {
-      holz: "Holz",
-      wasser: "Wasser",
-      beeren: "Beeren",
-      pilze: "Pilze",
-      fleisch: "Fleisch",
-      fisch: "Fisch",
-      stein: "Stein",
+      holz: s.resHolz,
+      wasser: s.resWasser,
+      beeren: s.resBeeren,
+      pilze: s.resPilze,
+      fleisch: s.resFleisch,
+      fisch: s.resFisch,
+      stein: s.resStein,
     };
     const resHtml = RESOURCE_KEYS.map(
       (k) =>
@@ -2317,7 +2314,7 @@ export class GameScene extends Phaser.Scene {
 
     const tribeCounts = this.tribeCounts;
     const countChip = (n: number) =>
-      `<span class="count" title="Stammesmitglieder">👥 ${n}</span>`;
+      `<span class="count" title="${s.hudTribeMembers}">👥 ${n}</span>`;
 
     const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
