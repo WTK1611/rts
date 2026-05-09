@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "mcp__chrome-devtools__new_page",
+      "mcp__chrome-devtools__list_console_messages",
+      "Bash(curl -sI http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(curl -sv http://localhost:5173/)",
+      "Bash(curl -sI http://localhost:5173/index.html)",
+      "Bash(curl -sI http://localhost:5173/src/main.ts)",
+      "Bash(kill 91928 91997)"
+    ]
+  }
+}

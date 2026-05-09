@@ -36,8 +36,11 @@ export function findPath(
   startJ: number,
   goalI: number,
   goalJ: number,
+  extraBlocked?: Set<string>,
 ): Cell[] | null {
-  if (!map.inBounds(startI, startJ) || !map.isWalkable(goalI, goalJ)) return null;
+  const isBlocked = (i: number, j: number) =>
+    !map.isWalkable(i, j) || (extraBlocked?.has(`${i},${j}`) ?? false);
+  if (!map.inBounds(startI, startJ) || isBlocked(goalI, goalJ)) return null;
   if (startI === goalI && startJ === goalJ) return [{ i: startI, j: startJ }];
 
   const key = (i: number, j: number) => j * map.width + i;
@@ -82,9 +85,9 @@ export function findPath(
       const nj = cur.j + dj;
       const nk = key(ni, nj);
       if (closed.has(nk)) continue;
-      if (!map.isWalkable(ni, nj)) continue;
+      if (isBlocked(ni, nj)) continue;
       if (di !== 0 && dj !== 0) {
-        if (!map.isWalkable(cur.i + di, cur.j) || !map.isWalkable(cur.i, cur.j + dj)) continue;
+        if (isBlocked(cur.i + di, cur.j) || isBlocked(cur.i, cur.j + dj)) continue;
       }
       const tentativeG = cur.g + cost;
       const existing = open.get(nk);

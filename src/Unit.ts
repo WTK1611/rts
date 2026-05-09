@@ -1,13 +1,6 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
-import { GameMap } from "./GameMap";
-import { findPath } from "./pathfinding";
-import { Tree } from "./Tree";
-
-export type UnitState = "idle" | "moving" | "harvesting";
-
-const HARVEST_INTERVAL = 1.2;
-const HARVEST_AMOUNT = 5;
+import { PlayerId, UnitSnapshot } from "../shared/protocol";
 
 function shade(color: number, factor: number): number {
   const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
@@ -18,44 +11,51 @@ function shade(color: number, factor: number): number {
 
 export class Unit {
   scene: Phaser.Scene;
+  id: string;
+  owner: PlayerId;
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Ellipse;
   head: Phaser.GameObjects.Arc;
   shadow: Phaser.GameObjects.Ellipse;
   selectionRing: Phaser.GameObjects.Ellipse;
+  ownerRing: Phaser.GameObjects.Ellipse;
   gx: number;
   gy: number;
-  speed = 3.5;
+  targetGx: number;
+  targetGy: number;
   selected = false;
+  state: UnitSnapshot["state"] = "idle";
 
   private bobPhase: number;
-  private path: { gx: number; gy: number }[] = [];
-  state: UnitState = "idle";
-  private harvestTarget: Tree | null = null;
-  private harvestTimer = 0;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
 
-  onWoodGained: ((amount: number) => void) | null = null;
-
-  constructor(scene: Phaser.Scene, gx: number, gy: number, color = 0x4ea1ff) {
+  constructor(scene: Phaser.Scene, snap: UnitSnapshot, isLocal: boolean) {
     this.scene = scene;
-    this.gx = gx;
-    this.gy = gy;
+    this.id = snap.id;
+    this.owner = snap.owner;
+    this.gx = snap.gx;
+    this.gy = snap.gy;
+    this.targetGx = snap.gx;
+    this.targetGy = snap.gy;
     this.bobPhase = Math.random() * Math.PI * 2;
-    const { x, y } = gridToScreen(gx, gy);
+    const { x, y } = gridToScreen(this.gx, this.gy);
 
     this.shadow = scene.add.ellipse(0, 1, 22, 9, 0x000000, 0.4);
+
+    this.ownerRing = scene.add
+      .ellipse(0, 0, 30, 14, isLocal ? 0xffffff : 0xff3333, 0)
+      .setStrokeStyle(1.5, isLocal ? 0xffffff : 0xff3333, 0.7);
 
     this.selectionRing = scene.add
       .ellipse(0, 0, 36, 18, 0x00ff66, 0)
       .setStrokeStyle(2, 0x00ff66);
     this.selectionRing.setVisible(false);
 
-    const dark = shade(color, 0.7);
-    const light = shade(color, 1.25);
+    const dark = shade(snap.color, 0.7);
+    const light = shade(snap.color, 1.25);
 
     const bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
-    this.body = scene.add.ellipse(0, -13, 16, 20, color).setStrokeStyle(1.5, 0x141414);
+    this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
     const bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
 
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
@@ -63,6 +63,7 @@ export class Unit {
 
     this.container = scene.add.container(x, y, [
       this.shadow,
+      this.ownerRing,
       this.selectionRing,
       bodyShadow,
       this.body,
@@ -101,89 +102,19 @@ export class Unit {
     }
   }
 
-  get tileI(): number {
-    return Math.floor(this.gx);
-  }
-  get tileJ(): number {
-    return Math.floor(this.gy);
-  }
-
-  moveToTile(map: GameMap, i: number, j: number): void {
-    const path = findPath(map, this.tileI, this.tileJ, i, j);
-    if (!path || path.length < 2) {
-      this.path = [];
-      this.harvestTarget = null;
-      this.setState("idle");
-      return;
+  applySnapshot(snap: UnitSnapshot): void {
+    this.targetGx = snap.gx;
+    this.targetGy = snap.gy;
+    if (this.state !== snap.state) {
+      this.state = snap.state;
+      this.updateStateAnim();
     }
-    this.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
-    this.setState("moving");
-    this.harvestTarget = null;
-  }
-
-  harvestTree(map: GameMap, tree: Tree): void {
-    let bestPath: ReturnType<typeof findPath> = null;
-    const offsets: Array<[number, number]> = [
-      [1, 0], [-1, 0], [0, 1], [0, -1],
-      [1, 1], [1, -1], [-1, 1], [-1, -1],
-    ];
-    for (const [di, dj] of offsets) {
-      const ni = tree.i + di;
-      const nj = tree.j + dj;
-      if (!map.isWalkable(ni, nj)) continue;
-      const p = findPath(map, this.tileI, this.tileJ, ni, nj);
-      if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
-    }
-    if (!bestPath) return;
-    this.path =
-      bestPath.length > 1
-        ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
-        : [];
-    this.harvestTarget = tree;
-    this.harvestTimer = 0;
-    this.setState(this.path.length > 0 ? "moving" : "harvesting");
   }
 
   update(dtSec: number): void {
-    if (this.state === "moving") {
-      if (this.path.length === 0) {
-        this.setState(
-          this.harvestTarget && this.harvestTarget.alive ? "harvesting" : "idle",
-        );
-      } else {
-        const wp = this.path[0];
-        const dx = wp.gx - this.gx;
-        const dy = wp.gy - this.gy;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.02) {
-          this.gx = wp.gx;
-          this.gy = wp.gy;
-          this.path.shift();
-        } else {
-          const step = Math.min(this.speed * dtSec, dist);
-          this.gx += (dx / dist) * step;
-          this.gy += (dy / dist) * step;
-        }
-      }
-    } else if (this.state === "harvesting") {
-      const t = this.harvestTarget;
-      if (!t || !t.alive) {
-        this.harvestTarget = null;
-        this.setState("idle");
-      } else {
-        this.harvestTimer += dtSec;
-        if (this.harvestTimer >= HARVEST_INTERVAL) {
-          this.harvestTimer = 0;
-          t.wood -= HARVEST_AMOUNT;
-          this.onWoodGained?.(HARVEST_AMOUNT);
-          if (t.wood <= 0) {
-            t.destroy();
-            this.harvestTarget = null;
-            this.setState("idle");
-          }
-        }
-      }
-    }
+    const lerp = 1 - Math.pow(0.001, dtSec * 4);
+    this.gx += (this.targetGx - this.gx) * lerp;
+    this.gy += (this.targetGy - this.gy) * lerp;
 
     const { x, y } = gridToScreen(this.gx, this.gy);
     this.bobPhase += dtSec * (this.state === "moving" ? 11 : 3);
@@ -193,10 +124,13 @@ export class Unit {
     this.updateDepth();
   }
 
-  private setState(next: UnitState): void {
-    if (this.state === next) return;
-    this.state = next;
-    if (next === "harvesting") {
+  destroy(): void {
+    this.harvestSwingTween?.stop();
+    this.container.destroy();
+  }
+
+  private updateStateAnim(): void {
+    if (this.state === "harvesting") {
       this.harvestSwingTween?.stop();
       this.body.setAngle(0);
       this.head.setAngle(0);

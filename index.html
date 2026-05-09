@@ -13,11 +13,55 @@
         background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 4px;
         pointer-events: none;
       }
+      #lobby {
+        position: fixed; inset: 0; display: flex;
+        align-items: center; justify-content: center;
+        background: radial-gradient(ellipse at center, #2a4a2a 0%, #0d1a0d 100%);
+        font-family: system-ui, sans-serif;
+        z-index: 10;
+      }
+      #lobby-card {
+        background: #1c2a1c; padding: 32px 36px; border-radius: 12px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+        color: #e8f0e8; min-width: 320px; text-align: center;
+      }
+      #lobby-card h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: 0.5px; }
+      #lobby-title { font-size: 14px; color: #a8c0a8; margin-bottom: 20px; }
+      #lobby-status { font-size: 13px; color: #c8d8c8; min-height: 18px; margin-top: 14px; }
+      #name-input {
+        width: 100%; box-sizing: border-box; padding: 10px 12px;
+        font-size: 18px; text-align: center;
+        background: #0f1a0f; color: #e8f0e8; border: 1px solid #3a5a3a;
+        border-radius: 6px;
+      }
+      #name-input:focus { outline: none; border-color: #6cbf6c; }
+      .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+      .btn {
+        flex: 1; padding: 10px 14px; font-size: 14px;
+        background: #3a6b3a; color: white; border: none;
+        border-radius: 6px; cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn:hover:not(:disabled) { background: #4d8a4d; }
+      .btn:disabled { background: #2a3a2a; color: #6a7a6a; cursor: not-allowed; }
+      .btn.secondary { background: #2a4a2a; }
+      .btn.secondary:hover:not(:disabled) { background: #3a6b3a; }
     </style>
   </head>
   <body>
     <div id="game"></div>
-    <div id="hud">Linksklick: Einheit auswählen · Rechtsklick: bewegen</div>
+    <div id="lobby">
+      <div id="lobby-card">
+        <h1>RTS Multiplayer</h1>
+        <div id="lobby-title">Name eingeben — wir verbinden dich automatisch</div>
+        <input id="name-input" maxlength="20" placeholder="Dein Name" autocomplete="off" />
+        <div class="btn-row">
+          <button id="play-btn" class="btn">Spielen</button>
+        </div>
+        <div id="lobby-status"></div>
+      </div>
+    </div>
+    <div id="hud"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

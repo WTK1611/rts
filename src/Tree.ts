@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
-import { GameMap } from "./GameMap";
 
 const VARIANTS = [
   { trunkW: 5, trunkH: 12, leafW: 22, leafH: 24, leafColor: 0x2e7a2e },
@@ -11,20 +10,18 @@ const VARIANTS = [
 
 export class Tree {
   scene: Phaser.Scene;
-  map: GameMap;
+  id: string;
   i: number;
   j: number;
-  wood = 25;
   alive = true;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
 
-  constructor(scene: Phaser.Scene, map: GameMap, i: number, j: number) {
+  constructor(scene: Phaser.Scene, id: string, i: number, j: number) {
     this.scene = scene;
-    this.map = map;
+    this.id = id;
     this.i = i;
     this.j = j;
-    map.setWalkable(i, j, false);
 
     const v = VARIANTS[(i * 31 + j * 17) % VARIANTS.length];
     const jitter = (((i * 73 + j * 19) % 7) - 3) / 30;
@@ -55,9 +52,8 @@ export class Tree {
     this.container.setDepth((i + 0.5 + j + 0.5) * TILE_H);
   }
 
-  destroy(): void {
+  fall(): void {
     this.alive = false;
-    this.map.setWalkable(this.i, this.j, true);
     this.shadow.destroy();
     this.scene.tweens.add({
       targets: this.container,

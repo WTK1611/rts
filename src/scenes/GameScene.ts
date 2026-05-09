@@ -2,10 +2,13 @@ import Phaser from "phaser";
 import { gridToScreen, screenToGrid, TILE_W, TILE_H } from "../iso";
 import { Unit } from "../Unit";
 import { Tree } from "../Tree";
-import { GameMap } from "../GameMap";
-
-const MAP_SIZE = 20;
-const TREE_COUNT = 28;
+import { Net } from "../net";
+import {
+  InitMessage,
+  PlayerId,
+  ServerMessage,
+  StateMessage,
+} from "../../shared/protocol";
 
 interface DragState {
   startX: number;
@@ -13,16 +16,25 @@ interface DragState {
   isBox: boolean;
 }
 
+export interface GameSceneInit {
+  net: Net;
+  init: InitMessage;
+}
+
 export class GameScene extends Phaser.Scene {
-  private map!: GameMap;
-  private units: Unit[] = [];
-  private trees: Tree[] = [];
+  private net!: Net;
+  private playerId: PlayerId = 0;
+  private mapSize = 20;
+  private names: [string, string] = ["Spieler 1", "Spieler 2"];
+
+  private units: Map<string, Unit> = new Map();
+  private trees: Map<string, Tree> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
   private selectionBox!: Phaser.GameObjects.Graphics;
 
   private drag: DragState | null = null;
-  private wood = 0;
+  private wood: [number, number] = [0, 0];
   private hud: HTMLElement | null = null;
 
   private camTargetX = 0;
@@ -37,24 +49,24 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
-  create(): void {
-    this.map = new GameMap(MAP_SIZE, MAP_SIZE);
+  init(data: GameSceneInit): void {
+    this.net = data.net;
+    this.playerId = data.init.playerId;
+    this.mapSize = data.init.mapSize;
+    this.wood = data.init.wood;
+    this.names = data.init.names;
+  }
 
+  create(): void {
+    const initData = (this as Phaser.Scene).scene.settings.data as GameSceneInit;
     this.drawTiles();
 
-    const startPositions: Array<[number, number]> = [
-      [4, 4], [6, 5], [5, 7], [3, 6],
-    ];
-    this.spawnTrees(startPositions);
+    for (const t of initData.init.trees) {
+      if (t.alive) this.trees.set(t.id, new Tree(this, t.id, t.i, t.j));
+    }
 
-    for (const [i, j] of startPositions) {
-      const color = [0x4ea1ff, 0xff6b6b, 0xffd24e, 0x9b6bff][this.units.length % 4];
-      const u = new Unit(this, i + 0.5, j + 0.5, color);
-      u.onWoodGained = (amount) => {
-        this.wood += amount;
-        this.updateHud();
-      };
-      this.units.push(u);
+    for (const u of initData.init.units) {
+      this.units.set(u.id, new Unit(this, u, u.owner === this.playerId));
     }
 
     this.hoverTile = this.add.graphics();
@@ -66,7 +78,21 @@ export class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x1f3a1f);
-    cam.centerOn(0, (MAP_SIZE * TILE_H) / 2);
+    const myUnits = [...this.units.values()].filter((u) => u.owner === this.playerId);
+    if (myUnits.length > 0) {
+      let cx = 0;
+      let cy = 0;
+      for (const u of myUnits) {
+        const p = gridToScreen(u.gx, u.gy);
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= myUnits.length;
+      cy /= myUnits.length;
+      cam.centerOn(cx, cy);
+    } else {
+      cam.centerOn(0, (this.mapSize * TILE_H) / 2);
+    }
     cam.setZoom(1);
     this.camTargetX = cam.scrollX;
     this.camTargetY = cam.scrollY;
@@ -94,13 +120,15 @@ export class GameScene extends Phaser.Scene {
       },
     );
 
+    this.net.onMessage((msg) => this.onServerMessage(msg));
+
     this.hud = document.getElementById("hud");
     this.updateHud();
   }
 
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
-    for (const u of this.units) u.update(dt);
+    for (const u of this.units.values()) u.update(dt);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -113,25 +141,25 @@ export class GameScene extends Phaser.Scene {
     cam.scrollY += (this.camTargetY - cam.scrollY) * lerp;
   }
 
-  private spawnTrees(reserved: Array<[number, number]>): void {
-    const taken = new Set<string>();
-    for (const [i, j] of reserved) {
-      taken.add(`${i},${j}`);
-      for (let dj = -1; dj <= 1; dj++) {
-        for (let di = -1; di <= 1; di++) taken.add(`${i + di},${j + dj}`);
+  private onServerMessage(msg: ServerMessage): void {
+    if (msg.type === "state") this.applyState(msg);
+  }
+
+  private applyState(msg: StateMessage): void {
+    for (const snap of msg.units) {
+      const u = this.units.get(snap.id);
+      if (u) u.applySnapshot(snap);
+    }
+    for (const id of msg.removedTrees) {
+      const t = this.trees.get(id);
+      if (t) {
+        t.fall();
+        this.trees.delete(id);
       }
     }
-    let placed = 0;
-    let tries = 0;
-    while (placed < TREE_COUNT && tries < 500) {
-      tries++;
-      const i = Phaser.Math.Between(0, MAP_SIZE - 1);
-      const j = Phaser.Math.Between(0, MAP_SIZE - 1);
-      const key = `${i},${j}`;
-      if (taken.has(key)) continue;
-      taken.add(key);
-      this.trees.push(new Tree(this, this.map, i, j));
-      placed++;
+    if (msg.wood[0] !== this.wood[0] || msg.wood[1] !== this.wood[1]) {
+      this.wood = [...msg.wood] as [number, number];
+      this.updateHud();
     }
   }
 
@@ -143,9 +171,10 @@ export class GameScene extends Phaser.Scene {
     if (!p.leftButtonDown()) return;
 
     const hits = this.input.hitTestPointer(p);
-    const clicked = this.units.find((u) => hits.includes(u.container));
+    const myUnits = [...this.units.values()].filter((u) => u.owner === this.playerId);
+    const clicked = myUnits.find((u) => hits.includes(u.container));
     if (clicked) {
-      this.units.forEach((u) => u.setSelected(u === clicked));
+      myUnits.forEach((u) => u.setSelected(u === clicked));
       this.drag = null;
       return;
     }
@@ -168,24 +197,29 @@ export class GameScene extends Phaser.Scene {
     if (this.drag.isBox) {
       this.commitBoxSelection(p);
     } else {
-      this.units.forEach((u) => u.setSelected(false));
+      for (const u of this.units.values()) {
+        if (u.owner === this.playerId) u.setSelected(false);
+      }
     }
     this.drag = null;
     this.selectionBox.clear();
   }
 
   private commandSelected(p: Phaser.Input.Pointer): void {
-    const selected = this.units.filter((u) => u.selected);
+    const selected = [...this.units.values()].filter(
+      (u) => u.owner === this.playerId && u.selected,
+    );
     if (selected.length === 0) return;
     const { gx, gy } = screenToGrid(p.worldX, p.worldY);
     const i = Math.floor(gx);
     const j = Math.floor(gy);
-    if (!this.map.inBounds(i, j)) return;
-    const tree = this.trees.find((t) => t.alive && t.i === i && t.j === j);
+    if (i < 0 || j < 0 || i >= this.mapSize || j >= this.mapSize) return;
+    const tree = [...this.trees.values()].find((t) => t.alive && t.i === i && t.j === j);
+    const ids = selected.map((u) => u.id);
     if (tree) {
-      selected.forEach((u) => u.harvestTree(this.map, tree));
+      this.net.send({ type: "harvest", unitIds: ids, treeId: tree.id });
     } else {
-      selected.forEach((u) => u.moveToTile(this.map, i, j));
+      this.net.send({ type: "move", unitIds: ids, i, j });
     }
   }
 
@@ -213,19 +247,20 @@ export class GameScene extends Phaser.Scene {
       Math.max(this.drag.startX, p.x),
       Math.max(this.drag.startY, p.y),
     );
-    this.units.forEach((u) => {
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
       const x = u.container.x;
       const y = u.container.y;
       u.setSelected(x >= a.x && x <= b.x && y >= a.y && y <= b.y);
-    });
+    }
   }
 
   private drawTiles(): void {
     const palette = [0x355d35, 0x3a6b3a, 0x437a43, 0x2f5a2f, 0x4d8a4d, 0x335a33];
     const g = this.add.graphics();
     g.setDepth(-100000);
-    for (let j = 0; j < MAP_SIZE; j++) {
-      for (let i = 0; i < MAP_SIZE; i++) {
+    for (let j = 0; j < this.mapSize; j++) {
+      for (let i = 0; i < this.mapSize; i++) {
         const { x, y } = gridToScreen(i, j);
         const h = (i * 374761393 + j * 668265263) >>> 0;
         const fill = palette[h % palette.length];
@@ -265,7 +300,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawHover(i: number, j: number): void {
     this.hoverTile.clear();
-    if (!this.map.inBounds(i, j)) return;
+    if (i < 0 || j < 0 || i >= this.mapSize || j >= this.mapSize) return;
     const { x, y } = gridToScreen(i, j);
     const drawDiamond = () => {
       this.hoverTile.beginPath();
@@ -285,8 +320,12 @@ export class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     if (!this.hud) return;
+    const myName = this.names[this.playerId];
+    const oppName = this.names[1 - this.playerId];
+    const me = this.wood[this.playerId];
+    const opp = this.wood[1 - this.playerId];
     this.hud.textContent =
-      `Holz: ${this.wood}  ·  LMK: Auswahl  ·  LMK ziehen: Boxauswahl  ·  ` +
-      `RMK: bewegen / Baum fällen  ·  WASD: Kamera  ·  Mausrad: Zoom`;
+      `${myName} (du): ${me} Holz  ·  ${oppName}: ${opp} Holz  ·  ` +
+      `LMK: Auswahl  ·  RMK: bewegen / Baum fällen  ·  WASD: Kamera`;
   }
 }
