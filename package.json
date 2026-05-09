@@ -9,6 +9,7 @@
     "dev:server": "sh scripts/dev-server.sh",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "deploy": "sh scripts/deploy.sh",
     "pwa-icons": "pwa-assets-generator"
   },
   "dependencies": {
