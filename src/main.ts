@@ -3,9 +3,14 @@ import { GameScene } from "./scenes/GameScene";
 import { Net } from "./net";
 import { ServerMessage } from "../shared/protocol";
 
-const SERVER_URL =
-  (import.meta.env.VITE_SERVER_URL as string | undefined) ??
-  `ws://${window.location.hostname}:8787`;
+const SERVER_URL = (() => {
+  const env = import.meta.env.VITE_SERVER_URL as string | undefined;
+  if (env) return env;
+  if (window.location.protocol === "https:") {
+    return `wss://${window.location.host}/ws`;
+  }
+  return `ws://${window.location.hostname}:8787`;
+})();
 
 const lobby = document.getElementById("lobby") as HTMLDivElement;
 const lobbyStatus = document.getElementById("lobby-status") as HTMLDivElement;
