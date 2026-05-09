@@ -44,6 +44,7 @@ import {
   heightAt,
   isLandTile,
   MAX_TERRAIN_HEIGHT_PX,
+  rand01,
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
@@ -166,6 +167,7 @@ export class GameScene extends Phaser.Scene {
   private keyLeft!: Phaser.Input.Keyboard.Key;
   private keyRight!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
+  private tribeMoveCooldown = 0;
   private minimapVisible = true;
 
   private gameStartMs = 0;
@@ -279,7 +281,7 @@ export class GameScene extends Phaser.Scene {
     this.moveTargetGfx.setVisible(false);
 
     const cam = this.cameras.main;
-    cam.setBackgroundColor(0x0a0e0a);
+    cam.setBackgroundColor(0x6aaad6);
     const spawn = initData.init.spawn;
     const spawnPx = gridToScreen(spawn.cx + 0.5, spawn.cy + 0.5);
     cam.centerOn(spawnPx.x, spawnPx.y);
@@ -590,15 +592,20 @@ export class GameScene extends Phaser.Scene {
     this.spectateSlot(slot);
   }
 
-  private applyTribeKeys(_dt: number): void {
-    const JustDown = Phaser.Input.Keyboard.JustDown;
-    const right = JustDown(this.keyD) || JustDown(this.keyRight);
-    const left = JustDown(this.keyA) || JustDown(this.keyLeft);
-    const down = JustDown(this.keyS) || JustDown(this.keyDown);
-    const up = JustDown(this.keyW) || JustDown(this.keyUp);
+  private applyTribeKeys(dt: number): void {
+    const right = this.keyD.isDown || this.keyRight.isDown;
+    const left = this.keyA.isDown || this.keyLeft.isDown;
+    const down = this.keyS.isDown || this.keyDown.isDown;
+    const up = this.keyW.isDown || this.keyUp.isDown;
     const dx = (right ? 1 : 0) - (left ? 1 : 0);
     const dy = (down ? 1 : 0) - (up ? 1 : 0);
-    if (dx === 0 && dy === 0) return;
+    if (dx === 0 && dy === 0) {
+      this.tribeMoveCooldown = 0;
+      return;
+    }
+    this.tribeMoveCooldown -= dt;
+    if (this.tribeMoveCooldown > 0) return;
+    this.tribeMoveCooldown = 0.18;
 
     let chief: Unit | null = null;
     for (const u of this.units.values()) {
@@ -612,8 +619,19 @@ export class GameScene extends Phaser.Scene {
 
     const gdi = dx + dy;
     const gdj = -dx + dy;
-    const ti = Math.round(chief.gx) + gdi;
-    const tj = Math.round(chief.gy) + gdj;
+    const stepDist = 3;
+    const ci = Math.round(chief.gx);
+    const cj = Math.round(chief.gy);
+    let ti = ci;
+    let tj = cj;
+    for (let s = 1; s <= stepDist; s++) {
+      const ni = ci + gdi * s;
+      const nj = cj + gdj * s;
+      if (!isLandTile(this.seed, ni, nj)) break;
+      ti = ni;
+      tj = nj;
+    }
+    if (ti === ci && tj === cj) return;
     this.net.send({ type: "move", unitIds: [chief.id], i: ti, j: tj });
     this.setMoveTarget(ti, tj, "move");
   }
@@ -756,11 +774,20 @@ export class GameScene extends Phaser.Scene {
     const stones = new Map<string, Stone>();
     const i0 = cx * CHUNK_SIZE;
     const j0 = cy * CHUNK_SIZE;
+    // Pass 1: draw water tiles first so land tiles can carve a jagged shoreline over them.
     for (let dj = 0; dj < CHUNK_SIZE; dj++) {
       for (let di = 0; di < CHUNK_SIZE; di++) {
         const i = i0 + di;
         const j = j0 + dj;
-        this.drawTile(g, g, i, j);
+        if (this.isWaterAt(i, j)) this.drawTile(g, g, i, j);
+      }
+    }
+    // Pass 2: draw land tiles (with wavy water edges + beach band) and spawn entities.
+    for (let dj = 0; dj < CHUNK_SIZE; dj++) {
+      for (let di = 0; di < CHUNK_SIZE; di++) {
+        const i = i0 + di;
+        const j = j0 + dj;
+        if (!this.isWaterAt(i, j)) this.drawTile(g, g, i, j);
         if (hasTreeAt(this.seed, i, j)) {
           const id = objKey("tree", i, j);
           if (!this.removedKeys.has(id) && !this.trees.has(id)) {
@@ -850,10 +877,15 @@ export class GameScene extends Phaser.Scene {
     const fill = palette[variant];
     const isWater = biome === "lake" || biome === "river";
 
-    const hN = isWater ? 0 : heightAt(this.seed, i, j);
-    const hE = isWater ? 0 : heightAt(this.seed, i + 1, j);
-    const hS = isWater ? 0 : heightAt(this.seed, i + 1, j + 1);
-    const hW = isWater ? 0 : heightAt(this.seed, i, j + 1);
+    const cornerTouchesWater = (ci: number, cj: number): boolean =>
+      this.isWaterAt(ci - 1, cj - 1) ||
+      this.isWaterAt(ci, cj - 1) ||
+      this.isWaterAt(ci - 1, cj) ||
+      this.isWaterAt(ci, cj);
+    const hN = isWater || cornerTouchesWater(i, j) ? 0 : heightAt(this.seed, i, j);
+    const hE = isWater || cornerTouchesWater(i + 1, j) ? 0 : heightAt(this.seed, i + 1, j);
+    const hS = isWater || cornerTouchesWater(i + 1, j + 1) ? 0 : heightAt(this.seed, i + 1, j + 1);
+    const hW = isWater || cornerTouchesWater(i, j + 1) ? 0 : heightAt(this.seed, i, j + 1);
     const avgH = (hN + hE + hS + hW) * 0.25;
 
     let tileFill = fill;
@@ -869,17 +901,48 @@ export class GameScene extends Phaser.Scene {
       tileFill = shadeColor(fill, brightness);
     }
 
+    const corners = [
+      { x: x, y: y - hN },
+      { x: x + TILE_W / 2, y: y + TILE_H / 2 - hE },
+      { x: x, y: y + TILE_H - hS },
+      { x: x - TILE_W / 2, y: y + TILE_H / 2 - hW },
+    ];
+    const NB_DELTA: Array<[number, number]> = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ];
+    const nbWater = isWater
+      ? [false, false, false, false]
+      : NB_DELTA.map(([di, dj]) => this.isWaterAt(i + di, j + dj));
+
     g.fillStyle(tileFill, 1);
     g.beginPath();
-    g.moveTo(x, y - hN);
-    g.lineTo(x + TILE_W / 2, y + TILE_H / 2 - hE);
-    g.lineTo(x, y + TILE_H - hS);
-    g.lineTo(x - TILE_W / 2, y + TILE_H / 2 - hW);
+    g.moveTo(corners[0].x, corners[0].y);
+    for (let e = 0; e < 4; e++) {
+      const a = corners[e];
+      const b = corners[(e + 1) % 4];
+      if (nbWater[e]) {
+        const wave = this.edgeWavePoints(i, j, e, a.x, a.y, b.x, b.y);
+        for (const p of wave) g.lineTo(p.x, p.y);
+      }
+      g.lineTo(b.x, b.y);
+    }
     g.closePath();
     g.fillPath();
     if (isWater) {
       g.lineStyle(1, 0x16304a, 0.2);
       g.strokePath();
+    }
+
+    if (!isWater) {
+      for (let e = 0; e < 4; e++) {
+        if (!nbWater[e]) continue;
+        const a = corners[e];
+        const b = corners[(e + 1) % 4];
+        this.drawBeachBand(g, i, j, e, a.x, a.y, b.x, b.y);
+      }
     }
 
     const decor = tileDecor(this.seed, i, j);
@@ -977,6 +1040,74 @@ export class GameScene extends Phaser.Scene {
         g.fillCircle(x + dx + 1, cy + dy + 1, 1.2);
       }
     }
+  }
+
+  private isWaterAt(i: number, j: number): boolean {
+    const b = biomeAt(this.seed, i, j);
+    return b === "lake" || b === "river";
+  }
+
+  private edgeWavePoints(
+    i: number,
+    j: number,
+    edgeIdx: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+  ): Array<{ x: number; y: number }> {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return [];
+    const nx = -dy / len;
+    const ny = dx / len;
+    const tx = dx / len;
+    const ty = dy / len;
+    const SEGMENTS = 7;
+    const pts: Array<{ x: number; y: number }> = [];
+    for (let k = 1; k < SEGMENTS; k++) {
+      const t = k / SEGMENTS;
+      const taper = Math.sin(t * Math.PI);
+      const r1 = rand01(this.seed ^ 0x517a17, i * 17 + edgeIdx * 257 + k, j * 31 + edgeIdx * 113);
+      const r2 = rand01(this.seed ^ 0x91537d, i * 11 + edgeIdx * 199 + k * 7, j * 13 + edgeIdx * 71);
+      const inward = (1.5 + r1 * 5) * taper;
+      const along = (r2 - 0.5) * 4 * taper;
+      const baseX = ax + dx * t + tx * along;
+      const baseY = ay + dy * t + ty * along;
+      pts.push({ x: baseX + nx * inward, y: baseY + ny * inward });
+    }
+    return pts;
+  }
+
+  private drawBeachBand(
+    g: Phaser.GameObjects.Graphics,
+    i: number,
+    j: number,
+    edgeIdx: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+  ): void {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const SAND = 5;
+    const wave = this.edgeWavePoints(i, j, edgeIdx, ax, ay, bx, by);
+    const outer = [{ x: ax, y: ay }, ...wave, { x: bx, y: by }];
+    g.fillStyle(0xe8d28a, 1);
+    g.beginPath();
+    g.moveTo(outer[0].x, outer[0].y);
+    for (let k = 1; k < outer.length; k++) g.lineTo(outer[k].x, outer[k].y);
+    for (let k = outer.length - 1; k >= 0; k--) {
+      g.lineTo(outer[k].x + nx * SAND, outer[k].y + ny * SAND);
+    }
+    g.closePath();
+    g.fillPath();
   }
 
   private waterShadeAt(i: number, j: number): number {

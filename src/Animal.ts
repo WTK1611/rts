@@ -52,6 +52,7 @@ export class Animal {
   hpFg: Phaser.GameObjects.Rectangle;
   worldSeed: number;
   facing: number = 1;
+  maturity: number = 1;
   private bobPhase = Math.random() * Math.PI * 2;
 
   constructor(scene: Phaser.Scene, snap: AnimalSnapshot, worldSeed: number) {
@@ -65,6 +66,7 @@ export class Animal {
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
     this.state = snap.state;
+    this.maturity = snap.maturity ?? 1;
     this.worldSeed = worldSeed;
 
     const look = LOOKS[snap.kind];
@@ -188,6 +190,7 @@ export class Animal {
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
     this.state = snap.state;
+    this.maturity = snap.maturity ?? 1;
     if (this.hp < this.hpMax) {
       this.hpBg.setVisible(true);
       this.hpFg.setVisible(true);
@@ -206,7 +209,8 @@ export class Animal {
     this.bobPhase += dtSec * (this.state === "wander" || this.state === "flee" ? 9 : 2);
     const bob = this.state !== "idle" ? Math.sin(this.bobPhase) * 0.6 : 0;
     this.container.setPosition(x, y - h + bob);
-    this.container.setScale(this.facing, 1);
+    const ageScale = 0.55 + 0.45 * this.maturity;
+    this.container.setScale(this.facing * ageScale, ageScale);
     this.updateDepth();
   }
 

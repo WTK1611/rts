@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
-import { PlayerId, UnitGender, UnitSnapshot } from "../shared/protocol";
+import { HuntWeapon, PlayerId, UnitGender, UnitSnapshot } from "../shared/protocol";
 import { groundHeight } from "../shared/worldgen";
 
 function shade(color: number, factor: number): number {
@@ -47,6 +47,11 @@ export class Unit {
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
+  private huntSwingTween: Phaser.Tweens.Tween | null = null;
+  private huntStrikeEvent: Phaser.Time.TimerEvent | null = null;
+  private weaponGfx: Phaser.GameObjects.Graphics | null = null;
+  private huntWeapon: HuntWeapon | null = null;
+  private huntFacing: 1 | -1 = 1;
   private hpBarBg: Phaser.GameObjects.Rectangle;
   private hpBarFill: Phaser.GameObjects.Rectangle;
   private nameLabel: Phaser.GameObjects.Text;
@@ -175,8 +180,15 @@ export class Unit {
       this.color = snap.color;
       this.refreshOwnerVisuals(isLocal);
     }
-    if (this.state !== snap.state) {
-      this.state = snap.state;
+    const newWeapon = snap.huntWeapon ?? null;
+    const newFacing = snap.huntFacing ?? this.huntFacing;
+    const stateChanged = this.state !== snap.state;
+    const weaponChanged = this.huntWeapon !== newWeapon;
+    const facingChanged = this.huntFacing !== newFacing;
+    if (stateChanged) this.state = snap.state;
+    this.huntWeapon = newWeapon;
+    this.huntFacing = newFacing;
+    if (stateChanged || weaponChanged || facingChanged) {
       this.updateStateAnim();
     }
     const hpChanged = this.hp !== snap.hp || this.hpMax !== snap.hpMax;
@@ -249,7 +261,7 @@ export class Unit {
     this.bodyShadow.setScale(fatness, 1);
     this.bodyHighlight.setScale(fatness, 1);
     this.container.setScale(scale);
-    if (this.state !== "harvesting") {
+    if (this.state !== "harvesting" && this.state !== "hunting") {
       this.body.setAngle(lean);
       this.head.setAngle(lean);
       this.hair.setAngle(lean);
@@ -287,12 +299,18 @@ export class Unit {
 
   destroy(): void {
     this.harvestSwingTween?.stop();
+    this.huntSwingTween?.stop();
+    this.huntStrikeEvent?.remove(false);
     this.container.destroy();
   }
 
   die(onComplete: () => void): void {
     this.harvestSwingTween?.stop();
     this.harvestSwingTween = null;
+    this.huntSwingTween?.stop();
+    this.huntSwingTween = null;
+    this.huntStrikeEvent?.remove(false);
+    this.huntStrikeEvent = null;
     this.scene.tweens.killTweensOf(this.selectionRing);
     this.selectionRing.setVisible(false);
     this.hpBarBg.setVisible(false);
@@ -319,6 +337,7 @@ export class Unit {
 
   private updateStateAnim(): void {
     if (this.state === "harvesting") {
+      this.stopHuntAnim();
       this.harvestSwingTween?.stop();
       this.body.setAngle(0);
       this.head.setAngle(0);
@@ -330,12 +349,179 @@ export class Unit {
         repeat: -1,
         ease: "Sine.easeInOut",
       });
+    } else if (this.state === "hunting") {
+      this.harvestSwingTween?.stop();
+      this.harvestSwingTween = null;
+      this.startHuntAnim();
     } else {
       this.harvestSwingTween?.stop();
       this.harvestSwingTween = null;
+      this.stopHuntAnim();
       this.body.setAngle(0);
       this.head.setAngle(0);
       this.applyLifeCycleVisuals();
+    }
+  }
+
+  private ensureWeaponGfx(): Phaser.GameObjects.Graphics {
+    if (!this.weaponGfx) {
+      this.weaponGfx = this.scene.add.graphics({ x: 0, y: 0 });
+      const idx = this.container.list.indexOf(this.crown);
+      if (idx >= 0) this.container.addAt(this.weaponGfx, idx);
+      else this.container.add(this.weaponGfx);
+    }
+    return this.weaponGfx;
+  }
+
+  private drawWeapon(weapon: HuntWeapon): void {
+    const g = this.ensureWeaponGfx();
+    g.clear();
+    if (weapon === "spear") {
+      g.fillStyle(0x6e4a24, 1);
+      g.lineStyle(0.5, 0x2a1a0a, 1);
+      g.fillRect(0, -1, 16, 1.6);
+      g.strokeRect(0, -1, 16, 1.6);
+      g.fillStyle(0xc8c2b8, 1);
+      g.fillTriangle(15, -2.8, 15, 1.4, 20, -0.7);
+      g.lineStyle(0.5, 0x2a2a2a, 1);
+      g.strokeTriangle(15, -2.8, 15, 1.4, 20, -0.7);
+    } else if (weapon === "club") {
+      g.fillStyle(0x5a3a1c, 1);
+      g.lineStyle(0.5, 0x2a1a0a, 1);
+      g.fillRect(0, -1.2, 9, 1.8);
+      g.strokeRect(0, -1.2, 9, 1.8);
+      g.fillStyle(0x4a2f16, 1);
+      g.fillRoundedRect(7, -2.6, 6, 4.6, 1.8);
+      g.lineStyle(0.5, 0x2a1a0a, 1);
+      g.strokeRoundedRect(7, -2.6, 6, 4.6, 1.8);
+    }
+  }
+
+  private startHuntAnim(): void {
+    this.stopHuntAnim();
+    const weapon = this.huntWeapon ?? "fists";
+    const facing = this.huntFacing;
+    if (this.weaponGfx) {
+      this.weaponGfx.clear();
+      this.weaponGfx.setVisible(false);
+    }
+    if (weapon === "fists") {
+      this.body.setAngle(0);
+      this.head.setAngle(0);
+      this.huntSwingTween = this.scene.tweens.add({
+        targets: [this.body, this.head],
+        angle: { from: -16 * facing, to: 16 * facing },
+        duration: 180,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    } else if (weapon === "club") {
+      const g = this.ensureWeaponGfx();
+      this.drawWeapon("club");
+      g.setVisible(true);
+      g.setPosition(2 * facing, -14);
+      g.setScale(facing, 1);
+      g.setAngle(-70 * facing);
+      this.body.setAngle(0);
+      this.head.setAngle(0);
+      this.huntSwingTween = this.scene.tweens.add({
+        targets: g,
+        angle: { from: -70 * facing, to: 50 * facing },
+        duration: 240,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    } else if (weapon === "spear") {
+      const g = this.ensureWeaponGfx();
+      this.drawWeapon("spear");
+      g.setVisible(true);
+      g.setScale(facing, 1);
+      g.setAngle(0);
+      g.setPosition(2 * facing, -14);
+      this.body.setAngle(0);
+      this.head.setAngle(0);
+      const baseX = 2 * facing;
+      this.huntSwingTween = this.scene.tweens.add({
+        targets: g,
+        x: { from: baseX, to: baseX + 8 * facing },
+        duration: 200,
+        yoyo: true,
+        repeat: -1,
+        ease: "Cubic.easeOut",
+      });
+    } else if (weapon === "stones") {
+      this.body.setAngle(0);
+      this.head.setAngle(0);
+      this.huntSwingTween = this.scene.tweens.add({
+        targets: [this.body, this.head],
+        angle: { from: -8 * facing, to: 14 * facing },
+        duration: 320,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+      this.scheduleStoneThrows();
+    }
+  }
+
+  private scheduleStoneThrows(): void {
+    this.huntStrikeEvent?.remove(false);
+    this.spawnStoneProjectile();
+    this.huntStrikeEvent = this.scene.time.addEvent({
+      delay: 900,
+      loop: true,
+      callback: () => this.spawnStoneProjectile(),
+    });
+  }
+
+  private spawnStoneProjectile(): void {
+    if (this.state !== "hunting" || this.huntWeapon !== "stones") return;
+    const facing = this.huntFacing;
+    const startX = this.container.x + 3 * facing;
+    const startY = this.container.y - 16;
+    const endX = startX + 32 * facing;
+    const endY = startY + 4;
+    const peakY = startY - 18;
+    const stone = this.scene.add.circle(startX, startY, 1.8, 0x8a8580)
+      .setStrokeStyle(0.5, 0x3a3833)
+      .setDepth(this.container.depth + 1);
+    this.scene.tweens.add({
+      targets: stone,
+      x: endX,
+      duration: 380,
+      ease: "Linear",
+    });
+    this.scene.tweens.add({
+      targets: stone,
+      y: { from: startY, to: peakY },
+      duration: 190,
+      ease: "Sine.easeOut",
+      yoyo: false,
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: stone,
+          y: endY,
+          duration: 190,
+          ease: "Sine.easeIn",
+          onComplete: () => stone.destroy(),
+        });
+      },
+    });
+  }
+
+  private stopHuntAnim(): void {
+    this.huntSwingTween?.stop();
+    this.huntSwingTween = null;
+    this.huntStrikeEvent?.remove(false);
+    this.huntStrikeEvent = null;
+    if (this.weaponGfx) {
+      this.weaponGfx.clear();
+      this.weaponGfx.setVisible(false);
+      this.weaponGfx.setAngle(0);
+      this.weaponGfx.setPosition(0, 0);
+      this.weaponGfx.setScale(1, 1);
     }
   }
 

@@ -6,12 +6,14 @@ export type PlayerId = number;
 
 export type UnitGender = "m" | "f";
 
+export type HuntWeapon = "fists" | "stones" | "club" | "spear";
+
 export interface UnitSnapshot {
   id: string;
   owner: PlayerId;
   gx: number;
   gy: number;
-  state: "idle" | "moving" | "harvesting";
+  state: "idle" | "moving" | "harvesting" | "hunting";
   color: number;
   hp: number;
   hpMax: number;
@@ -19,6 +21,8 @@ export interface UnitSnapshot {
   gender: UnitGender;
   firstName: string;
   isChief: boolean;
+  huntWeapon?: HuntWeapon;
+  huntFacing?: 1 | -1;
 }
 
 export interface SpawnInfo {
@@ -71,6 +75,7 @@ export interface AnimalSnapshot {
   hp: number;
   hpMax: number;
   state: "idle" | "wander" | "flee" | "hunt";
+  maturity: number;
 }
 
 export interface RemovedObject {

@@ -112,12 +112,12 @@ interface HeightProfile {
 const HEIGHT_PROFILES: Record<Biome, HeightProfile> = {
   lake: { base: 0, hill: 0 },
   river: { base: 0, hill: 0 },
-  wiesen: { base: 0, hill: 2 },
-  wald: { base: 3, hill: 9 },
-  savanne: { base: 4, hill: 12 },
-  wueste: { base: 1, hill: 6 },
-  felsen: { base: 22, hill: 22 },
-  gebirge: { base: 46, hill: 30 },
+  wiesen: { base: 0, hill: 3 },
+  wald: { base: 4, hill: 12 },
+  savanne: { base: 5, hill: 16 },
+  wueste: { base: 2, hill: 8 },
+  felsen: { base: 34, hill: 34 },
+  gebirge: { base: 78, hill: 58 },
   canyon: { base: -22, hill: 6 },
 };
 
@@ -157,7 +157,7 @@ export function elevationAt(seed: number, i: number, j: number): number {
   return fbm(seed ^ 0xeeeeee, i * 0.03, j * 0.03, 4);
 }
 
-export const MAX_TERRAIN_HEIGHT_PX = 76;
+export const MAX_TERRAIN_HEIGHT_PX = 140;
 const WATER_LEVEL = 0.30;
 
 export function heightAt(seed: number, i: number, j: number): number {
