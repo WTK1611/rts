@@ -152,6 +152,10 @@ export class GameScene extends Phaser.Scene {
   private tribeMoveCooldown = 0;
   private minimapVisible = true;
 
+  private gameStartMs = 0;
+  private initialTribeSize = 0;
+  private isGameOver = false;
+
   constructor() {
     super("GameScene");
   }
@@ -177,6 +181,11 @@ export class GameScene extends Phaser.Scene {
       this.units.set(u.id, new Unit(this, u, u.owner === this.playerId, this.seed));
       this.playerColors[u.owner] = u.color;
     }
+
+    this.gameStartMs = Date.now();
+    this.initialTribeSize = [...this.units.values()].filter(
+      (u) => u.owner === this.playerId,
+    ).length;
 
     for (const snap of this.pendingAnimals) {
       this.spawnAnimalLocal(snap);
@@ -1008,6 +1017,7 @@ export class GameScene extends Phaser.Scene {
       this.units.delete(id);
       u.die(() => {});
     }
+    if (msg.deadUnitIds.length > 0) this.checkGameOver();
     for (const snap of msg.animals) {
       const a = this.animals.get(snap.id);
       if (a) a.applySnapshot(snap);
@@ -1412,6 +1422,62 @@ export class GameScene extends Phaser.Scene {
       `Stamm von ${escapeHtml(myName)}</div>` +
       `<div class="res">${resHtml}</div>` +
       othersHtml;
+  }
+
+  private checkGameOver(): void {
+    if (this.isGameOver) return;
+    if (this.initialTribeSize === 0) return;
+    const alive = [...this.units.values()].some((u) => u.owner === this.playerId);
+    if (alive) return;
+    this.isGameOver = true;
+    this.time.delayedCall(2400, () => this.showGameOver());
+  }
+
+  private showGameOver(): void {
+    const elapsedMs = Date.now() - this.gameStartMs;
+    const totalSec = Math.floor(elapsedMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    const timeStr = `${m}:${s.toString().padStart(2, "0")}`;
+
+    const myRes = this.resources[this.playerId] ?? {
+      holz: 0, wasser: 0, beeren: 0, pilze: 0,
+      fleisch: 0, fisch: 0, stein: 0,
+    };
+    const labels: Record<keyof Resources, string> = {
+      holz: "Holz",
+      wasser: "Wasser",
+      beeren: "Beeren",
+      pilze: "Pilze",
+      fleisch: "Fleisch",
+      fisch: "Fisch",
+      stein: "Stein",
+    };
+    const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (myRes[k] ?? 0), 0);
+    const resHtml = RESOURCE_KEYS.map(
+      (k) =>
+        `<div class="go-item"><span class="go-ico ${k}"></span>` +
+        `<span class="go-label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
+    ).join("");
+
+    const overlay = document.createElement("div");
+    overlay.id = "gameover";
+    overlay.innerHTML =
+      `<div id="gameover-card">` +
+      `<h1>Dein Stamm ist ausgestorben</h1>` +
+      `<div class="go-sub">Statistik</div>` +
+      `<div class="go-stats">` +
+      `<div class="go-row"><span>Überlebenszeit</span><b>${timeStr}</b></div>` +
+      `<div class="go-row"><span>Stammesmitglieder</span><b>${this.initialTribeSize}</b></div>` +
+      `<div class="go-row"><span>Gesammelt gesamt</span><b>${totalCollected}</b></div>` +
+      `</div>` +
+      `<div class="go-sub">Ressourcen</div>` +
+      `<div class="go-res">${resHtml}</div>` +
+      `<div class="btn-row"><button id="gameover-btn" class="btn">Neu starten</button></div>` +
+      `</div>`;
+    document.body.appendChild(overlay);
+    const btn = document.getElementById("gameover-btn");
+    btn?.addEventListener("click", () => window.location.reload());
   }
 
   private playerColorCss(p: PlayerId): string {
