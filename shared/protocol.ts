@@ -12,6 +12,7 @@ export interface UnitSnapshot {
   color: number;
   hp: number;
   hpMax: number;
+  ageSec: number;
 }
 
 export interface SpawnInfo {
@@ -95,6 +96,13 @@ export interface InitMessage {
   animals: AnimalSnapshot[];
 }
 
+export interface EncounterEvent {
+  a: PlayerId;
+  b: PlayerId;
+  bornForA: boolean;
+  bornForB: boolean;
+}
+
 export interface StateMessage {
   type: "state";
   tick: number;
@@ -107,6 +115,7 @@ export interface StateMessage {
   removedAnimalIds: string[];
   deadUnitIds: string[];
   newUnits: UnitSnapshot[];
+  encounters: EncounterEvent[];
 }
 
 export interface OpponentJoinedMessage {

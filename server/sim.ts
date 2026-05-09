@@ -2,6 +2,7 @@ import { findPath } from "../shared/pathfinding";
 import {
   AnimalKind,
   AnimalSnapshot,
+  EncounterEvent,
   emptyResources,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
@@ -42,6 +43,8 @@ const MAX_TRIBE_SIZE = 12;
 const GROWTH_FOOD_PER_UNIT = 6;
 const GROWTH_REQUIRED_SEC = 120;
 const GROWTH_FOOD_COST = 12;
+const ENCOUNTER_RANGE = 5;
+const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
 const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
 const MUSHROOM_AUTOPICK_GAIN = 1;
 const BUSH_REGROW_TICKS = TICK_RATE * 90;
@@ -76,7 +79,11 @@ interface SimUnit {
   hpMax: number;
   eatCooldown: number;
   autoHuntScanTimer: number;
+  ageSec: number;
 }
+
+const MAX_AGE_SEC = 420;
+const CHILD_AGE_SEC = 60;
 
 const UNIT_HP_MAX = 100;
 const UNIT_HP_LOSS_PER_TILE = 0.2;
@@ -116,6 +123,7 @@ const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
 const ANIMAL_SPAWN_RADIUS = 220;
 const HUNT_INTERVAL = 0.9;
 const HUNT_DAMAGE = 2;
+const SPEAR_HUNT_DAMAGE = 5;
 const HUNT_RANGE = 1.5;
 const ANIMAL_ATTACK_INTERVAL = 1.0;
 const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
@@ -184,6 +192,8 @@ export class Sim {
   newUnits: UnitSnapshot[] = [];
   growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
+  lastEncounterTick: Map<string, number> = new Map();
+  encounterEvents: EncounterEvent[] = [];
   tick = 0;
 
   constructor(seed: number) {
@@ -580,7 +590,14 @@ export class Sim {
       u.huntTimer += dt;
       if (u.huntTimer >= HUNT_INTERVAL) {
         u.huntTimer = 0;
-        a.hp -= HUNT_DAMAGE;
+        const ownerRes = this.resources[u.owner];
+        let damage = HUNT_DAMAGE;
+        if (ownerRes.holz >= 1 && ownerRes.stein >= 1) {
+          ownerRes.holz -= 1;
+          ownerRes.stein -= 1;
+          damage = SPEAR_HUNT_DAMAGE;
+        }
+        a.hp -= damage;
         const spec = ANIMAL_SPECS[a.kind];
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
@@ -654,6 +671,7 @@ export class Sim {
     const created: SimUnit[] = [];
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
+      const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 180;
       const u: SimUnit = {
         id: `u_p${p}_${k}`,
         owner: p,
@@ -672,6 +690,7 @@ export class Sim {
         hpMax: UNIT_HP_MAX,
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
+        ageSec: CHILD_AGE_SEC + ageJitter,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -691,6 +710,10 @@ export class Sim {
     }
     this.resources[p] = emptyResources();
     this.growthTimer[p] = 0;
+    for (const key of [...this.lastEncounterTick.keys()]) {
+      const [a, b] = key.split("_").map(Number);
+      if (a === p || b === p) this.lastEncounterTick.delete(key);
+    }
     return removed;
   }
 
@@ -713,6 +736,7 @@ export class Sim {
     color: u.color,
     hp: u.hp,
     hpMax: u.hpMax,
+    ageSec: u.ageSec,
   });
 
   consumeNewRemovedObjects(): RemovedObject[] {
@@ -1074,6 +1098,8 @@ export class Sim {
         this.autoEat(u);
       }
       u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
+      u.ageSec += dt;
+      if (u.ageSec >= MAX_AGE_SEC) u.hp = 0;
       if (u.huntTarget) {
         if (this.tickHunt(u, dt)) continue;
       }
@@ -1121,7 +1147,63 @@ export class Sim {
     this.expireRegrows();
     this.reapDeadUnits();
     this.growthCheck(dt);
+    this.encounterCheck();
     this.spreadIdleUnits();
+  }
+
+  private encounterCheck(): void {
+    const byPlayer: SimUnit[][] = Array.from(
+      { length: MAX_PLAYERS },
+      () => [],
+    );
+    let activeWithUnits = 0;
+    for (const u of this.units.values()) byPlayer[u.owner].push(u);
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (this.active[p] && byPlayer[p].length > 0) activeWithUnits++;
+    }
+    if (activeWithUnits < 2) return;
+
+    const r2 = ENCOUNTER_RANGE * ENCOUNTER_RANGE;
+    for (let a = 0; a < MAX_PLAYERS; a++) {
+      if (!this.active[a] || byPlayer[a].length === 0) continue;
+      for (let b = a + 1; b < MAX_PLAYERS; b++) {
+        if (!this.active[b] || byPlayer[b].length === 0) continue;
+        const key = `${a}_${b}`;
+        const last = this.lastEncounterTick.get(key) ?? -ENCOUNTER_COOLDOWN_TICKS;
+        if (this.tick - last < ENCOUNTER_COOLDOWN_TICKS) continue;
+
+        let met = false;
+        for (const ua of byPlayer[a]) {
+          for (const ub of byPlayer[b]) {
+            const dx = ua.gx - ub.gx;
+            const dy = ua.gy - ub.gy;
+            if (dx * dx + dy * dy <= r2) { met = true; break; }
+          }
+          if (met) break;
+        }
+        if (!met) continue;
+
+        this.lastEncounterTick.set(key, this.tick);
+        const bornForA = this.tryFreeBirth(a, byPlayer[a]);
+        const bornForB = this.tryFreeBirth(b, byPlayer[b]);
+        this.encounterEvents.push({ a, b, bornForA, bornForB });
+      }
+    }
+  }
+
+  private tryFreeBirth(p: PlayerId, list: SimUnit[]): boolean {
+    if (list.length === 0 || list.length >= MAX_TRIBE_SIZE) return false;
+    let cx = 0;
+    let cy = 0;
+    for (const u of list) { cx += u.gx; cy += u.gy; }
+    this.spawnNewTribeMember(p, cx / list.length, cy / list.length);
+    return true;
+  }
+
+  consumeEncounterEvents(): EncounterEvent[] {
+    const out = this.encounterEvents;
+    this.encounterEvents = [];
+    return out;
   }
 
   private growthCheck(dt: number): void {
@@ -1204,6 +1286,7 @@ export class Sim {
       hpMax: UNIT_HP_MAX,
       eatCooldown: 0,
       autoHuntScanTimer: 0,
+      ageSec: 0,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));

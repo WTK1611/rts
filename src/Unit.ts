@@ -10,6 +10,10 @@ function shade(color: number, factor: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+const CHILD_AGE_SEC = 60;
+const OLD_THRESHOLD_SEC = 360;
+const MAX_AGE_SEC = 420;
+
 export class Unit {
   scene: Phaser.Scene;
   id: string;
@@ -18,6 +22,9 @@ export class Unit {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Ellipse;
   head: Phaser.GameObjects.Arc;
+  hair: Phaser.GameObjects.Arc;
+  bodyShadow: Phaser.GameObjects.Ellipse;
+  bodyHighlight: Phaser.GameObjects.Ellipse;
   shadow: Phaser.GameObjects.Ellipse;
   selectionRing: Phaser.GameObjects.Ellipse;
   ownerRing: Phaser.GameObjects.Ellipse;
@@ -30,6 +37,7 @@ export class Unit {
   worldSeed: number;
   hp: number;
   hpMax: number;
+  ageSec: number;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
@@ -48,6 +56,7 @@ export class Unit {
     this.worldSeed = worldSeed;
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
+    this.ageSec = snap.ageSec;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -66,12 +75,12 @@ export class Unit {
     const dark = shade(snap.color, 0.7);
     const light = shade(snap.color, 1.25);
 
-    const bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
+    this.bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
     this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
-    const bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
+    this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
 
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
-    const hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
+    this.hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
 
     this.hpBarBg = scene.add.rectangle(0, -38, 18, 3, 0x000000, 0.7)
       .setStrokeStyle(0.5, 0x000000, 0.9);
@@ -82,15 +91,16 @@ export class Unit {
       this.shadow,
       this.ownerRing,
       this.selectionRing,
-      bodyShadow,
+      this.bodyShadow,
       this.body,
-      bodyHighlight,
+      this.bodyHighlight,
       this.head,
-      hair,
+      this.hair,
       this.hpBarBg,
       this.hpBarFill,
     ]);
     this.refreshHpBar();
+    this.applyLifeCycleVisuals();
     this.container.setSize(28, 36);
     this.container.setInteractive(
       new Phaser.Geom.Rectangle(-14, -32, 28, 36),
@@ -129,11 +139,49 @@ export class Unit {
       this.state = snap.state;
       this.updateStateAnim();
     }
-    if (this.hp !== snap.hp || this.hpMax !== snap.hpMax) {
+    const hpChanged = this.hp !== snap.hp || this.hpMax !== snap.hpMax;
+    if (hpChanged) {
       this.hp = snap.hp;
       this.hpMax = snap.hpMax;
       this.refreshHpBar();
     }
+    if (hpChanged || this.ageSec !== snap.ageSec) {
+      this.ageSec = snap.ageSec;
+      this.applyLifeCycleVisuals();
+    }
+  }
+
+  private applyLifeCycleVisuals(): void {
+    const age = this.ageSec;
+    let scale: number;
+    let lean: number;
+    if (age < CHILD_AGE_SEC) {
+      const t = Math.max(0, age / CHILD_AGE_SEC);
+      scale = 0.55 + 0.45 * t;
+      lean = 0;
+    } else if (age < OLD_THRESHOLD_SEC) {
+      scale = 1.0;
+      lean = 0;
+    } else {
+      const t = Math.min(1, (age - OLD_THRESHOLD_SEC) / (MAX_AGE_SEC - OLD_THRESHOLD_SEC));
+      scale = 1.0 - 0.18 * t;
+      lean = 8 * t;
+    }
+    const hpFrac = this.hpMax > 0 ? Math.max(0, Math.min(1, this.hp / this.hpMax)) : 0;
+    const fatness = 0.78 + 0.34 * hpFrac;
+    this.body.setScale(fatness, 1);
+    this.bodyShadow.setScale(fatness, 1);
+    this.bodyHighlight.setScale(fatness, 1);
+    this.container.setScale(scale);
+    if (this.state !== "harvesting") {
+      this.body.setAngle(lean);
+      this.head.setAngle(lean);
+      this.hair.setAngle(lean);
+    }
+    const hairAlpha = age > OLD_THRESHOLD_SEC
+      ? 0.4 + 0.6 * (1 - Math.min(1, (age - OLD_THRESHOLD_SEC) / (MAX_AGE_SEC - OLD_THRESHOLD_SEC)))
+      : 1;
+    this.hair.setAlpha(hairAlpha);
   }
 
   private refreshHpBar(): void {
@@ -209,6 +257,7 @@ export class Unit {
       this.harvestSwingTween = null;
       this.body.setAngle(0);
       this.head.setAngle(0);
+      this.applyLifeCycleVisuals();
     }
   }
 

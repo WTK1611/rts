@@ -1007,6 +1007,20 @@ export class GameScene extends Phaser.Scene {
 
   private applyState(msg: StateMessage): void {
     this.serverTick = msg.tick;
+    let encounterBirthsForMe = 0;
+    if (msg.encounters && msg.encounters.length > 0) {
+      for (const ev of msg.encounters) {
+        if (ev.a !== this.playerId && ev.b !== this.playerId) continue;
+        const otherId = ev.a === this.playerId ? ev.b : ev.a;
+        const myBirth = ev.a === this.playerId ? ev.bornForA : ev.bornForB;
+        const name = this.names[otherId] || "anderem Stamm";
+        if (myBirth) encounterBirthsForMe++;
+        const txt = myBirth
+          ? `Begegnung mit Stamm von ${name}: kostenlose Geburt!`
+          : `Begegnung mit Stamm von ${name}`;
+        this.showToast(txt, "join");
+      }
+    }
     if (msg.newUnits && msg.newUnits.length > 0) {
       let ownGrew = 0;
       for (const snap of msg.newUnits) {
@@ -1017,11 +1031,12 @@ export class GameScene extends Phaser.Scene {
         );
         if (snap.owner === this.playerId) ownGrew++;
       }
-      if (ownGrew > 0) {
+      const remaining = ownGrew - encounterBirthsForMe;
+      if (remaining > 0) {
         const txt =
-          ownGrew === 1
+          remaining === 1
             ? "Dein Stamm wächst: ein neues Mitglied ist dazugekommen"
-            : `Dein Stamm wächst: ${ownGrew} neue Mitglieder sind dazugekommen`;
+            : `Dein Stamm wächst: ${remaining} neue Mitglieder sind dazugekommen`;
         this.showToast(txt, "join");
       }
     }

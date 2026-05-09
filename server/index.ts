@@ -130,6 +130,7 @@ function tick(): void {
   const newFootprints = world.sim.consumeNewFootprints();
   const deadUnitIds = world.sim.consumeDeadUnitIds();
   const newUnits = world.sim.consumeNewUnits();
+  const encounters = world.sim.consumeEncounterEvents();
   // Drain the sim's per-tick removed-animal queue; per-client diff below
   // already handles deaths (dead ids land in known\visible).
   world.sim.consumeRemovedAnimalIds();
@@ -162,6 +163,7 @@ function tick(): void {
       removedAnimalIds,
       deadUnitIds,
       newUnits,
+      encounters,
     });
   }
 }
