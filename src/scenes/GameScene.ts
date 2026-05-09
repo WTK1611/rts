@@ -1334,11 +1334,41 @@ export class GameScene extends Phaser.Scene {
         this.animals.delete(id);
       }
     }
+    let ownDied = 0;
+    const otherDied: Record<number, number> = {};
     for (const id of msg.deadUnitIds) {
       const u = this.units.get(id);
       if (!u) continue;
+      if (u.owner === this.playerId) ownDied++;
+      else otherDied[u.owner] = (otherDied[u.owner] ?? 0) + 1;
       this.units.delete(id);
       u.die(() => {});
+    }
+    const extinctSet = new Set<number>(msg.extinctTribes ?? []);
+    if (ownDied > 0 && !extinctSet.has(this.playerId)) {
+      const txt =
+        ownDied === 1
+          ? "Aus deinem Stamm ist ein Mitglied gestorben"
+          : `Aus deinem Stamm sind ${ownDied} Mitglieder gestorben`;
+      this.showToast(txt, "death");
+    }
+    for (const ownerStr of Object.keys(otherDied)) {
+      const owner = Number(ownerStr);
+      if (extinctSet.has(owner)) continue;
+      const n = otherDied[owner];
+      const name = this.names[owner] || `Stamm ${owner}`;
+      const txt =
+        n === 1
+          ? `Im Stamm von ${name} ist ein Mitglied gestorben`
+          : `Im Stamm von ${name} sind ${n} Mitglieder gestorben`;
+      this.showToast(txt, "death");
+    }
+    if (msg.extinctTribes && msg.extinctTribes.length > 0) {
+      for (const owner of msg.extinctTribes) {
+        if (owner === this.playerId) continue;
+        const name = this.names[owner] || `Stamm ${owner}`;
+        this.showToast(`Stamm von ${name} ist ausgestorben`, "extinct");
+      }
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
       const myCount = [...this.units.values()].filter(
