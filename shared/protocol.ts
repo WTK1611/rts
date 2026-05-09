@@ -17,23 +17,63 @@ export interface SpawnInfo {
   cy: number;
 }
 
+export interface Resources {
+  holz: number;
+  wasser: number;
+  beeren: number;
+  fleisch: number;
+  stein: number;
+}
+
+export const RESOURCE_KEYS: Array<keyof Resources> = [
+  "holz",
+  "wasser",
+  "beeren",
+  "fleisch",
+  "stein",
+];
+
+export function emptyResources(): Resources {
+  return { holz: 0, wasser: 0, beeren: 0, fleisch: 0, stein: 0 };
+}
+
+export type ObjectKind = "tree" | "bush" | "mushroom" | "fish";
+
+export interface RemovedObject {
+  kind: ObjectKind;
+  i: number;
+  j: number;
+}
+
+export interface Footprint {
+  o: PlayerId;
+  i: number;
+  j: number;
+  t: number;
+}
+
+export const FOOTPRINT_LIFETIME_TICKS = TICK_RATE * 25;
+
 export interface InitMessage {
   type: "init";
   playerId: PlayerId;
   seed: number;
+  tick: number;
   units: UnitSnapshot[];
-  destroyedTrees: string[];
+  removedObjects: RemovedObject[];
   spawn: SpawnInfo;
-  wood: number[];
+  resources: Resources[];
   names: string[];
+  footprints: Footprint[];
 }
 
 export interface StateMessage {
   type: "state";
   tick: number;
   units: UnitSnapshot[];
-  wood: number[];
-  removedTrees: string[];
+  resources: Resources[];
+  newRemovedObjects: RemovedObject[];
+  newFootprints: Footprint[];
 }
 
 export interface OpponentJoinedMessage {
@@ -76,7 +116,8 @@ export interface MoveCommand {
 export interface HarvestCommand {
   type: "harvest";
   unitIds: string[];
-  treeId: string;
+  i: number;
+  j: number;
 }
 
 export type ClientMessage = JoinCommand | MoveCommand | HarvestCommand;

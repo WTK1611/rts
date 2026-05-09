@@ -1,17 +1,35 @@
 import { findPath } from "../shared/pathfinding";
-import { MAX_PLAYERS, PlayerId, UnitSnapshot } from "../shared/protocol";
 import {
+  emptyResources,
+  Footprint,
+  FOOTPRINT_LIFETIME_TICKS,
+  MAX_PLAYERS,
+  ObjectKind,
+  PlayerId,
+  RemovedObject,
+  Resources,
+  TICK_RATE,
+  UnitSnapshot,
+} from "../shared/protocol";
+import {
+  bushBerriesAt,
+  fishMeatAt,
+  hasBushAt,
+  hasFishAt,
+  hasMushroomAt,
   hasTreeAt,
   isLandTile,
-  parseTreeId,
+  mushroomBerriesAt,
   spawnsFromSeed,
   SpawnArea,
-  treeIdAt,
   treeWoodAt,
 } from "../shared/worldgen";
 
 const HARVEST_INTERVAL = 1.2;
-const HARVEST_AMOUNT = 5;
+const TREE_HARVEST_AMOUNT = 5;
+const BUSH_HARVEST_AMOUNT = 3;
+const MUSH_HARVEST_AMOUNT = 1;
+const FISH_HARVEST_AMOUNT = 1;
 const TRIBE_SIZE = 4;
 
 export const PLAYER_COLORS: number[] = [
@@ -28,8 +46,21 @@ interface SimUnit {
   color: number;
   state: "idle" | "moving" | "harvesting";
   path: Array<{ gx: number; gy: number }>;
-  harvestTreeId: string | null;
+  harvestTarget: { kind: ObjectKind; i: number; j: number } | null;
   harvestTimer: number;
+  lastFootprintTile: { i: number; j: number } | null;
+}
+
+function objKey(kind: ObjectKind, i: number, j: number): string {
+  const p =
+    kind === "tree"
+      ? "t"
+      : kind === "bush"
+        ? "b"
+        : kind === "mushroom"
+          ? "m"
+          : "f";
+  return `${p}_${i}_${j}`;
 }
 
 export class Sim {
@@ -37,10 +68,15 @@ export class Sim {
   spawns: SpawnArea[];
   units: SimUnit[] = [];
   active: boolean[] = new Array(MAX_PLAYERS).fill(false);
-  destroyedTrees = new Set<string>();
-  treeWood = new Map<string, number>();
-  wood: number[] = new Array(MAX_PLAYERS).fill(0);
-  removedTreeIds: string[] = [];
+  removedObjects: RemovedObject[] = [];
+  removedKeys = new Set<string>();
+  remaining = new Map<string, number>();
+  resources: Resources[] = Array.from({ length: MAX_PLAYERS }, () =>
+    emptyResources(),
+  );
+  newRemovedObjects: RemovedObject[] = [];
+  footprints: Footprint[] = [];
+  newFootprints: Footprint[] = [];
   tick = 0;
 
   constructor(seed: number) {
@@ -70,8 +106,9 @@ export class Sim {
         color: PLAYER_COLORS[p % PLAYER_COLORS.length],
         state: "idle",
         path: [],
-        harvestTreeId: null,
+        harvestTarget: null,
         harvestTimer: 0,
+        lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
       };
       this.units.push(u);
       created.push(u);
@@ -90,14 +127,12 @@ export class Sim {
       }
       return true;
     });
-    this.wood[p] = 0;
+    this.resources[p] = emptyResources();
     return removed;
   }
 
   isWalkable(i: number, j: number): boolean {
-    if (!isLandTile(this.seed, i, j)) return false;
-    if (!hasTreeAt(this.seed, i, j)) return true;
-    return this.destroyedTrees.has(treeIdAt(i, j));
+    return isLandTile(this.seed, i, j);
   }
 
   unitsSnapshot(): UnitSnapshot[] {
@@ -113,9 +148,15 @@ export class Sim {
     color: u.color,
   });
 
-  consumeRemovedTrees(): string[] {
-    const out = this.removedTreeIds;
-    this.removedTreeIds = [];
+  consumeNewRemovedObjects(): RemovedObject[] {
+    const out = this.newRemovedObjects;
+    this.newRemovedObjects = [];
+    return out;
+  }
+
+  consumeNewFootprints(): Footprint[] {
+    const out = this.newFootprints;
+    this.newFootprints = [];
     return out;
   }
 
@@ -138,21 +179,42 @@ export class Sim {
     }
   }
 
-  cmdHarvest(owner: PlayerId, unitIds: string[], treeId: string): void {
-    const coord = parseTreeId(treeId);
-    if (!coord) return;
-    if (!hasTreeAt(this.seed, coord.i, coord.j)) return;
-    if (this.destroyedTrees.has(treeId)) return;
+  cmdHarvest(owner: PlayerId, unitIds: string[], i: number, j: number): void {
+    const kind = this.objectKindAt(i, j);
+    if (!kind) {
+      this.cmdMove(owner, unitIds, i, j);
+      return;
+    }
     const claimed = new Set<string>();
     for (const id of unitIds) {
       const u = this.units.find((x) => x.id === id && x.owner === owner);
       if (!u) continue;
       const blocked = this.blockedTilesFor(u, claimed);
-      this.startHarvest(u, coord.i, coord.j, treeId, blocked);
+      this.startHarvest(u, kind, i, j, blocked);
       const last = u.path[u.path.length - 1];
       if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
     }
+  }
+
+  private objectKindAt(i: number, j: number): ObjectKind | null {
+    if (
+      hasTreeAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("tree", i, j))
+    ) return "tree";
+    if (
+      hasBushAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("bush", i, j))
+    ) return "bush";
+    if (
+      hasMushroomAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("mushroom", i, j))
+    ) return "mushroom";
+    if (
+      hasFishAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("fish", i, j))
+    ) return "fish";
+    return null;
   }
 
   private blockedTilesFor(self: SimUnit, claimed: Set<string>): Set<string> {
@@ -198,38 +260,42 @@ export class Sim {
     );
     if (!path || path.length < 2) {
       u.path = [];
-      u.harvestTreeId = null;
+      u.harvestTarget = null;
       u.state = "idle";
       return;
     }
     u.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
     u.state = "moving";
-    u.harvestTreeId = null;
+    u.harvestTarget = null;
   }
 
   private startHarvest(
     u: SimUnit,
-    treeI: number,
-    treeJ: number,
-    treeId: string,
+    kind: ObjectKind,
+    ti: number,
+    tj: number,
     blocked: Set<string>,
   ): void {
-    let bestPath: ReturnType<typeof findPath> = null;
-    const offsets: Array<[number, number]> = [
+    const candidates: Array<{ i: number; j: number }> = [];
+    if (this.isWalkable(ti, tj)) candidates.push({ i: ti, j: tj });
+    const adj: Array<[number, number]> = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
     ];
-    for (const [di, dj] of offsets) {
-      const ni = treeI + di;
-      const nj = treeJ + dj;
-      if (!this.isWalkable(ni, nj)) continue;
-      if (blocked.has(`${ni},${nj}`)) continue;
+    for (const [di, dj] of adj) {
+      const ni = ti + di;
+      const nj = tj + dj;
+      if (this.isWalkable(ni, nj)) candidates.push({ i: ni, j: nj });
+    }
+    let bestPath: ReturnType<typeof findPath> = null;
+    for (const c of candidates) {
+      if (blocked.has(`${c.i},${c.j}`)) continue;
       const p = findPath(
         (a, b) => this.isWalkable(a, b),
         Math.floor(u.gx),
         Math.floor(u.gy),
-        ni,
-        nj,
+        c.i,
+        c.j,
         blocked,
       );
       if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
@@ -239,9 +305,30 @@ export class Sim {
       bestPath.length > 1
         ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
         : [];
-    u.harvestTreeId = treeId;
+    u.harvestTarget = { kind, i: ti, j: tj };
     u.harvestTimer = 0;
     u.state = u.path.length > 0 ? "moving" : "harvesting";
+  }
+
+  private maybeFootprint(u: SimUnit): void {
+    const ti = Math.floor(u.gx);
+    const tj = Math.floor(u.gy);
+    const lf = u.lastFootprintTile;
+    if (lf && lf.i === ti && lf.j === tj) return;
+    u.lastFootprintTile = { i: ti, j: tj };
+    const fp: Footprint = { o: u.owner, i: ti, j: tj, t: this.tick };
+    this.footprints.push(fp);
+    this.newFootprints.push(fp);
+  }
+
+  private expireFootprints(): void {
+    if (this.footprints.length === 0) return;
+    const cutoff = this.tick - FOOTPRINT_LIFETIME_TICKS;
+    let drop = 0;
+    while (drop < this.footprints.length && this.footprints[drop].t < cutoff) {
+      drop++;
+    }
+    if (drop > 0) this.footprints.splice(0, drop);
   }
 
   step(dt: number): void {
@@ -249,11 +336,12 @@ export class Sim {
     for (const u of this.units) {
       if (u.state === "moving") {
         if (u.path.length === 0) {
-          u.state =
-            u.harvestTreeId && !this.destroyedTrees.has(u.harvestTreeId)
-              ? "harvesting"
-              : "idle";
-          if (u.state === "idle") u.harvestTreeId = null;
+          if (u.harvestTarget && this.objectStillThere(u.harvestTarget)) {
+            u.state = "harvesting";
+          } else {
+            u.harvestTarget = null;
+            u.state = "idle";
+          }
         } else {
           const wp = u.path[0];
           const dx = wp.gx - u.gx;
@@ -268,38 +356,71 @@ export class Sim {
             u.gx += (dx / dist) * step;
             u.gy += (dy / dist) * step;
           }
+          this.maybeFootprint(u);
         }
       } else if (u.state === "harvesting") {
-        const tid = u.harvestTreeId;
-        if (!tid || this.destroyedTrees.has(tid)) {
-          u.harvestTreeId = null;
-          u.state = "idle";
-          continue;
-        }
-        const coord = parseTreeId(tid);
-        if (!coord || !hasTreeAt(this.seed, coord.i, coord.j)) {
-          u.harvestTreeId = null;
+        const tgt = u.harvestTarget;
+        if (!tgt || !this.objectStillThere(tgt)) {
+          u.harvestTarget = null;
           u.state = "idle";
           continue;
         }
         u.harvestTimer += dt;
         if (u.harvestTimer >= HARVEST_INTERVAL) {
           u.harvestTimer = 0;
-          const remaining =
-            (this.treeWood.get(tid) ?? treeWoodAt(this.seed, coord.i, coord.j)) -
-            HARVEST_AMOUNT;
-          this.wood[u.owner] += HARVEST_AMOUNT;
-          if (remaining <= 0) {
-            this.destroyedTrees.add(tid);
-            this.treeWood.delete(tid);
-            this.removedTreeIds.push(tid);
-            u.harvestTreeId = null;
-            u.state = "idle";
-          } else {
-            this.treeWood.set(tid, remaining);
-          }
+          this.applyHarvestTick(u, tgt);
         }
       }
+    }
+    this.expireFootprints();
+  }
+
+  private objectStillThere(t: { kind: ObjectKind; i: number; j: number }): boolean {
+    const k = objKey(t.kind, t.i, t.j);
+    if (this.removedKeys.has(k)) return false;
+    if (t.kind === "tree") return hasTreeAt(this.seed, t.i, t.j);
+    if (t.kind === "bush") return hasBushAt(this.seed, t.i, t.j);
+    if (t.kind === "mushroom") return hasMushroomAt(this.seed, t.i, t.j);
+    return hasFishAt(this.seed, t.i, t.j);
+  }
+
+  private applyHarvestTick(
+    u: SimUnit,
+    t: { kind: ObjectKind; i: number; j: number },
+  ): void {
+    const k = objKey(t.kind, t.i, t.j);
+    let amount: number;
+    let resKey: keyof Resources;
+    let baseTotal: number;
+    if (t.kind === "tree") {
+      amount = TREE_HARVEST_AMOUNT;
+      resKey = "holz";
+      baseTotal = treeWoodAt(this.seed, t.i, t.j);
+    } else if (t.kind === "bush") {
+      amount = BUSH_HARVEST_AMOUNT;
+      resKey = "beeren";
+      baseTotal = bushBerriesAt(this.seed, t.i, t.j);
+    } else if (t.kind === "mushroom") {
+      amount = MUSH_HARVEST_AMOUNT;
+      resKey = "beeren";
+      baseTotal = mushroomBerriesAt(this.seed, t.i, t.j);
+    } else {
+      amount = FISH_HARVEST_AMOUNT;
+      resKey = "fleisch";
+      baseTotal = fishMeatAt(this.seed, t.i, t.j);
+    }
+    const remaining = (this.remaining.get(k) ?? baseTotal) - amount;
+    this.resources[u.owner][resKey] += amount;
+    if (remaining <= 0) {
+      this.removedKeys.add(k);
+      this.remaining.delete(k);
+      const ro: RemovedObject = { kind: t.kind, i: t.i, j: t.j };
+      this.removedObjects.push(ro);
+      this.newRemovedObjects.push(ro);
+      u.harvestTarget = null;
+      u.state = "idle";
+    } else {
+      this.remaining.set(k, remaining);
     }
   }
 }

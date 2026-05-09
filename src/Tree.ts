@@ -23,8 +23,9 @@ export class Tree {
     this.i = i;
     this.j = j;
 
-    const v = VARIANTS[(i * 31 + j * 17) % VARIANTS.length];
-    const jitter = (((i * 73 + j * 19) % 7) - 3) / 30;
+    const vIdx = ((i * 31 + j * 17) % VARIANTS.length + VARIANTS.length) % VARIANTS.length;
+    const v = VARIANTS[vIdx];
+    const jitter = ((((i * 73 + j * 19) % 7) + 7) % 7 - 3) / 30;
     const scale = 1 + jitter;
 
     const { x, y } = gridToScreen(i + 0.5, j + 0.5);

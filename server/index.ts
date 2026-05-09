@@ -56,11 +56,13 @@ function joinPlayer(ws: WebSocket, name: string): void {
     type: "init",
     playerId: slotId,
     seed: world.sim.seed,
+    tick: world.sim.tick,
     units: world.sim.unitsSnapshot(),
-    destroyedTrees: [...world.sim.destroyedTrees],
+    removedObjects: [...world.sim.removedObjects],
     spawn: world.sim.spawns[slotId],
-    wood: [...world.sim.wood],
+    resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
+    footprints: [...world.sim.footprints],
   });
 
   const newUnits = world.sim.unitsSnapshot().filter((u) => u.owner === slotId);
@@ -84,8 +86,9 @@ function tick(): void {
     type: "state",
     tick: world.sim.tick,
     units: world.sim.unitsSnapshot(),
-    wood: [...world.sim.wood],
-    removedTrees: world.sim.consumeRemovedTrees(),
+    resources: world.sim.resources.map((r) => ({ ...r })),
+    newRemovedObjects: world.sim.consumeNewRemovedObjects(),
+    newFootprints: world.sim.consumeNewFootprints(),
   });
 }
 
@@ -137,7 +140,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "move") {
       world.sim.cmdMove(slot.id, msg.unitIds, msg.i, msg.j);
     } else if (msg.type === "harvest") {
-      world.sim.cmdHarvest(slot.id, msg.unitIds, msg.treeId);
+      world.sim.cmdHarvest(slot.id, msg.unitIds, msg.i, msg.j);
     }
   });
 

@@ -13,6 +13,7 @@ export class Unit {
   scene: Phaser.Scene;
   id: string;
   owner: PlayerId;
+  color: number;
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Ellipse;
   head: Phaser.GameObjects.Arc;
@@ -33,6 +34,7 @@ export class Unit {
     this.scene = scene;
     this.id = snap.id;
     this.owner = snap.owner;
+    this.color = snap.color;
     this.gx = snap.gx;
     this.gy = snap.gy;
     this.targetGx = snap.gx;

@@ -217,3 +217,67 @@ export function parseTreeId(id: string): { i: number; j: number } | null {
 export function treeWoodAt(seed: number, i: number, j: number): number {
   return 18 + (hash3(seed ^ 0x77, i, j) % 12);
 }
+
+export function hasBushAt(seed: number, i: number, j: number): boolean {
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasTreeAt(seed, i, j)) return false;
+  if (biomeAt(seed, i, j) !== "wiesen") return false;
+  return rand01(seed ^ 0xb05, i, j) < 0.045;
+}
+
+export function bushIdAt(i: number, j: number): string {
+  return `b_${i}_${j}`;
+}
+
+export function parseBushId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^b_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function bushBerriesAt(seed: number, i: number, j: number): number {
+  return 6 + (hash3(seed ^ 0xb05, i, j) % 5);
+}
+
+export function hasMushroomAt(seed: number, i: number, j: number): boolean {
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasTreeAt(seed, i, j)) return false;
+  if (hasBushAt(seed, i, j)) return false;
+  const b = biomeAt(seed, i, j);
+  if (b !== "wiesen" && b !== "wald") return false;
+  return rand01(seed ^ 0x70b, i, j) < (b === "wald" ? 0.06 : 0.025);
+}
+
+export function mushroomIdAt(i: number, j: number): string {
+  return `m_${i}_${j}`;
+}
+
+export function parseMushroomId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^m_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function mushroomBerriesAt(seed: number, i: number, j: number): number {
+  return 2 + (hash3(seed ^ 0x70b, i, j) % 3);
+}
+
+export function hasFishAt(seed: number, i: number, j: number): boolean {
+  const b = biomeAt(seed, i, j);
+  if (b !== "lake" && b !== "river") return false;
+  return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.04 : 0.05);
+}
+
+export function fishIdAt(i: number, j: number): string {
+  return `f_${i}_${j}`;
+}
+
+export function parseFishId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^f_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function fishMeatAt(seed: number, i: number, j: number): number {
+  return 4 + (hash3(seed ^ 0xf15, i, j) % 4);
+}

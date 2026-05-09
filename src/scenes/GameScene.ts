@@ -2,21 +2,34 @@ import Phaser from "phaser";
 import { gridToScreen, screenToGrid, TILE_W, TILE_H } from "../iso";
 import { Unit } from "../Unit";
 import { Tree } from "../Tree";
+import { Bush } from "../Bush";
+import { Fish } from "../Fish";
+import { Mushroom } from "../Mushroom";
 import { Net } from "../net";
 import {
+  Footprint,
+  FOOTPRINT_LIFETIME_TICKS,
   InitMessage,
+  ObjectKind,
   PlayerId,
+  RemovedObject,
+  RESOURCE_KEYS,
+  Resources,
   ServerMessage,
   StateMessage,
+  TICK_RATE,
 } from "../../shared/protocol";
 import {
   biomeAt,
   Biome,
   BIOME_PALETTES,
+  hasBushAt,
+  hasFishAt,
+  hasMushroomAt,
   hasTreeAt,
+  isLandTile,
   tileVariant,
   tileDecor,
-  treeIdAt,
 } from "../../shared/worldgen";
 
 interface DragState {
@@ -29,7 +42,11 @@ interface Chunk {
   cx: number;
   cy: number;
   graphics: Phaser.GameObjects.Graphics;
+  elevGraphics: Phaser.GameObjects.Graphics;
   trees: Map<string, Tree>;
+  bushes: Map<string, Bush>;
+  mushrooms: Map<string, Mushroom>;
+  fishes: Map<string, Fish>;
 }
 
 export interface GameSceneInit {
@@ -40,6 +57,7 @@ export interface GameSceneInit {
 const SIGHT_RADIUS = 5.5;
 const CHUNK_SIZE = 16;
 const VIEW_PAD_TILES = 8;
+const FELSEN_ELEV = 6;
 
 const BIOME_MINI_COLOR: Record<Biome, string> = {
   wiesen: "#3a6b3a",
@@ -55,31 +73,44 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
+function objKey(kind: ObjectKind, i: number, j: number): string {
+  const p = kind === "tree" ? "t" : kind === "bush" ? "b" : "m";
+  return `${p}_${i}_${j}`;
+}
+
 export class GameScene extends Phaser.Scene {
   private net!: Net;
   private playerId: PlayerId = 0;
   private seed = 0;
   private names: string[] = [];
-  private destroyedTrees = new Set<string>();
+  private removedKeys = new Set<string>();
+  private serverTick = 0;
 
   private units: Map<string, Unit> = new Map();
   private trees: Map<string, Tree> = new Map();
+  private bushes: Map<string, Bush> = new Map();
+  private mushrooms: Map<string, Mushroom> = new Map();
+  private fishes: Map<string, Fish> = new Map();
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
   private selectionBox!: Phaser.GameObjects.Graphics;
   private fog!: Phaser.GameObjects.Graphics;
+  private footprintsGfx!: Phaser.GameObjects.Graphics;
 
   private visible = new Set<string>();
   private explored = new Set<string>();
 
   private drag: DragState | null = null;
-  private wood: number[] = [];
+  private resources: Resources[] = [];
   private hud: HTMLElement | null = null;
   private minimapWrap: HTMLElement | null = null;
   private minimapCanvas: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
   private minimapAccum = 0;
+
+  private footprints: Footprint[] = [];
+  private playerColors: Record<number, number> = {};
 
   private camTargetX = 0;
   private camTargetY = 0;
@@ -103,9 +134,13 @@ export class GameScene extends Phaser.Scene {
     this.net = data.net;
     this.playerId = data.init.playerId;
     this.seed = data.init.seed;
-    this.wood = data.init.wood;
+    this.serverTick = data.init.tick;
+    this.resources = data.init.resources.map((r) => ({ ...r }));
     this.names = data.init.names;
-    this.destroyedTrees = new Set(data.init.destroyedTrees);
+    this.removedKeys = new Set(
+      data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
+    );
+    this.footprints = [...data.init.footprints];
   }
 
   create(): void {
@@ -113,10 +148,14 @@ export class GameScene extends Phaser.Scene {
 
     for (const u of initData.init.units) {
       this.units.set(u.id, new Unit(this, u, u.owner === this.playerId));
+      this.playerColors[u.owner] = u.color;
     }
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
+
+    this.footprintsGfx = this.add.graphics();
+    this.footprintsGfx.setDepth(-99000);
 
     this.fog = this.add.graphics();
     this.fog.setDepth(1_500_000);
@@ -178,6 +217,7 @@ export class GameScene extends Phaser.Scene {
 
     this.updateChunks();
     this.updateFog();
+    this.drawFootprints();
     this.updateHud();
   }
 
@@ -197,6 +237,7 @@ export class GameScene extends Phaser.Scene {
 
     this.updateChunks();
     this.updateFog();
+    this.drawFootprints();
 
     this.minimapAccum += dt;
     if (this.minimapAccum >= 0.1) {
@@ -259,29 +300,33 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyTribeFollow(): void {
-    let cx = 0;
-    let cy = 0;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
     let n = 0;
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
-      cx += u.gx;
-      cy += u.gy;
+      const w = gridToScreen(u.gx, u.gy);
+      if (w.x < minX) minX = w.x;
+      if (w.x > maxX) maxX = w.x;
+      if (w.y < minY) minY = w.y;
+      if (w.y > maxY) maxY = w.y;
       n++;
     }
     if (n === 0) return;
-    cx /= n;
-    cy /= n;
-    const w = gridToScreen(cx, cy);
     const cam = this.cameras.main;
-    const sx = (w.x - this.camTargetX) * cam.zoom;
-    const sy = (w.y - this.camTargetY) * cam.zoom;
-    const margin = 140;
+    const margin = 180;
+    const sxMin = (minX - this.camTargetX) * cam.zoom;
+    const sxMax = (maxX - this.camTargetX) * cam.zoom;
+    const syMin = (minY - this.camTargetY) * cam.zoom;
+    const syMax = (maxY - this.camTargetY) * cam.zoom;
     let dx = 0;
     let dy = 0;
-    if (sx < margin) dx = sx - margin;
-    else if (sx > cam.width - margin) dx = sx - (cam.width - margin);
-    if (sy < margin) dy = sy - margin;
-    else if (sy > cam.height - margin) dy = sy - (cam.height - margin);
+    if (sxMin < margin) dx = sxMin - margin;
+    else if (sxMax > cam.width - margin) dx = sxMax - (cam.width - margin);
+    if (syMin < margin) dy = syMin - margin;
+    else if (syMax > cam.height - margin) dy = syMax - (cam.height - margin);
     if (dx === 0 && dy === 0) return;
     this.camTargetX += dx / cam.zoom;
     this.camTargetY += dy / cam.zoom;
@@ -294,7 +339,7 @@ export class GameScene extends Phaser.Scene {
     const x = this.lastPointerScreenX;
     const y = this.lastPointerScreenY;
     if (x < 0 || y < 0 || x > w || y > h) return;
-    const margin = 60;
+    const margin = Math.max(140, Math.min(w, h) * 0.18);
     let dx = 0;
     let dy = 0;
     if (x < margin) dx = -(margin - x) / margin;
@@ -357,46 +402,105 @@ export class GameScene extends Phaser.Scene {
   private loadChunk(cx: number, cy: number): void {
     const g = this.add.graphics();
     g.setDepth(-100000);
+    const elev = this.add.graphics();
+    elev.setDepth(-99500);
     const trees = new Map<string, Tree>();
+    const bushes = new Map<string, Bush>();
+    const mushrooms = new Map<string, Mushroom>();
+    const fishes = new Map<string, Fish>();
     const i0 = cx * CHUNK_SIZE;
     const j0 = cy * CHUNK_SIZE;
     for (let dj = 0; dj < CHUNK_SIZE; dj++) {
       for (let di = 0; di < CHUNK_SIZE; di++) {
         const i = i0 + di;
         const j = j0 + dj;
-        this.drawTile(g, i, j);
+        this.drawTile(g, elev, i, j);
         if (hasTreeAt(this.seed, i, j)) {
-          const id = treeIdAt(i, j);
-          if (!this.destroyedTrees.has(id) && !this.trees.has(id)) {
+          const id = objKey("tree", i, j);
+          if (!this.removedKeys.has(id) && !this.trees.has(id)) {
             const t = new Tree(this, id, i, j);
             trees.set(id, t);
             this.trees.set(id, t);
           }
+        } else if (hasBushAt(this.seed, i, j)) {
+          const id = objKey("bush", i, j);
+          if (!this.removedKeys.has(id) && !this.bushes.has(id)) {
+            const b = new Bush(this, i, j);
+            bushes.set(id, b);
+            this.bushes.set(id, b);
+          }
+        } else if (hasMushroomAt(this.seed, i, j)) {
+          const id = objKey("mushroom", i, j);
+          if (!this.removedKeys.has(id) && !this.mushrooms.has(id)) {
+            const m = new Mushroom(this, i, j);
+            mushrooms.set(id, m);
+            this.mushrooms.set(id, m);
+          }
+        } else if (hasFishAt(this.seed, i, j)) {
+          const id = objKey("fish", i, j);
+          if (!this.removedKeys.has(id) && !this.fishes.has(id)) {
+            const f = new Fish(this, i, j);
+            fishes.set(id, f);
+            this.fishes.set(id, f);
+          }
         }
       }
     }
-    this.chunks.set(`${cx},${cy}`, { cx, cy, graphics: g, trees });
+    this.chunks.set(`${cx},${cy}`, {
+      cx, cy, graphics: g, elevGraphics: elev, trees, bushes, mushrooms, fishes,
+    });
   }
 
   private unloadChunk(key: string, chunk: Chunk): void {
     chunk.graphics.destroy();
+    chunk.elevGraphics.destroy();
     for (const [tid, t] of chunk.trees) {
       t.container.destroy();
       t.shadow.destroy();
       this.trees.delete(tid);
     }
+    for (const [bid, b] of chunk.bushes) {
+      b.container.destroy();
+      b.shadow.destroy();
+      this.bushes.delete(bid);
+    }
+    for (const [mid, m] of chunk.mushrooms) {
+      m.container.destroy();
+      m.shadow.destroy();
+      this.mushrooms.delete(mid);
+    }
+    for (const [fid, f] of chunk.fishes) {
+      f.container.destroy();
+      f.shadow.destroy();
+      this.fishes.delete(fid);
+    }
     this.chunks.delete(key);
   }
 
-  private drawTile(g: Phaser.GameObjects.Graphics, i: number, j: number): void {
+  private drawTile(
+    g: Phaser.GameObjects.Graphics,
+    elev: Phaser.GameObjects.Graphics,
+    i: number,
+    j: number,
+  ): void {
     const { x, y } = gridToScreen(i, j);
     const biome = biomeAt(this.seed, i, j);
     const palette = BIOME_PALETTES[biome];
     const variant = tileVariant(this.seed, i, j) % palette.length;
     const fill = palette[variant];
     const isWater = biome === "lake" || biome === "river";
-    g.fillStyle(fill, 1);
-    g.lineStyle(1, isWater ? 0x16304a : 0x244524, isWater ? 0.25 : 0.18);
+
+    if (biome === "felsen") {
+      this.drawFelsenTile(elev, i, j, x, y, fill);
+      return;
+    }
+
+    let tileFill = fill;
+    if (isWater) {
+      tileFill = this.waterShadeAt(i, j);
+    }
+    g.fillStyle(tileFill, 1);
+    g.lineStyle(1, isWater ? 0x16304a : 0x244524, isWater ? 0.2 : 0.18);
     g.beginPath();
     g.moveTo(x, y);
     g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
@@ -418,19 +522,6 @@ export class GameScene extends Phaser.Scene {
         g.moveTo(x + dx - 4, cy + dy);
         g.lineTo(x + dx + 4, cy + dy);
         g.strokePath();
-      }
-      return;
-    }
-
-    if (biome === "felsen") {
-      const r = ((decor >> 3) & 0xff) / 255;
-      g.fillStyle(0x4a4a4a, 0.85);
-      g.fillCircle(x + dx, cy + dy, 2 + r * 1.5);
-      g.fillStyle(0x9a9a9a, 0.6);
-      g.fillCircle(x + dx - 1.5, cy + dy - 1, 1.2);
-      if ((decor >> 11) % 5 === 0) {
-        g.fillStyle(0x3a3a3a, 0.8);
-        g.fillCircle(x + dx + 4, cy + dy + 2, 1.4);
       }
       return;
     }
@@ -480,6 +571,80 @@ export class GameScene extends Phaser.Scene {
         g.fillStyle(0x5a5345, 0.7);
         g.fillCircle(x + dx + 1, cy + dy + 1, 1.2);
       }
+    }
+  }
+
+  private waterShadeAt(i: number, j: number): number {
+    const max = 3;
+    for (let r = 1; r <= max; r++) {
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+          if (isLandTile(this.seed, i + di, j + dj)) {
+            const t = (r - 1) / max;
+            return lerpColor(0x6aaad6, 0x1c3658, t);
+          }
+        }
+      }
+    }
+    return 0x102540;
+  }
+
+  private drawFelsenTile(
+    g: Phaser.GameObjects.Graphics,
+    i: number,
+    j: number,
+    x: number,
+    y: number,
+    fill: number,
+  ): void {
+    const E = FELSEN_ELEV;
+    const yt = y - E;
+    const decor = tileDecor(this.seed, i, j);
+
+    const dark = 0x303030;
+    const darker = 0x222222;
+
+    g.fillStyle(darker, 1);
+    g.beginPath();
+    g.moveTo(x - TILE_W / 2, y + TILE_H / 2 - E);
+    g.lineTo(x, y + TILE_H - E);
+    g.lineTo(x, y + TILE_H);
+    g.lineTo(x - TILE_W / 2, y + TILE_H / 2);
+    g.closePath();
+    g.fillPath();
+
+    g.fillStyle(dark, 1);
+    g.beginPath();
+    g.moveTo(x + TILE_W / 2, y + TILE_H / 2 - E);
+    g.lineTo(x, y + TILE_H - E);
+    g.lineTo(x, y + TILE_H);
+    g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
+    g.closePath();
+    g.fillPath();
+
+    g.fillStyle(fill, 1);
+    g.lineStyle(1, 0x404040, 0.35);
+    g.beginPath();
+    g.moveTo(x, yt);
+    g.lineTo(x + TILE_W / 2, yt + TILE_H / 2);
+    g.lineTo(x, yt + TILE_H);
+    g.lineTo(x - TILE_W / 2, yt + TILE_H / 2);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    const dx = (((decor >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.4;
+    const dy = (((decor >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.4;
+    const cy = yt + TILE_H / 2;
+    const r = ((decor >> 3) & 0xff) / 255;
+    g.fillStyle(0x4a4a4a, 0.85);
+    g.fillCircle(x + dx, cy + dy, 2 + r * 1.5);
+    g.fillStyle(0x9a9a9a, 0.6);
+    g.fillCircle(x + dx - 1.5, cy + dy - 1, 1.2);
+    if ((decor >> 11) % 5 === 0) {
+      g.fillStyle(0x3a3a3a, 0.8);
+      g.fillCircle(x + dx + 4, cy + dy + 2, 1.4);
     }
   }
 
@@ -548,6 +713,76 @@ export class GameScene extends Phaser.Scene {
       t.container.setVisible(v);
       t.shadow.setVisible(v);
     }
+    for (const b of this.bushes.values()) {
+      const k = `${b.i},${b.j}`;
+      const v = this.visible.has(k);
+      b.container.setVisible(v);
+      b.shadow.setVisible(v);
+    }
+    for (const m of this.mushrooms.values()) {
+      const k = `${m.i},${m.j}`;
+      const v = this.visible.has(k);
+      m.container.setVisible(v);
+      m.shadow.setVisible(v);
+    }
+    for (const f of this.fishes.values()) {
+      const k = `${f.i},${f.j}`;
+      const v = this.visible.has(k);
+      f.container.setVisible(v);
+      f.shadow.setVisible(v);
+    }
+  }
+
+  private drawFootprints(): void {
+    this.footprintsGfx.clear();
+    if (this.footprints.length === 0) return;
+    const { i0, i1, j0, j1 } = this.viewTileBounds();
+    const cutoff = this.serverTick - FOOTPRINT_LIFETIME_TICKS;
+    let drop = 0;
+    while (drop < this.footprints.length && this.footprints[drop].t < cutoff) drop++;
+    if (drop > 0) this.footprints.splice(0, drop);
+
+    for (const fp of this.footprints) {
+      if (fp.i < i0 || fp.i > i1 || fp.j < j0 || fp.j > j1) continue;
+      const k = `${fp.i},${fp.j}`;
+      if (!this.explored.has(k)) continue;
+      const age = this.serverTick - fp.t;
+      const lifeFrac = 1 - age / FOOTPRINT_LIFETIME_TICKS;
+      if (lifeFrac <= 0) continue;
+      const alpha = 0.7 * lifeFrac;
+      const { x, y } = gridToScreen(fp.i + 0.5, fp.j + 0.5);
+      const cy = y + TILE_H / 2 - 1;
+      const seed = (fp.i * 73 + fp.j * 19 + fp.t) | 0;
+      const side = (seed & 1) ? 1 : -1;
+      const ang = (((seed >> 1) & 0x7) / 8 - 0.5) * 0.6;
+      this.drawFootprint(x - 2 * side, cy - 1, ang, alpha);
+      this.drawFootprint(x + 2 * side, cy + 2, ang, alpha * 0.85);
+    }
+  }
+
+  private drawFootprint(
+    cx: number,
+    cy: number,
+    angle: number,
+    alpha: number,
+  ): void {
+    const g = this.footprintsGfx;
+    const cs = Math.cos(angle);
+    const sn = Math.sin(angle);
+    const rot = (px: number, py: number): { x: number; y: number } => ({
+      x: cx + px * cs - py * sn,
+      y: cy + px * sn + py * cs,
+    });
+    g.fillStyle(0x4a2f15, alpha);
+    const heel = rot(0, 1.2);
+    g.fillEllipse(heel.x, heel.y, 3.4, 2.4);
+    const ball = rot(0, -1.4);
+    g.fillEllipse(ball.x, ball.y, 2.8, 1.8);
+    for (let i = 0; i < 3; i++) {
+      const tx = -1.5 + i * 1.5;
+      const t = rot(tx, -2.6);
+      g.fillCircle(t.x, t.y, 0.55);
+    }
   }
 
   private drawMinimap(): void {
@@ -580,7 +815,7 @@ export class GameScene extends Phaser.Scene {
           ctx.fillStyle = BIOME_MINI_COLOR[biome];
           if (
             hasTreeAt(this.seed, i, j) &&
-            !this.destroyedTrees.has(treeIdAt(i, j))
+            !this.removedKeys.has(objKey("tree", i, j))
           ) {
             ctx.fillStyle = biome === "wald" ? "#0f2a0f" : "#2c5520";
           }
@@ -648,6 +883,7 @@ export class GameScene extends Phaser.Scene {
   }): void {
     this.names[msg.playerId] = msg.name;
     for (const snap of msg.units) {
+      this.playerColors[snap.owner] = snap.color;
       if (!this.units.has(snap.id)) {
         this.units.set(snap.id, new Unit(this, snap, snap.owner === this.playerId));
       }
@@ -688,31 +924,72 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyState(msg: StateMessage): void {
+    this.serverTick = msg.tick;
     for (const snap of msg.units) {
       const u = this.units.get(snap.id);
       if (u) u.applySnapshot(snap);
     }
-    for (const id of msg.removedTrees) {
-      this.destroyedTrees.add(id);
-      const t = this.trees.get(id);
-      if (t) {
-        t.fall();
-        this.trees.delete(id);
-        for (const c of this.chunks.values()) c.trees.delete(id);
-      }
+    for (const ro of msg.newRemovedObjects) {
+      this.applyRemoved(ro);
     }
-    let woodChanged = msg.wood.length !== this.wood.length;
-    if (!woodChanged) {
-      for (let i = 0; i < msg.wood.length; i++) {
-        if (msg.wood[i] !== this.wood[i]) {
-          woodChanged = true;
+    for (const fp of msg.newFootprints) {
+      this.footprints.push(fp);
+    }
+    let resChanged = msg.resources.length !== this.resources.length;
+    if (!resChanged) {
+      outer: for (let i = 0; i < msg.resources.length; i++) {
+        const a = msg.resources[i];
+        const b = this.resources[i];
+        if (!b) {
+          resChanged = true;
           break;
+        }
+        for (const k of RESOURCE_KEYS) {
+          if (a[k] !== b[k]) {
+            resChanged = true;
+            break outer;
+          }
         }
       }
     }
-    if (woodChanged) {
-      this.wood = [...msg.wood];
+    if (resChanged) {
+      this.resources = msg.resources.map((r) => ({ ...r }));
       this.updateHud();
+    }
+  }
+
+  private applyRemoved(ro: RemovedObject): void {
+    const k = objKey(ro.kind, ro.i, ro.j);
+    if (this.removedKeys.has(k)) return;
+    this.removedKeys.add(k);
+    if (ro.kind === "tree") {
+      const t = this.trees.get(k);
+      if (t) {
+        t.fall();
+        this.trees.delete(k);
+        for (const c of this.chunks.values()) c.trees.delete(k);
+      }
+    } else if (ro.kind === "bush") {
+      const b = this.bushes.get(k);
+      if (b) {
+        b.remove();
+        this.bushes.delete(k);
+        for (const c of this.chunks.values()) c.bushes.delete(k);
+      }
+    } else if (ro.kind === "mushroom") {
+      const m = this.mushrooms.get(k);
+      if (m) {
+        m.remove();
+        this.mushrooms.delete(k);
+        for (const c of this.chunks.values()) c.mushrooms.delete(k);
+      }
+    } else {
+      const f = this.fishes.get(k);
+      if (f) {
+        f.remove();
+        this.fishes.delete(k);
+        for (const c of this.chunks.values()) c.fishes.delete(k);
+      }
     }
   }
 
@@ -771,15 +1048,31 @@ export class GameScene extends Phaser.Scene {
     const k = `${i},${j}`;
     if (!this.explored.has(k)) return;
     const ids = selected.map((u) => u.id);
-    if (
-      this.visible.has(k) &&
-      hasTreeAt(this.seed, i, j) &&
-      !this.destroyedTrees.has(treeIdAt(i, j))
-    ) {
-      this.net.send({ type: "harvest", unitIds: ids, treeId: treeIdAt(i, j) });
+    if (this.visible.has(k) && this.harvestableAt(i, j)) {
+      this.net.send({ type: "harvest", unitIds: ids, i, j });
     } else {
       this.net.send({ type: "move", unitIds: ids, i, j });
     }
+  }
+
+  private harvestableAt(i: number, j: number): boolean {
+    if (
+      hasTreeAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("tree", i, j))
+    ) return true;
+    if (
+      hasBushAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("bush", i, j))
+    ) return true;
+    if (
+      hasMushroomAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("mushroom", i, j))
+    ) return true;
+    if (
+      hasFishAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("fish", i, j))
+    ) return true;
+    return false;
   }
 
   private drawSelectionBox(p: Phaser.Input.Pointer): void {
@@ -836,19 +1129,74 @@ export class GameScene extends Phaser.Scene {
   private updateHud(): void {
     if (!this.hud) return;
     const myName = this.names[this.playerId] ?? "Du";
-    const me = this.wood[this.playerId] ?? 0;
-    const others: string[] = [];
+    const myColor = this.playerColorCss(this.playerId);
+    const myRes = this.resources[this.playerId] ?? {
+      holz: 0, wasser: 0, beeren: 0, fleisch: 0, stein: 0,
+    };
+    const labels: Record<keyof Resources, string> = {
+      holz: "Holz",
+      wasser: "Wasser",
+      beeren: "Beeren",
+      fleisch: "Fleisch",
+      stein: "Stein",
+    };
+    const resHtml = RESOURCE_KEYS.map(
+      (k) =>
+        `<div class="item"><span class="ico ${k}"></span>` +
+        `<span class="label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
+    ).join("");
+
+    const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
       if (i === this.playerId) continue;
       const n = this.names[i];
       if (!n) continue;
-      others.push(`${n}: ${this.wood[i] ?? 0} Holz`);
+      const c = this.playerColorCss(i);
+      const w = this.resources[i]?.holz ?? 0;
+      otherRows.push(
+        `<div class="row"><span class="swatch" style="background:${c}"></span>` +
+          `${escapeHtml(n)}: ${w} Holz</div>`,
+      );
     }
-    const otherPart = others.length
-      ? others.join("  ·  ")
-      : "Warte auf weitere Stämme …";
-    this.hud.textContent =
-      `Stamm von ${myName} (du): ${me} Holz  ·  ${otherPart}  ·  ` +
-      `LMK: Auswahl  ·  RMK: bewegen / Baum fällen  ·  WASD: Stamm  ·  Mausrand: Kamera  ·  M: Karte`;
+    const othersHtml = otherRows.length
+      ? `<div class="others">${otherRows.join("")}</div>`
+      : `<div class="others">Warte auf weitere Stämme …</div>`;
+
+    this.hud.innerHTML =
+      `<div class="me"><span class="swatch" style="background:${myColor}"></span>` +
+      `Stamm von ${escapeHtml(myName)}</div>` +
+      `<div class="res">${resHtml}</div>` +
+      othersHtml;
   }
+
+  private playerColorCss(p: PlayerId): string {
+    const c = this.playerColors[p];
+    if (c !== undefined) return "#" + c.toString(16).padStart(6, "0");
+    for (const u of this.units.values()) {
+      if (u.owner === p) return "#" + u.color.toString(16).padStart(6, "0");
+    }
+    return "#888888";
+  }
+}
+
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
