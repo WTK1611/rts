@@ -1778,6 +1778,13 @@ export class GameScene extends Phaser.Scene {
         `<span class="label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
     ).join("");
 
+    const tribeCounts: number[] = new Array(this.names.length).fill(0);
+    for (const u of this.units.values()) {
+      if (u.owner >= 0 && u.owner < tribeCounts.length) tribeCounts[u.owner]++;
+    }
+    const countChip = (n: number) =>
+      `<span class="count" title="Stammesmitglieder">👥 ${n}</span>`;
+
     const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
       if (i === this.playerId) continue;
@@ -1796,7 +1803,7 @@ export class GameScene extends Phaser.Scene {
       otherRows.push(
         `<div class="${cls}"${attr}><span class="swatch" style="background:${c}"></span>` +
           `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as Language] ?? ""}">${flag}</span> ` : ""}` +
-          `${escapeHtml(n)}${eye}</div>`,
+          `${escapeHtml(n)} ${countChip(tribeCounts[i] ?? 0)}${eye}</div>`,
       );
     }
     const othersHtml = otherRows.length
@@ -1808,7 +1815,8 @@ export class GameScene extends Phaser.Scene {
     this.hud.innerHTML =
       `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
       `<span class="swatch" style="background:${myColor}"></span>` +
-      `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""}</div>` +
+      `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
+      `${countChip(tribeCounts[this.playerId] ?? 0)}</div>` +
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
       othersHtml;

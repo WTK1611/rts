@@ -121,6 +121,15 @@
         margin-left: auto; color: #88a088; font-size: 11px;
       }
       #hud .others .row.active .eye { color: #7ecfff; }
+      #hud .count {
+        display: inline-flex; align-items: center; gap: 3px;
+        padding: 1px 7px; border-radius: 9px;
+        background: rgba(255,255,255,0.08);
+        color: #d8e8d8; font-size: 11px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      #hud .me .count { font-size: 12px; padding: 1px 8px; }
       #hud .controls {
         margin-top: 8px; padding-top: 6px;
         border-top: 1px solid rgba(255,255,255,0.08);
@@ -151,6 +160,8 @@
         }
         #hud .others .row { gap: 6px; line-height: 1.3; }
         #hud .others .swatch { width: 6px; height: 6px; flex-basis: 6px; }
+        #hud .count { padding: 0 5px; font-size: 9px; }
+        #hud .me .count { font-size: 10px; padding: 0 6px; }
       }
       #toasts {
         position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
