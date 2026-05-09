@@ -48,6 +48,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+        globIgnores: ["**/image/js_icon.png"],
         navigateFallbackDenylist: [/^\/ws/, /^\/api/],
       },
     }),
