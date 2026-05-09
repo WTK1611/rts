@@ -226,6 +226,9 @@ export class GameScene extends Phaser.Scene {
       ) => {
         const next = cam.zoom * (dy < 0 ? 1.1 : 1 / 1.1);
         cam.setZoom(Phaser.Math.Clamp(next, 0.5, 2.5));
+        this.applyTribeFollow();
+        cam.scrollX = this.camTargetX;
+        cam.scrollY = this.camTargetY;
       },
     );
 
@@ -696,16 +699,20 @@ export class GameScene extends Phaser.Scene {
         if (this.visible.has(k)) continue;
         const ex = this.explored.has(k);
         const { x, y } = gridToScreen(i, j);
+        const hN = heightAt(this.seed, i, j);
+        const hE = heightAt(this.seed, i + 1, j);
+        const hS = heightAt(this.seed, i + 1, j + 1);
+        const hW = heightAt(this.seed, i, j + 1);
         if (ex) {
           this.fog.fillStyle(0x808080, 0.55);
         } else {
           this.fog.fillStyle(0x000000, 1);
         }
         this.fog.beginPath();
-        this.fog.moveTo(x, y);
-        this.fog.lineTo(x + TILE_W / 2, y + TILE_H / 2);
-        this.fog.lineTo(x, y + TILE_H);
-        this.fog.lineTo(x - TILE_W / 2, y + TILE_H / 2);
+        this.fog.moveTo(x, y - hN);
+        this.fog.lineTo(x + TILE_W / 2, y + TILE_H / 2 - hE);
+        this.fog.lineTo(x, y + TILE_H - hS);
+        this.fog.lineTo(x - TILE_W / 2, y + TILE_H / 2 - hW);
         this.fog.closePath();
         this.fog.fillPath();
       }
