@@ -29,13 +29,15 @@ interface BotUnitMem {
   cooldown: number;
 }
 
-const SCAN_RADIUS = 14;
+const SCAN_RADIUS = 12;
 const RETREAT_HP_THRESHOLD = 70;
 const HUNT_HP_THRESHOLD = 55;
 const DRIFT_INTERVAL_MIN = 60;
 const DRIFT_INTERVAL_RANGE = 90;
-const DRIFT_STEP = 8;
-const REGROUP_RADIUS = 18;
+const DRIFT_STEP = 6;
+const REGROUP_RADIUS = 7;
+const MAX_TARGET_DIST_FROM_CENTER = 10;
+const HUNT_SCAN_RADIUS = 9;
 
 export class AIBot {
   readonly id: PlayerId;
@@ -67,6 +69,14 @@ export class AIBot {
     }
 
     const center = this.tribeCenter();
+    if (center) {
+      const dx = center.x - this.exploreCenter.x;
+      const dy = center.y - this.exploreCenter.y;
+      const d = Math.hypot(dx, dy);
+      const pull = Math.min(1, d / 12);
+      this.exploreCenter.x += dx * 0.2 * pull;
+      this.exploreCenter.y += dy * 0.2 * pull;
+    }
 
     for (const u of this.sim.units.values()) {
       if (u.owner !== this.id) continue;
@@ -86,9 +96,9 @@ export class AIBot {
   private decide(u: SimUnit, center: { x: number; y: number } | null): void {
     if (this.maybeRetreat(u)) return;
     if (center && this.maybeRegroup(u, center)) return;
-    if (this.maybeHunt(u)) return;
-    if (this.maybeHarvest(u)) return;
-    this.wander(u);
+    if (this.maybeHunt(u, center)) return;
+    if (this.maybeHarvest(u, center)) return;
+    this.wander(u, center);
   }
 
   private tribeCenter(): { x: number; y: number } | null {
@@ -148,7 +158,10 @@ export class AIBot {
     return false;
   }
 
-  private maybeHunt(u: SimUnit): boolean {
+  private maybeHunt(
+    u: SimUnit,
+    center: { x: number; y: number } | null,
+  ): boolean {
     if (u.hp < HUNT_HP_THRESHOLD) return false;
     const r = this.sim.resources[this.id];
     const food = r.fleisch + r.fisch;
@@ -160,7 +173,11 @@ export class AIBot {
       if (a.hp <= 0) continue;
       if (!SAFE_HUNT.has(a.kind)) continue;
       const d = Math.hypot(a.gx - u.gx, a.gy - u.gy);
-      if (d > 12) continue;
+      if (d > HUNT_SCAN_RADIUS) continue;
+      if (center) {
+        const dc = Math.hypot(a.gx - center.x, a.gy - center.y);
+        if (dc > MAX_TARGET_DIST_FROM_CENTER) continue;
+      }
       if (!nearest || d < nearest.d) nearest = { a, d };
     }
     if (!nearest) return false;
@@ -168,7 +185,10 @@ export class AIBot {
     return true;
   }
 
-  private maybeHarvest(u: SimUnit): boolean {
+  private maybeHarvest(
+    u: SimUnit,
+    center: { x: number; y: number } | null,
+  ): boolean {
     const r = this.sim.resources[this.id];
     const fruit = r.beeren + r.pilze;
 
@@ -185,9 +205,15 @@ export class AIBot {
     }
     needs.sort((a, b) => b.w - a.w);
 
+    const ox = center ? center.x : u.gx;
+    const oy = center ? center.y : u.gy;
     for (const n of needs) {
-      const tgt = this.findNearest(u, n.kind, SCAN_RADIUS);
+      const tgt = this.findNearestAt(ox, oy, n.kind, SCAN_RADIUS);
       if (!tgt) continue;
+      if (center) {
+        const dc = Math.hypot(tgt.i + 0.5 - center.x, tgt.j + 0.5 - center.y);
+        if (dc > MAX_TARGET_DIST_FROM_CENTER) continue;
+      }
       if (n.kind === "water") {
         this.sim.cmdMove(this.id, [u.id], tgt.i, tgt.j);
       } else {
@@ -198,11 +224,13 @@ export class AIBot {
     return false;
   }
 
-  private wander(u: SimUnit): void {
+  private wander(u: SimUnit, center: { x: number; y: number } | null): void {
+    const ax = center ? (center.x + this.exploreCenter.x) * 0.5 : this.exploreCenter.x;
+    const ay = center ? (center.y + this.exploreCenter.y) * 0.5 : this.exploreCenter.y;
     for (let attempt = 0; attempt < 12; attempt++) {
-      const jitter = 6 + attempt * 1.5;
-      const tx = this.exploreCenter.x + (Math.random() - 0.5) * jitter * 2;
-      const ty = this.exploreCenter.y + (Math.random() - 0.5) * jitter * 2;
+      const jitter = 3 + attempt * 0.7;
+      const tx = ax + (Math.random() - 0.5) * jitter * 2;
+      const ty = ay + (Math.random() - 0.5) * jitter * 2;
       const ti = Math.floor(tx);
       const tj = Math.floor(ty);
       if (!this.sim.isWalkable(ti, tj)) continue;
@@ -213,13 +241,14 @@ export class AIBot {
     }
   }
 
-  private findNearest(
-    u: SimUnit,
+  private findNearestAt(
+    ox: number,
+    oy: number,
     kind: Need,
     radius: number,
   ): { i: number; j: number } | null {
-    const gi = Math.floor(u.gx);
-    const gj = Math.floor(u.gy);
+    const gi = Math.floor(ox);
+    const gj = Math.floor(oy);
     type Cand = { i: number; j: number; d: number };
     let best: Cand | null = null;
     for (let r = 1; r <= radius; r++) {
