@@ -300,36 +300,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyTribeFollow(): void {
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
+    let cx = 0;
+    let cy = 0;
     let n = 0;
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
-      const w = gridToScreen(u.gx, u.gy);
-      if (w.x < minX) minX = w.x;
-      if (w.x > maxX) maxX = w.x;
-      if (w.y < minY) minY = w.y;
-      if (w.y > maxY) maxY = w.y;
+      cx += u.gx;
+      cy += u.gy;
       n++;
     }
     if (n === 0) return;
+    cx /= n;
+    cy /= n;
+    const w = gridToScreen(cx, cy);
     const cam = this.cameras.main;
-    const margin = 180;
-    const sxMin = (minX - this.camTargetX) * cam.zoom;
-    const sxMax = (maxX - this.camTargetX) * cam.zoom;
-    const syMin = (minY - this.camTargetY) * cam.zoom;
-    const syMax = (maxY - this.camTargetY) * cam.zoom;
-    let dx = 0;
-    let dy = 0;
-    if (sxMin < margin) dx = sxMin - margin;
-    else if (sxMax > cam.width - margin) dx = sxMax - (cam.width - margin);
-    if (syMin < margin) dy = syMin - margin;
-    else if (syMax > cam.height - margin) dy = syMax - (cam.height - margin);
-    if (dx === 0 && dy === 0) return;
-    this.camTargetX += dx / cam.zoom;
-    this.camTargetY += dy / cam.zoom;
+    this.camTargetX = w.x - cam.width / (2 * cam.zoom);
+    this.camTargetY = w.y - cam.height / (2 * cam.zoom);
   }
 
   private applyEdgePan(dt: number, baseSpeed: number): void {
