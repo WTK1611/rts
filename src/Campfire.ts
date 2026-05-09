@@ -1,6 +1,7 @@
 import Phaser from "phaser";
-import { gridToScreen, TILE_H } from "./iso";
+import { gridToScreen, TILE_H, TILE_W } from "./iso";
 import { groundHeight } from "../shared/worldgen";
+import { CAMPFIRE_RANGE } from "../shared/protocol";
 
 export class Campfire {
   scene: Phaser.Scene;
@@ -10,6 +11,7 @@ export class Campfire {
   fuel = 1;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
+  rangeRing: Phaser.GameObjects.Graphics;
   glow: Phaser.GameObjects.Ellipse;
   flame1: Phaser.GameObjects.Ellipse;
   flame2: Phaser.GameObjects.Ellipse;
@@ -38,6 +40,10 @@ export class Campfire {
 
     this.shadow = scene.add.ellipse(x, wy + 1, 18, 7, 0x000000, 0.4);
     this.shadow.setDepth((gx + gy) * TILE_H - 0.5);
+
+    this.rangeRing = scene.add.graphics();
+    this.rangeRing.setDepth((gx + gy) * TILE_H - 0.6);
+    this.drawRangeRing(x, wy);
 
     this.glow = scene.add.ellipse(0, -1, 26, 13, 0xff8a3a, 0.25);
     const log1 = scene.add.rectangle(-4, 0, 12, 3, 0x4a2e1a)
@@ -76,8 +82,21 @@ export class Campfire {
       this.shadow.setPosition(x, wy + 1);
       this.shadow.setDepth((gx + gy) * TILE_H - 0.5);
       this.container.setDepth((gx + gy) * TILE_H);
+      this.rangeRing.setDepth((gx + gy) * TILE_H - 0.6);
+      this.drawRangeRing(x, wy);
     }
     this.fuel = fuel;
+  }
+
+  private drawRangeRing(cx: number, cy: number): void {
+    const w = CAMPFIRE_RANGE * TILE_W;
+    const h = CAMPFIRE_RANGE * TILE_H;
+    const g = this.rangeRing;
+    g.clear();
+    g.fillStyle(0xff2a2a, 0.08);
+    g.fillEllipse(cx, cy + 1, w, h);
+    g.lineStyle(1.5, 0xff2a2a, 0.7);
+    g.strokeEllipse(cx, cy + 1, w, h);
   }
 
   update(dt: number): void {
@@ -92,6 +111,7 @@ export class Campfire {
 
   remove(): void {
     this.shadow.destroy();
+    this.rangeRing.destroy();
     this.scene.tweens.add({
       targets: this.container,
       alpha: 0,

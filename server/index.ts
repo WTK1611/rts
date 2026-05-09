@@ -136,6 +136,7 @@ function spawnBots(): void {
     }
     if (slotId === -1) return;
     world.sim.addPlayer(slotId, pick.language);
+    world.sim.followChiefEnabled[slotId] = true;
     const bot = new AIBot(world.sim, slotId);
     world.players[slotId] = {
       ws: null,
@@ -259,6 +260,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
   world.players[slotId] = slot;
   slots.set(ws, slot);
   world.sim.addPlayer(slotId, language);
+  world.sim.followChiefEnabled[slotId] = true;
 
   const allUnits = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();

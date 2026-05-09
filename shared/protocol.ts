@@ -87,6 +87,8 @@ export interface CampfireSnapshot {
   fuel: number;
 }
 
+export const CAMPFIRE_RANGE = 2.5;
+
 export interface Footprint {
   o: PlayerId;
   i: number;

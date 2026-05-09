@@ -2,6 +2,7 @@ import { findPath } from "../shared/pathfinding";
 import {
   AnimalKind,
   AnimalSnapshot,
+  CAMPFIRE_RANGE,
   CampfireSnapshot,
   EncounterEvent,
   emptyResources,
@@ -62,7 +63,6 @@ const WATER_AUTOPICK_GAIN = 1;
 const CAMPFIRE_IGNITE_DELAY_SEC = 8;
 const CAMPFIRE_IGNITE_MIN_UNITS = 2;
 const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
-const CAMPFIRE_RANGE = 2.5;
 const CAMPFIRE_BURN_PER_FUEL_SEC = 25;
 const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
 
@@ -150,6 +150,7 @@ const TRIBE_COHESION_IDLE_SEC = 2.0;
 const FOLLOW_CHIEF_NEAR = 5;
 const FOLLOW_CHIEF_SCAN_INTERVAL = 0.5;
 const FOLLOW_CHIEF_SIGHT = 5;
+const AUTO_FORAGE_CHIEF_RADIUS = 6;
 
 export interface SimCampfire {
   id: string;
@@ -231,6 +232,7 @@ export class Sim {
   campfireIgniteCx: number[] = new Array(MAX_PLAYERS).fill(0);
   campfireIgniteCy: number[] = new Array(MAX_PLAYERS).fill(0);
   removedCampfireIds: string[] = [];
+  followChiefEnabled: boolean[] = new Array(MAX_PLAYERS).fill(false);
   tick = 0;
 
   constructor(seed: number) {
@@ -864,6 +866,7 @@ export class Sim {
   removePlayer(p: PlayerId): string[] {
     if (!this.active[p]) return [];
     this.active[p] = false;
+    this.followChiefEnabled[p] = false;
     const removed: string[] = [];
     for (const u of this.units.values()) {
       if (u.owner === p) {
@@ -1367,18 +1370,8 @@ export class Sim {
     for (const f of [...this.campfires.values()]) {
       f.fuelTimer -= dt;
       if (f.fuelTimer > 0) continue;
-      let nearby = 0;
-      for (const u of this.units.values()) {
-        if (u.owner !== f.owner) continue;
-        const dx = u.gx - f.gx;
-        const dy = u.gy - f.gy;
-        if (dx * dx + dy * dy <= CAMPFIRE_RANGE * CAMPFIRE_RANGE) {
-          nearby++;
-          break;
-        }
-      }
       const r = this.resources[f.owner];
-      if (nearby > 0 && r.holz >= 1 && r.stein >= 1) {
+      if (r.holz >= 1 && r.stein >= 1) {
         r.holz -= 1;
         r.stein -= 1;
         f.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
@@ -1836,23 +1829,25 @@ export class Sim {
     for (const u of this.units.values()) {
       if (u.isChief) continue;
       if (!this.active[u.owner]) continue;
+      if (!this.followChiefEnabled[u.owner]) continue;
       if (u.huntTarget) continue;
       if (u.harvestTarget) continue;
 
       u.autoFollowScanTimer -= dt;
 
+      const c = chiefByOwner[u.owner];
+
       if (u.path.length > 0) {
         if (!u.autoFollowing) continue;
         if (u.autoFollowScanTimer > 0) continue;
         u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
-        this.tryAutoForage(u);
+        if (c) this.tryAutoForage(u, c);
         continue;
       }
 
-      const c = chiefByOwner[u.owner];
       if (!c) continue;
 
-      if (this.tryAutoForage(u)) {
+      if (this.tryAutoForage(u, c)) {
         u.autoFollowing = true;
         const last = u.path[u.path.length - 1];
         if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
@@ -1883,12 +1878,13 @@ export class Sim {
     }
   }
 
-  private tryAutoForage(u: SimUnit): boolean {
+  private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
     const seed = this.seed;
     const ti0 = Math.floor(u.gx);
     const tj0 = Math.floor(u.gy);
     const R = FOLLOW_CHIEF_SIGHT;
     const R2 = R * R;
+    const cR2 = AUTO_FORAGE_CHIEF_RADIUS * AUTO_FORAGE_CHIEF_RADIUS;
     let best: { kind: ObjectKind; i: number; j: number; d2: number } | null = null;
     for (let dj = -R; dj <= R; dj++) {
       for (let di = -R; di <= R; di++) {
@@ -1896,6 +1892,9 @@ export class Sim {
         if (d2 > R2) continue;
         const i = ti0 + di;
         const j = tj0 + dj;
+        const cdx = i + 0.5 - chief.gx;
+        const cdy = j + 0.5 - chief.gy;
+        if (cdx * cdx + cdy * cdy > cR2) continue;
         let kind: ObjectKind | null = null;
         if (
           hasMushroomAt(seed, i, j) &&
