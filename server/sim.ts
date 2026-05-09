@@ -1820,7 +1820,7 @@ export class Sim {
         u.eatCooldown = EAT_INTERVAL;
         this.autoEat(u);
       }
-      if (this.unitAtOwnFire(u)) {
+      if (this.unitAtAnyFire(u)) {
         u.hp = Math.min(u.hpMax, u.hp + CAMPFIRE_HP_REGEN_PER_SEC * dt);
       } else {
         u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
@@ -1893,12 +1893,14 @@ export class Sim {
     this.checkArtifactDiscovery();
   }
 
-  private unitAtOwnFire(u: SimUnit): boolean {
-    const f = this.campfires.get(this.campfireIdFor(u.owner));
-    if (!f) return false;
-    const dx = f.gx - u.gx;
-    const dy = f.gy - u.gy;
-    return dx * dx + dy * dy <= CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+  private unitAtAnyFire(u: SimUnit): boolean {
+    const r2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+    for (const f of this.campfires.values()) {
+      const dx = f.gx - u.gx;
+      const dy = f.gy - u.gy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
   }
 
   private campfireStep(dt: number): void {
