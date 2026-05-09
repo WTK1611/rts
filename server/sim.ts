@@ -80,12 +80,12 @@ interface AnimalSpec {
 }
 
 const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald"],            density: 0.0040, wanderRadius: 6 },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],            density: 0.0010, wanderRadius: 10 },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald"],                      density: 0.0006, wanderRadius: 8 },
-  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen"],         density: 0.0008, wanderRadius: 8 },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne"], density: 0.0004, wanderRadius: 12 },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne"],         density: 0.0003, wanderRadius: 6 },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6 },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10 },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8 },
+  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8 },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12 },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6 },
 };
 
 const ANIMAL_SPAWN_RADIUS = 220;
