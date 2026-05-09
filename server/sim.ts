@@ -94,6 +94,8 @@ export interface SimUnit {
   firstName: string;
   isChief: boolean;
   idleSec: number;
+  autoFollowing: boolean;
+  autoFollowScanTimer: number;
 }
 
 const MAX_AGE_SEC = 420;
@@ -145,6 +147,9 @@ const GROUP_FIGHT_RANGE = 7;
 const ANIMAL_ESCAPE_RANGE_MULT = 1.8;
 const TRIBE_COHESION_RADIUS = 6;
 const TRIBE_COHESION_IDLE_SEC = 2.0;
+const FOLLOW_CHIEF_NEAR = 5;
+const FOLLOW_CHIEF_SCAN_INTERVAL = 0.5;
+const FOLLOW_CHIEF_SIGHT = 5;
 
 export interface SimCampfire {
   id: string;
@@ -352,6 +357,7 @@ export class Sim {
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
+      u.autoFollowing = false;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHunt(u, a, blocked);
       const last = u.path[u.path.length - 1];
@@ -783,6 +789,8 @@ export class Sim {
         gender,
         firstName: pickFirstName(this.seed, lang, gender, p, k),
         isChief: false,
+        autoFollowing: false,
+        autoFollowScanTimer: 0,
         idleSec: 0,
       };
       this.units.set(u.id, u);
@@ -841,6 +849,8 @@ export class Sim {
         firstName: pickFirstName(this.seed, lang, gender, p, idx),
         isChief: false,
         idleSec: 0,
+        autoFollowing: false,
+        autoFollowScanTimer: 0,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -928,6 +938,7 @@ export class Sim {
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
+      u.autoFollowing = false;
       const blocked = this.blockedTilesFor(u, claimed);
       let target = { i, j };
       if (blocked.has(`${i},${j}`) || !this.isWalkable(i, j)) {
@@ -952,6 +963,7 @@ export class Sim {
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
+      u.autoFollowing = false;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHarvest(u, kind, i, j, blocked);
       const last = u.path[u.path.length - 1];
@@ -1331,6 +1343,7 @@ export class Sim {
     this.spreadIdleUnits();
     this.cohereTribes();
     this.updateChiefs();
+    this.followChief(dt);
     this.campfireStep(dt);
   }
 
@@ -1547,6 +1560,8 @@ export class Sim {
       u.huntTimer = 0;
       u.harvestTimer = 0;
       u.state = "idle";
+      u.autoFollowing = false;
+      u.autoFollowScanTimer = 0;
       this.pregnancyTimer.delete(u.id);
       moved++;
     }
@@ -1558,82 +1573,77 @@ export class Sim {
     return out;
   }
 
+  private clearPregnanciesFor(p: PlayerId): void {
+    for (const [id, _] of this.pregnancyTimer) {
+      const u = this.units.get(id);
+      if (!u || u.owner === p) this.pregnancyTimer.delete(id);
+    }
+  }
+
   private growthCheck(dt: number): void {
+    const tribeUnits: SimUnit[][] = Array.from(
+      { length: MAX_PLAYERS },
+      () => [],
+    );
+    for (const u of this.units.values()) tribeUnits[u.owner].push(u);
+
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      if (!this.active[p]) {
-        this.growthActive[p] = false;
-        this.pregnantUnitId[p] = null;
-        continue;
-      }
-      let count = 0;
+      const list = tribeUnits[p];
+      if (!this.active[p] || list.length === 0) continue;
+
       let males = 0;
-      let females = 0;
       let cx = 0;
       let cy = 0;
-      let healthyFemale: SimUnit | null = null;
-      for (const u of this.units.values()) {
-        if (u.owner !== p) continue;
-        count++;
+      for (const u of list) {
         if (u.gender === "m") males++;
-        else {
-          females++;
-          if (!healthyFemale) {
-            const frac = u.hpMax > 0 ? u.hp / u.hpMax : 0;
-            if (frac >= PREGNANCY_HEALTH_MIN_FRAC) healthyFemale = u;
-          }
-        }
         cx += u.gx;
         cy += u.gy;
       }
-      if (count < 2 || count >= MAX_TRIBE_SIZE || males < 1 || females < 1) {
-        this.growthTimer[p] = 0;
-        this.growthActive[p] = false;
-        this.pregnantUnitId[p] = null;
-        continue;
-      }
+      const canConceive =
+        males >= 1 && list.length >= 2 && list.length < MAX_TRIBE_SIZE;
+      const centerX = cx / list.length;
+      const centerY = cy / list.length;
 
-      let pregId = this.pregnantUnitId[p];
-      if (pregId) {
-        const pu = this.units.get(pregId);
-        if (!pu || pu.owner !== p || pu.gender !== "f") {
-          pregId = null;
-          this.growthTimer[p] = 0;
-        } else {
-          const frac = pu.hpMax > 0 ? pu.hp / pu.hpMax : 0;
-          if (frac < PREGNANCY_HEALTH_MIN_FRAC) {
-            pregId = null;
-            this.growthTimer[p] = 0;
-          }
-        }
-      }
-      if (!pregId) {
-        if (!healthyFemale) {
-          this.growthActive[p] = false;
-          this.pregnantUnitId[p] = null;
+      let capacity = MAX_TRIBE_SIZE - list.length;
+
+      for (const u of list) {
+        if (u.gender !== "f") continue;
+        const frac = u.hpMax > 0 ? u.hp / u.hpMax : 0;
+        if (!canConceive || frac < PREGNANCY_HEALTH_MIN_FRAC) {
+          this.pregnancyTimer.delete(u.id);
           continue;
         }
-        pregId = healthyFemale.id;
+        const t = (this.pregnancyTimer.get(u.id) ?? 0) + dt;
+        if (t >= GROWTH_REQUIRED_SEC && capacity > 0) {
+          this.pregnancyTimer.delete(u.id);
+          this.spawnNewTribeMember(p, centerX, centerY);
+          capacity--;
+        } else {
+          this.pregnancyTimer.set(u.id, Math.min(t, GROWTH_REQUIRED_SEC));
+        }
       }
+    }
 
-      this.pregnantUnitId[p] = pregId;
-      this.growthActive[p] = true;
-      this.growthTimer[p] += dt;
-      if (this.growthTimer[p] >= GROWTH_REQUIRED_SEC) {
-        this.growthTimer[p] = 0;
-        this.pregnantUnitId[p] = null;
-        this.spawnNewTribeMember(p, cx / count, cy / count);
-      }
+    for (const [id, _] of this.pregnancyTimer) {
+      if (!this.units.has(id)) this.pregnancyTimer.delete(id);
     }
   }
 
   growthSnapshot(): { progress: number[]; active: boolean[] } {
-    const progress: number[] = new Array(MAX_PLAYERS);
-    const active: boolean[] = new Array(MAX_PLAYERS);
+    const progress: number[] = new Array(MAX_PLAYERS).fill(0);
+    const active: boolean[] = new Array(MAX_PLAYERS).fill(false);
+    for (const [id, t] of this.pregnancyTimer) {
+      const u = this.units.get(id);
+      if (!u) continue;
+      const frac = Math.min(1, t / GROWTH_REQUIRED_SEC);
+      if (frac > progress[u.owner]) progress[u.owner] = frac;
+      active[u.owner] = true;
+    }
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      progress[p] = this.active[p]
-        ? Math.min(1, this.growthTimer[p] / GROWTH_REQUIRED_SEC)
-        : 0;
-      active[p] = !!this.growthActive[p];
+      if (!this.active[p]) {
+        progress[p] = 0;
+        active[p] = false;
+      }
     }
     return { progress, active };
   }
@@ -1683,6 +1693,8 @@ export class Sim {
       firstName: pickFirstName(this.seed, lang, gender, p, k),
       isChief: false,
       idleSec: 0,
+      autoFollowing: false,
+      autoFollowScanTimer: 0,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));
@@ -1813,6 +1825,97 @@ export class Sim {
         if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       }
     }
+  }
+
+  private followChief(dt: number): void {
+    const chiefByOwner: Array<SimUnit | null> = new Array(MAX_PLAYERS).fill(null);
+    for (const u of this.units.values()) {
+      if (u.isChief) chiefByOwner[u.owner] = u;
+    }
+    const claimed = new Set<string>();
+    for (const u of this.units.values()) {
+      if (u.isChief) continue;
+      if (!this.active[u.owner]) continue;
+      if (u.huntTarget) continue;
+      if (u.harvestTarget) continue;
+
+      u.autoFollowScanTimer -= dt;
+
+      if (u.path.length > 0) {
+        if (!u.autoFollowing) continue;
+        if (u.autoFollowScanTimer > 0) continue;
+        u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
+        this.tryAutoForage(u);
+        continue;
+      }
+
+      const c = chiefByOwner[u.owner];
+      if (!c) continue;
+
+      if (this.tryAutoForage(u)) {
+        u.autoFollowing = true;
+        const last = u.path[u.path.length - 1];
+        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+        continue;
+      }
+
+      const dx = c.gx - u.gx;
+      const dy = c.gy - u.gy;
+      if (dx * dx + dy * dy <= FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) continue;
+
+      const ci = Math.floor(c.gx);
+      const cj = Math.floor(c.gy);
+      const blocked = this.blockedTilesFor(u, claimed);
+      let target: { i: number; j: number } | null = null;
+      if (this.isWalkable(ci, cj) && !blocked.has(`${ci},${cj}`)) {
+        target = { i: ci, j: cj };
+      } else {
+        target = this.findFreeTileNear(ci, cj, blocked);
+      }
+      if (!target) continue;
+      this.startMove(u, target.i, target.j, blocked);
+      if (u.path.length > 0) {
+        u.autoFollowing = true;
+        u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
+        const last = u.path[u.path.length - 1];
+        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      }
+    }
+  }
+
+  private tryAutoForage(u: SimUnit): boolean {
+    const seed = this.seed;
+    const ti0 = Math.floor(u.gx);
+    const tj0 = Math.floor(u.gy);
+    const R = FOLLOW_CHIEF_SIGHT;
+    const R2 = R * R;
+    let best: { kind: ObjectKind; i: number; j: number; d2: number } | null = null;
+    for (let dj = -R; dj <= R; dj++) {
+      for (let di = -R; di <= R; di++) {
+        const d2 = di * di + dj * dj;
+        if (d2 > R2) continue;
+        const i = ti0 + di;
+        const j = tj0 + dj;
+        let kind: ObjectKind | null = null;
+        if (
+          hasMushroomAt(seed, i, j) &&
+          !this.removedKeys.has(objKey("mushroom", i, j))
+        ) {
+          kind = "mushroom";
+        } else if (
+          hasBushAt(seed, i, j) &&
+          !this.removedKeys.has(objKey("bush", i, j))
+        ) {
+          kind = "bush";
+        }
+        if (!kind) continue;
+        if (!best || d2 < best.d2) best = { kind, i, j, d2 };
+      }
+    }
+    if (!best) return false;
+    const blocked = this.blockedTilesFor(u, new Set());
+    this.startHarvest(u, best.kind, best.i, best.j, blocked);
+    return u.harvestTarget !== null;
   }
 
   private objectStillThere(t: { kind: ObjectKind; i: number; j: number }): boolean {

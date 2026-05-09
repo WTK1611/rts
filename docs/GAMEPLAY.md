@@ -26,7 +26,7 @@ Werte direkt nachvollziehen und ändern lassen.
 | Rechtsklick auf Boden | Bewegen (`move`) |
 | Rechtsklick auf Tier | Jagen (`hunt`) |
 | Rechtsklick auf Ressource | Sammeln (`harvest`) |
-| **WASD** | Stamm in iso-Richtung schieben (alle 0,4 s ein Move-Befehl) |
+| **WASD** / **Pfeiltasten** | Stamm in iso-Richtung schieben (alle 0,4 s ein Move-Befehl) |
 | Mausrad | Zoom (0,5×–2,5×) |
 | Mauszeiger an Bildschirmrand | Edge-Pan |
 | **M** | Minimap ein/aus |

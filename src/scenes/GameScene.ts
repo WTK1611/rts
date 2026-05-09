@@ -1305,20 +1305,16 @@ export class GameScene extends Phaser.Scene {
 
   private applyState(msg: StateMessage): void {
     this.serverTick = msg.tick;
-    let encounterBirthsForMe = 0;
     if (msg.encounters && msg.encounters.length > 0) {
       for (const ev of msg.encounters) {
         if (ev.a !== this.playerId && ev.b !== this.playerId) continue;
         const otherId = ev.a === this.playerId ? ev.b : ev.a;
-        const myBirth = ev.a === this.playerId ? ev.bornForA : ev.bornForB;
         const myGain =
           ev.a === this.playerId ? ev.transfersBtoA : ev.transfersAtoB;
         const myLoss =
           ev.a === this.playerId ? ev.transfersAtoB : ev.transfersBtoA;
         const name = this.names[otherId] || "anderem Stamm";
-        if (myBirth) encounterBirthsForMe++;
         const parts: string[] = [`Begegnung mit Stamm von ${name}`];
-        if (myBirth) parts.push("kostenlose Geburt!");
         if (myGain > 0) {
           parts.push(
             myGain === 1
@@ -1348,12 +1344,11 @@ export class GameScene extends Phaser.Scene {
         if (snap.owner === this.playerId) ownGrew++;
         else otherGrew[snap.owner] = (otherGrew[snap.owner] ?? 0) + 1;
       }
-      const remaining = ownGrew - encounterBirthsForMe;
-      if (remaining > 0) {
+      if (ownGrew > 0) {
         const txt =
-          remaining === 1
+          ownGrew === 1
             ? "Dein Stamm wächst: ein neues Mitglied ist dazugekommen"
-            : `Dein Stamm wächst: ${remaining} neue Mitglieder sind dazugekommen`;
+            : `Dein Stamm wächst: ${ownGrew} neue Mitglieder sind dazugekommen`;
         this.showToast(txt, "grow");
       }
       for (const ownerStr of Object.keys(otherGrew)) {

@@ -51,21 +51,29 @@ Werte sind die aktuellen Konstanten zum Zeitpunkt dieses Dokuments.
 
 ## Innerstämmische Wachstum (Geburt)
 
-In [`growthCheck`](../server/sim.ts#L1333):
+In [`growthCheck`](../server/sim.ts):
 
-- **Voraussetzungen pro Tick:**
+- **Mehrere Schwangerschaften gleichzeitig:** Jede Frau im Stamm hat ihren
+  **eigenen** Schwangerschafts-Timer. Mehrere Geburten pro Stamm parallel sind möglich.
+- **Voraussetzungen pro Frau und Tick:**
   - Stamm hat ≥ 2 Mitglieder, < `MAX_TRIBE_SIZE`,
-  - mindestens 1 Mann **und** 1 Frau anwesend.
-- **Timer:** `growthTimer[p]` läuft hoch; sind die Bedingungen erfüllt, ist
-  `growthActive[p] = true`. Sobald `growthTimer ≥ GROWTH_REQUIRED_SEC = 120 s`
-  ([`sim.ts:46`](../server/sim.ts#L46)) wird ein neues Mitglied **am Stammeszentrum**
-  gespawnt ([`sim.ts:1361`](../server/sim.ts#L1361)).
-- **Reset:** Bedingungen verletzt → Timer und Active-Flag werden auf 0 gesetzt
-  ([`sim.ts:1352-1356`](../server/sim.ts#L1352-L1356)).
-- **Geschlecht des Neugeborenen:** zufällig 50/50 (deterministisch aus Seed,
-  [`sim.ts:1397-1398`](../server/sim.ts#L1397-L1398)).
-- **Name:** aus der Sprache des Stamms ([`sim.ts:1420`](../server/sim.ts#L1420)).
+  - mindestens **1 Mann** im Stamm,
+  - die Frau ist gesund (`hp/hpMax ≥ PREGNANCY_HEALTH_MIN_FRAC = 0.33`).
+- **Timer:** `pregnancyTimer[unitId]` läuft pro Frau hoch. Sobald
+  `pregnancyTimer ≥ GROWTH_REQUIRED_SEC = 120 s` wird ein neues Mitglied **am
+  Stammeszentrum** gespawnt und der Timer der Frau zurückgesetzt.
+- **Reset:** Bedingungen verletzt (zu wenig Männer, zu krank, Stamm voll,
+  Frau wechselt Stamm, Frau stirbt) → Timer der Frau wird gelöscht.
+- **Geburts-Cap pro Tick:** maximal so viele Geburten wie Plätze unter
+  `MAX_TRIBE_SIZE` frei sind; weitere fertige Schwangerschaften halten ihren
+  Timer und gebären, sobald wieder Platz ist.
+- **Geschlecht des Neugeborenen:** zufällig 50/50 (deterministisch aus Seed).
+- **Name:** aus der Sprache des Stamms.
 - **Start-Alter:** `0 s`. Das Neugeborene ist also Kind, bis `ageSec ≥ CHILD_AGE_SEC = 60 s`.
+
+Im Snapshot (`growthSnapshot`) wird pro Stamm die **am weitesten fortgeschrittene**
+Schwangerschaft als Fortschritt gemeldet; `growthActive[p]` ist true, sobald
+mindestens eine Frau im Stamm schwanger ist.
 
 ## Treffen zweier Stämme: Mitgliederaustausch
 
@@ -87,15 +95,12 @@ Logik in [`encounterCheck`](../server/sim.ts#L1194), läuft **jeden Tick**.
    - Beide bereits ausgewogen → kein Transfer.
    - Implementierung: [`transferWomenForBalance`](../server/sim.ts#L1248).
 5. **Beim Transfer** verliert die Frau ihren Path, Harvest-/Hunt-Target,
-   Chief-Status, bekommt die Farbe des neuen Stamms und steht idle
-   ([`sim.ts:1286-1302`](../server/sim.ts#L1286-L1302)).
-6. **Geburten-Bonus:** Direkt danach wird für **beide** Stämme `tryFreeBirth` geprüft
-   ([`sim.ts:1238-1239`](../server/sim.ts#L1238-L1239),
-   [`sim.ts:1310-1325`](../server/sim.ts#L1310-L1325)). Hat der Stamm mindestens 2 Mitglieder,
-   ≥ 1 m und ≥ 1 f, und Platz unter `MAX_TRIBE_SIZE`, wird sofort ein Neugeborenes
-   am Stammeszentrum gespawnt — **ohne** Warten auf den Growth-Timer.
-7. **Toast-Event** wird emittiert (Treffen + transferierte Anzahl + neue Geburten,
-   [`sim.ts:1240-1244`](../server/sim.ts#L1240-L1244)).
+   Chief-Status, bekommt die Farbe des neuen Stamms, steht idle und ihr
+   `pregnancyTimer` wird gelöscht (eine laufende Schwangerschaft endet beim
+   Stammwechsel).
+6. **Keine Bonus-Geburt:** Treffen lösen **keine** kostenlose Geburt mehr aus —
+   Wachstum läuft ausschließlich über die per-Frau-Timer in `growthCheck`.
+7. **Toast-Event** wird emittiert (Treffen + transferierte Anzahl).
 
 ### Konsequenzen für kleine Stämme
 

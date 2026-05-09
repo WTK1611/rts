@@ -105,7 +105,7 @@ Maus + Tastatur und Touch werden parallel unterstützt. Die Logik ist in
 - **Kommando** — Rechtsklick (Maus) oder Tippen ohne Wischen (Touch). Je nach
   Ziel-Tile wird `move` / `harvest` / `hunt` gesendet. Touch-Tippen befiehlt
   immer den **gesamten** Stamm.
-- **WASD** — schickt alle 0,4 s einen `move`-Befehl mit dem Stammeszentrum
+- **WASD** / **Pfeiltasten** — schickt alle 0,4 s einen `move`-Befehl mit dem Stammeszentrum
   +`stepDist=8` Tiles in die gewählte Iso-Richtung.
 
 ## Netzwerkprotokoll
