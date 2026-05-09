@@ -49,6 +49,7 @@ import {
 } from "../../shared/worldgen";
 import { LANGUAGE_FLAG, LANGUAGE_LABEL, Language } from "../../shared/names";
 import { BIOME_MINI_COLOR } from "../biomeColors";
+import { t } from "../i18n";
 
 interface DragState {
   startX: number;
@@ -151,6 +152,11 @@ export class GameScene extends Phaser.Scene {
   private pinch: { startDist: number; startZoom: number } | null = null;
   private userPanned = false;
 
+  private lastClickMs = 0;
+  private lastClickI = -99999;
+  private lastClickJ = -99999;
+  private static readonly DOUBLE_CLICK_MS = 400;
+
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
@@ -241,7 +247,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.pendingAnimals = [];
     for (const snap of this.pendingCampfires) {
-      this.applyCampfireSnap(snap);
+      this.applyCampfireSnap(snap, false);
     }
     this.pendingCampfires = [];
     for (const snap of this.pendingArtifacts) {
@@ -338,6 +344,7 @@ export class GameScene extends Phaser.Scene {
     this.hud = document.getElementById("hud");
     if (this.hud) {
       this.hud.addEventListener("click", (e) => this.onHudClick(e));
+      this.setupHudDrag(this.hud);
     }
     this.minimapWrap = document.getElementById("minimap-wrap");
     this.minimapVisible = false;
@@ -552,8 +559,8 @@ export class GameScene extends Phaser.Scene {
     this.userPanned = false;
     this.visObjectCache.clear();
     this.visSourceHash = -1;
-    const name = this.names[slot] || `Stamm ${slot}`;
-    this.showToast(`Beobachte: ${name}`, "join");
+    const name = this.names[slot] || t().hudTribeFallback(slot);
+    this.showToast(t().toastSpectating(name), "join");
     this.updateHud();
   }
 
@@ -563,7 +570,7 @@ export class GameScene extends Phaser.Scene {
     this.userPanned = false;
     this.visObjectCache.clear();
     this.visSourceHash = -1;
-    this.showToast("Zurück zu deinem Stamm", "join");
+    this.showToast(t().toastBackToTribe, "join");
     this.updateHud();
   }
 
@@ -1139,7 +1146,9 @@ export class GameScene extends Phaser.Scene {
       const key = `ar:${a.id}`;
       const i = Math.floor(a.gx);
       const j = Math.floor(a.gy);
-      const v = this.visible.has(`${i},${j}`) || this.explored.has(`${i},${j}`);
+      const tileVis = this.visible.has(`${i},${j}`);
+      const tileExplored = this.explored.has(`${i},${j}`);
+      const v = a.found ? tileExplored : tileVis;
       if (cache.get(key) === v) continue;
       cache.set(key, v);
       a.container.setVisible(v);
@@ -1177,12 +1186,13 @@ export class GameScene extends Phaser.Scene {
       const key = `cf:${f.id}`;
       const i = Math.floor(f.gx);
       const j = Math.floor(f.gy);
-      const v = this.visible.has(`${i},${j}`);
-      if (cache.get(key) === v) continue;
-      cache.set(key, v);
-      f.container.setVisible(v);
-      f.shadow.setVisible(v);
-      f.rangeRing.setVisible(v);
+      const tileVis = this.visible.has(`${i},${j}`);
+      f.container.setVisible(true);
+      f.setAboveFog(!tileVis);
+      f.shadow.setVisible(tileVis);
+      f.rangeRing.setVisible(tileVis && f.owner === this.playerId);
+      if (cache.get(key) === tileVis) continue;
+      cache.set(key, tileVis);
     }
   }
 
@@ -1358,14 +1368,15 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.updateHud();
-    this.showToast(`Stamm von ${msg.name} ist beigetreten`, "join");
+    this.showToast(t().toastJoinedTribe(msg.name), "join");
   }
 
   private onOpponentLeft(msg: {
     playerId: PlayerId;
     removedUnitIds: string[];
   }): void {
-    const goneName = this.names[msg.playerId] || "Stamm";
+    const goneName =
+      this.names[msg.playerId] || t().hudTribeFallback(msg.playerId);
     this.names[msg.playerId] = "";
     for (const id of msg.removedUnitIds) {
       const u = this.units.get(id);
@@ -1375,12 +1386,13 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.updateHud();
-    this.showToast(`Stamm von ${goneName} hat das Spiel verlassen`, "leave");
+    this.showToast(t().toastLeftGame(goneName), "leave");
   }
 
   private showToast(
     text: string,
-    kind: "join" | "leave" | "grow" | "death" | "extinct" | "artifact",
+    kind: "join" | "leave" | "grow" | "death" | "extinct" | "artifact" | "campfire",
+    tintOwner?: PlayerId | PlayerId[],
   ): void {
     const root = document.getElementById("toasts");
     if (!root) return;
@@ -1388,6 +1400,19 @@ export class GameScene extends Phaser.Scene {
     const cls = kind === "join" ? "" : kind;
     el.className = `toast ${cls}`.trim();
     el.textContent = text;
+    if (tintOwner !== undefined) {
+      const owners = Array.isArray(tintOwner) ? tintOwner : [tintOwner];
+      const colors = owners.map((o) => this.playerColorCss(o));
+      if (colors.length === 1) {
+        el.style.borderColor = colors[0];
+        el.style.boxShadow = `0 6px 20px rgba(0,0,0,0.5), 0 0 12px ${colors[0]}88`;
+      } else if (colors.length >= 2) {
+        el.style.borderImage = `linear-gradient(90deg, ${colors[0]}, ${colors[1]}) 1`;
+        el.style.borderImageSlice = "1";
+        el.style.borderStyle = "solid";
+        el.style.boxShadow = `0 6px 20px rgba(0,0,0,0.5), 0 0 10px ${colors[0]}66, 0 0 10px ${colors[1]}66`;
+      }
+    }
     root.appendChild(el);
     requestAnimationFrame(() => el.classList.add("show"));
     const lifetime = kind === "extinct" || kind === "artifact" ? 6000 : 4000;
@@ -1401,29 +1426,53 @@ export class GameScene extends Phaser.Scene {
     this.serverTick = msg.tick;
     if (msg.encounters && msg.encounters.length > 0) {
       for (const ev of msg.encounters) {
-        if (ev.a !== this.playerId && ev.b !== this.playerId) continue;
-        const otherId = ev.a === this.playerId ? ev.b : ev.a;
-        const myGain =
-          ev.a === this.playerId ? ev.transfersBtoA : ev.transfersAtoB;
-        const myLoss =
-          ev.a === this.playerId ? ev.transfersAtoB : ev.transfersBtoA;
-        const name = this.names[otherId] || "anderem Stamm";
-        const parts: string[] = [`Begegnung mit Stamm von ${name}`];
-        if (myGain > 0) {
-          parts.push(
-            myGain === 1
-              ? "eine Frau ist zu dir gewechselt"
-              : `${myGain} Frauen sind zu dir gewechselt`,
+        if (ev.a === this.playerId || ev.b === this.playerId) {
+          const otherId = ev.a === this.playerId ? ev.b : ev.a;
+          const myGain =
+            ev.a === this.playerId ? ev.transfersBtoA : ev.transfersAtoB;
+          const myLoss =
+            ev.a === this.playerId ? ev.transfersAtoB : ev.transfersBtoA;
+          const s = t();
+          const name = this.names[otherId] || s.hudTribeFallback(otherId);
+          const parts: string[] = [s.toastEncounterWith(name)];
+          if (myGain > 0) {
+            parts.push(
+              myGain === 1
+                ? s.toastWomenJoinedYouSing
+                : s.toastWomenJoinedYou(myGain),
+            );
+          }
+          if (myLoss > 0) {
+            parts.push(
+              myLoss === 1
+                ? s.toastWomenLeftYouSing
+                : s.toastWomenLeftYou(myLoss),
+            );
+          }
+          this.showToast(parts.join(": "), "join", [this.playerId, otherId]);
+          continue;
+        }
+        if (ev.transfersAtoB === 0 && ev.transfersBtoA === 0) continue;
+        const s = t();
+        const aName = this.names[ev.a] || s.hudTribeFallback(ev.a);
+        const bName = this.names[ev.b] || s.hudTribeFallback(ev.b);
+        const moves: string[] = [];
+        if (ev.transfersAtoB > 0) {
+          moves.push(
+            ev.transfersAtoB === 1
+              ? s.toastWomenMovedToSing(bName)
+              : s.toastWomenMovedTo(ev.transfersAtoB, bName),
           );
         }
-        if (myLoss > 0) {
-          parts.push(
-            myLoss === 1
-              ? "eine Frau hat deinen Stamm verlassen"
-              : `${myLoss} Frauen haben deinen Stamm verlassen`,
+        if (ev.transfersBtoA > 0) {
+          moves.push(
+            ev.transfersBtoA === 1
+              ? s.toastWomenMovedToSing(aName)
+              : s.toastWomenMovedTo(ev.transfersBtoA, aName),
           );
         }
-        this.showToast(parts.join(": "), "join");
+        const text = s.toastEncounterTribes(aName, bName, moves.join(", "));
+        this.showToast(text, "join", [ev.a, ev.b]);
       }
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
@@ -1439,20 +1488,18 @@ export class GameScene extends Phaser.Scene {
         else otherGrew[snap.owner] = (otherGrew[snap.owner] ?? 0) + 1;
       }
       if (ownGrew > 0) {
+        const s = t();
         const txt =
-          ownGrew === 1
-            ? "Dein Stamm wächst: ein neues Mitglied ist dazugekommen"
-            : `Dein Stamm wächst: ${ownGrew} neue Mitglieder sind dazugekommen`;
+          ownGrew === 1 ? s.toastOwnGrewSing : s.toastOwnGrew(ownGrew);
         this.showToast(txt, "grow");
       }
       for (const ownerStr of Object.keys(otherGrew)) {
         const owner = Number(ownerStr);
         const n = otherGrew[owner];
-        const name = this.names[owner] || `Stamm ${owner}`;
+        const s = t();
+        const name = this.names[owner] || s.hudTribeFallback(owner);
         const txt =
-          n === 1
-            ? `Stamm von ${name} wächst: ein neues Mitglied`
-            : `Stamm von ${name} wächst: ${n} neue Mitglieder`;
+          n === 1 ? s.toastOtherGrewSing(name) : s.toastOtherGrew(name, n);
         this.showToast(txt, "grow");
       }
     }
@@ -1511,28 +1558,27 @@ export class GameScene extends Phaser.Scene {
     }
     const extinctSet = new Set<number>(msg.extinctTribes ?? []);
     if (ownDied > 0 && !extinctSet.has(this.playerId)) {
+      const s = t();
       const txt =
-        ownDied === 1
-          ? "Aus deinem Stamm ist ein Mitglied gestorben"
-          : `Aus deinem Stamm sind ${ownDied} Mitglieder gestorben`;
+        ownDied === 1 ? s.toastOwnDiedSing : s.toastOwnDied(ownDied);
       this.showToast(txt, "death");
     }
     for (const ownerStr of Object.keys(otherDied)) {
       const owner = Number(ownerStr);
       if (extinctSet.has(owner)) continue;
       const n = otherDied[owner];
-      const name = this.names[owner] || `Stamm ${owner}`;
+      const s = t();
+      const name = this.names[owner] || s.hudTribeFallback(owner);
       const txt =
-        n === 1
-          ? `Im Stamm von ${name} ist ein Mitglied gestorben`
-          : `Im Stamm von ${name} sind ${n} Mitglieder gestorben`;
+        n === 1 ? s.toastOtherDiedSing(name) : s.toastOtherDied(name, n);
       this.showToast(txt, "death");
     }
     if (msg.extinctTribes && msg.extinctTribes.length > 0) {
+      const s = t();
       for (const owner of msg.extinctTribes) {
         if (owner === this.playerId) continue;
-        const name = this.names[owner] || `Stamm ${owner}`;
-        this.showToast(`Stamm von ${name} ist ausgestorben`, "extinct");
+        const name = this.names[owner] || s.hudTribeFallback(owner);
+        this.showToast(s.toastExtinct(name), "extinct");
       }
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
@@ -1548,7 +1594,7 @@ export class GameScene extends Phaser.Scene {
       else this.spawnAnimalLocal(snap);
     }
     if (msg.campfires) {
-      for (const snap of msg.campfires) this.applyCampfireSnap(snap);
+      for (const snap of msg.campfires) this.applyCampfireSnap(snap, true);
     }
     if (msg.removedCampfireIds) {
       for (const id of msg.removedCampfireIds) {
@@ -1630,14 +1676,37 @@ export class GameScene extends Phaser.Scene {
     this.animals.set(snap.id, a);
   }
 
-  private applyCampfireSnap(snap: CampfireSnapshot): void {
+  private applyCampfireSnap(snap: CampfireSnapshot, notify: boolean): void {
     const existing = this.campfires.get(snap.id);
     if (existing) {
-      existing.applyState(snap.gx, snap.gy, snap.fuel);
-      return;
+      if (existing.owner !== snap.owner) {
+        existing.remove();
+        this.campfires.delete(snap.id);
+        this.visObjectCache.delete(`cf:${snap.id}`);
+      } else {
+        existing.applyState(snap.gx, snap.gy, snap.fuel);
+        return;
+      }
     }
-    const f = new Campfire(this, snap.id, snap.gx, snap.gy, snap.fuel, this.seed);
+    const f = new Campfire(
+      this,
+      snap.id,
+      snap.owner,
+      snap.gx,
+      snap.gy,
+      snap.fuel,
+      this.seed,
+    );
     this.campfires.set(snap.id, f);
+    if (notify) {
+      const s = t();
+      const name = this.names[snap.owner] || s.hudTribeFallback(snap.owner);
+      const text =
+        snap.owner === this.playerId
+          ? s.toastOwnCampfire
+          : s.toastOtherCampfire(name);
+      this.showToast(text, "campfire", snap.owner);
+    }
   }
 
   private spawnArtifactLocal(snap: ArtifactSnapshot): void {
@@ -1672,12 +1741,14 @@ export class GameScene extends Phaser.Scene {
         this.showToast(
           `Mythisches Artefakt entdeckt! Belohnung: ${rewardText}`,
           "artifact",
+          ev.finder,
         );
       } else {
         const name = this.names[ev.finder] || `Stamm ${ev.finder}`;
         this.showToast(
           `Stamm von ${name} hat ein mythisches Artefakt entdeckt (${rewardText})`,
           "artifact",
+          ev.finder,
         );
       }
     }
@@ -1878,8 +1949,15 @@ export class GameScene extends Phaser.Scene {
     if (this.drag.isBox) {
       this.commitBoxSelection(p);
     } else {
-      for (const u of this.units.values()) {
-        if (u.owner === this.playerId) u.setSelected(false);
+      const { gx, gy } = screenToGrid(p.worldX, p.worldY);
+      const i = Math.floor(gx);
+      const j = Math.floor(gy);
+      if (this.checkDoubleClick(i, j)) {
+        this.tryIgniteCampfireAt(i, j);
+      } else {
+        for (const u of this.units.values()) {
+          if (u.owner === this.playerId) u.setSelected(false);
+        }
       }
     }
     this.drag = null;
@@ -1896,9 +1974,71 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.touchPan) return;
     if (!this.touchPan.moved) {
-      this.commandAllUnits(p);
+      const { gx, gy } = screenToGrid(p.worldX, p.worldY);
+      const i = Math.floor(gx);
+      const j = Math.floor(gy);
+      if (this.checkDoubleClick(i, j)) {
+        this.tryIgniteCampfireAt(i, j);
+      } else {
+        this.commandAllUnits(p);
+      }
     }
     this.touchPan = null;
+  }
+
+  private checkDoubleClick(i: number, j: number): boolean {
+    const now = performance.now();
+    const isDouble =
+      now - this.lastClickMs < GameScene.DOUBLE_CLICK_MS &&
+      i === this.lastClickI &&
+      j === this.lastClickJ;
+    if (isDouble) {
+      this.lastClickMs = 0;
+      this.lastClickI = -99999;
+      this.lastClickJ = -99999;
+      return true;
+    }
+    this.lastClickMs = now;
+    this.lastClickI = i;
+    this.lastClickJ = j;
+    return false;
+  }
+
+  private tryIgniteCampfireAt(i: number, j: number): void {
+    if (!this.visible.has(`${i},${j}`)) {
+      this.showToast("Lagerfeuer hier nicht sichtbar", "death");
+      return;
+    }
+    const res = this.resources[this.playerId];
+    if (!res || res.holz < 1 || res.stein < 1) {
+      this.showToast(
+        "Nicht genug Holz und Stein für ein Lagerfeuer",
+        "death",
+      );
+      return;
+    }
+    if (this.harvestableAt(i, j) || !this.tileIsLand(i, j)) {
+      this.showToast("Hier kann kein Lagerfeuer entzündet werden", "death");
+      return;
+    }
+    let nearestSq = Infinity;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      const dx = u.gx - (i + 0.5);
+      const dy = u.gy - (j + 0.5);
+      const d2 = dx * dx + dy * dy;
+      if (d2 < nearestSq) nearestSq = d2;
+    }
+    if (nearestSq > 100) {
+      this.showToast("Zu weit weg vom Stamm für ein Lagerfeuer", "death");
+      return;
+    }
+    this.net.send({ type: "igniteCampfire", i, j });
+    this.setMoveTarget(i, j, "harvest");
+  }
+
+  private tileIsLand(i: number, j: number): boolean {
+    return isLandTile(this.seed, i, j);
   }
 
   private commandAllUnits(p: Phaser.Input.Pointer): void {
@@ -1906,21 +2046,7 @@ export class GameScene extends Phaser.Scene {
       .filter((u) => u.owner === this.playerId)
       .map((u) => u.id);
     if (ids.length === 0) return;
-    const { gx, gy } = screenToGrid(p.worldX, p.worldY);
-    const i = Math.floor(gx);
-    const j = Math.floor(gy);
-    const k = `${i},${j}`;
-    const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
-    if (animalId) {
-      this.net.send({ type: "hunt", unitIds: ids, animalId });
-      this.setMoveTarget(i, j, "hunt");
-    } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
-      this.net.send({ type: "harvest", unitIds: ids, i, j });
-      this.setMoveTarget(i, j, "harvest");
-    } else {
-      this.net.send({ type: "move", unitIds: ids, i, j });
-      this.setMoveTarget(i, j, "move");
-    }
+    this.dispatchUnitCommand(p, ids);
   }
 
   private commandSelected(p: Phaser.Input.Pointer): void {
@@ -1928,22 +2054,49 @@ export class GameScene extends Phaser.Scene {
       (u) => u.owner === this.playerId && u.selected,
     );
     if (selected.length === 0) return;
+    this.dispatchUnitCommand(p, selected.map((u) => u.id));
+  }
+
+  private dispatchUnitCommand(p: Phaser.Input.Pointer, ids: string[]): void {
     const { gx, gy } = screenToGrid(p.worldX, p.worldY);
     const i = Math.floor(gx);
     const j = Math.floor(gy);
     const k = `${i},${j}`;
-    const ids = selected.map((u) => u.id);
-    const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
-    if (animalId) {
-      this.net.send({ type: "hunt", unitIds: ids, animalId });
-      this.setMoveTarget(i, j, "hunt");
-    } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
+    const visibleHere = this.visible.has(k);
+    const directAnimalId = this.animalNearScreenPoint(p);
+    if (directAnimalId) {
+      const animal = this.animals.get(directAnimalId);
+      const ti = animal ? Math.floor(animal.gx) : i;
+      const tj = animal ? Math.floor(animal.gy) : j;
+      this.net.send({ type: "hunt", unitIds: ids, animalId: directAnimalId });
+      this.setMoveTarget(ti, tj, "hunt");
+      return;
+    }
+    if (visibleHere && this.harvestableAt(i, j)) {
       this.net.send({ type: "harvest", unitIds: ids, i, j });
       this.setMoveTarget(i, j, "harvest");
-    } else {
-      this.net.send({ type: "move", unitIds: ids, i, j });
-      this.setMoveTarget(i, j, "move");
+      return;
     }
+    this.net.send({ type: "move", unitIds: ids, i, j });
+    this.setMoveTarget(i, j, "move");
+  }
+
+  private animalNearScreenPoint(p: Phaser.Input.Pointer): string | null {
+    const wx = p.worldX;
+    const wy = p.worldY;
+    let best: { id: string; d: number } | null = null;
+    for (const a of this.animals.values()) {
+      if (!a.container.visible) continue;
+      const i = Math.floor(a.gx);
+      const j = Math.floor(a.gy);
+      if (!this.visible.has(`${i},${j}`)) continue;
+      const dx = a.container.x - wx;
+      const dy = a.container.y - wy;
+      const d = Math.hypot(dx, dy);
+      if (d > 22) continue;
+      if (!best || d < best.d) best = { id: a.id, d };
+    }
+    return best?.id ?? null;
   }
 
   private harvestableAt(i: number, j: number): boolean {
@@ -2021,6 +2174,124 @@ export class GameScene extends Phaser.Scene {
     this.hoverTile.strokePath();
   }
 
+  private setupHudDrag(hud: HTMLElement): void {
+    const STORAGE_KEY = "rts.hud.position";
+    let stored: { x: number; y: number } | null = null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed.x === "number" &&
+          typeof parsed.y === "number"
+        ) {
+          stored = parsed;
+        }
+      }
+    } catch {
+      stored = null;
+    }
+    const clampPosition = (x: number, y: number): { x: number; y: number } => {
+      const w = hud.offsetWidth;
+      const h = hud.offsetHeight;
+      const mx = Math.max(0, window.innerWidth - w);
+      const my = Math.max(0, window.innerHeight - h);
+      return {
+        x: Math.max(0, Math.min(mx, x)),
+        y: Math.max(0, Math.min(my, y)),
+      };
+    };
+    const setPosition = (x: number, y: number) => {
+      const c = clampPosition(x, y);
+      hud.style.left = `${c.x}px`;
+      hud.style.top = `${c.y}px`;
+      hud.style.right = "auto";
+      hud.style.bottom = "auto";
+    };
+    if (stored) setPosition(stored.x, stored.y);
+
+    let drag: {
+      pointerId: number;
+      startX: number;
+      startY: number;
+      baseX: number;
+      baseY: number;
+      moved: boolean;
+    } | null = null;
+
+    const onDown = (ev: PointerEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (target && target.closest("[data-spectate-slot]")) {
+        return;
+      }
+      const rect = hud.getBoundingClientRect();
+      drag = {
+        pointerId: ev.pointerId,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        baseX: rect.left,
+        baseY: rect.top,
+        moved: false,
+      };
+      try {
+        hud.setPointerCapture(ev.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    const onMove = (ev: PointerEvent) => {
+      if (!drag || ev.pointerId !== drag.pointerId) return;
+      const dx = ev.clientX - drag.startX;
+      const dy = ev.clientY - drag.startY;
+      if (!drag.moved && Math.hypot(dx, dy) > 5) {
+        drag.moved = true;
+        hud.classList.add("dragging");
+      }
+      if (drag.moved) {
+        setPosition(drag.baseX + dx, drag.baseY + dy);
+        ev.preventDefault();
+      }
+    };
+    const finish = (ev: PointerEvent) => {
+      if (!drag || ev.pointerId !== drag.pointerId) return;
+      const moved = drag.moved;
+      drag = null;
+      hud.classList.remove("dragging");
+      try {
+        hud.releasePointerCapture(ev.pointerId);
+      } catch {
+        // ignore
+      }
+      if (moved) {
+        const rect = hud.getBoundingClientRect();
+        try {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ x: rect.left, y: rect.top }),
+          );
+        } catch {
+          // ignore
+        }
+        const stopper = (e: MouseEvent) => {
+          e.stopPropagation();
+          e.preventDefault();
+        };
+        hud.addEventListener("click", stopper, { capture: true, once: true });
+      }
+    };
+
+    hud.addEventListener("pointerdown", onDown);
+    hud.addEventListener("pointermove", onMove);
+    hud.addEventListener("pointerup", finish);
+    hud.addEventListener("pointercancel", finish);
+
+    window.addEventListener("resize", () => {
+      const rect = hud.getBoundingClientRect();
+      setPosition(rect.left, rect.top);
+    });
+  }
+
   private updateHud(): void {
     if (!this.hud) return;
     const myName = this.names[this.playerId] ?? "Du";
@@ -2076,6 +2347,7 @@ export class GameScene extends Phaser.Scene {
     const myFlag = this.flagFor(this.playerId);
     const meActive = this.spectatorTarget === null ? " active" : "";
     this.hud.innerHTML =
+      `<div class="hud-drag-handle"></div>` +
       `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
       `<span class="swatch" style="background:${myColor}"></span>` +
       `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +

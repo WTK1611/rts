@@ -225,6 +225,7 @@ export type ServerMessage =
 export interface JoinCommand {
   type: "join";
   name: string;
+  language?: string;
 }
 
 export interface MoveCommand {
@@ -247,6 +248,12 @@ export interface HuntCommand {
   animalId: string;
 }
 
+export interface IgniteCampfireCommand {
+  type: "igniteCampfire";
+  i: number;
+  j: number;
+}
+
 export interface SubmitScoreCommand {
   type: "submitScore";
   entry: ScoreEntry;
@@ -261,5 +268,6 @@ export type ClientMessage =
   | MoveCommand
   | HarvestCommand
   | HuntCommand
+  | IgniteCampfireCommand
   | SubmitScoreCommand
   | FetchLeaderboardCommand;

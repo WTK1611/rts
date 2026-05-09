@@ -6,12 +6,12 @@
     <meta name="theme-color" content="#1a3a1a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Stämme" />
+    <meta name="apple-mobile-web-app-title" content="Stämme: Jäger und Sammler" />
     <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <title>Stämme - Jäger und Sammler</title>
+    <title>Stämme: Jäger und Sammler</title>
     <!-- Matomo -->
     <script>
       var _paq = window._paq = window._paq || [];
@@ -42,7 +42,23 @@
         background: rgba(10, 14, 10, 0.85); padding: 10px 14px; border-radius: 8px;
         border: 1px solid #3a5a3a;
         box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-        pointer-events: none; min-width: 240px;
+        pointer-events: auto; min-width: 240px;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #hud.dragging { cursor: grabbing; }
+      #hud .hud-drag-handle {
+        position: absolute; top: 6px; right: 8px;
+        width: 14px; height: 14px;
+        opacity: 0.4;
+        background-image:
+          radial-gradient(circle at 3px 3px, #c8d8c8 1.2px, transparent 1.4px),
+          radial-gradient(circle at 9px 3px, #c8d8c8 1.2px, transparent 1.4px),
+          radial-gradient(circle at 3px 9px, #c8d8c8 1.2px, transparent 1.4px),
+          radial-gradient(circle at 9px 9px, #c8d8c8 1.2px, transparent 1.4px);
+        pointer-events: none;
       }
       #hud .me { font-size: 16px; font-weight: 600; margin-bottom: 8px;
         display: flex; align-items: center; gap: 8px;
@@ -188,6 +204,12 @@
         color: #fff4c2;
         box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 14px rgba(255, 216, 77, 0.35);
       }
+      .toast.campfire {
+        border-color: #ff9844;
+        background: rgba(40, 22, 10, 0.95);
+        color: #ffe2bd;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 12px rgba(255, 152, 68, 0.35);
+      }
       #minimap-wrap {
         position: fixed; bottom: 12px; right: 12px;
         background: rgba(10, 14, 10, 0.85);
@@ -261,6 +283,30 @@
       .btn:disabled { background: #2a3a2a; color: #6a7a6a; cursor: not-allowed; }
       .btn.secondary { background: #2a4a2a; }
       .btn.secondary:hover:not(:disabled) { background: #3a6b3a; }
+      #lobby-lang-label {
+        font-size: 11px; color: #88a088;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        margin: 14px 0 6px;
+      }
+      #lobby-flags {
+        display: flex; gap: 6px; justify-content: center;
+        flex-wrap: wrap; margin-bottom: 6px;
+      }
+      .lobby-flag {
+        font-size: 26px; line-height: 1;
+        padding: 6px 8px; border-radius: 6px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid transparent;
+        cursor: pointer; user-select: none;
+        transition: background 0.12s, border-color 0.12s, transform 0.12s;
+      }
+      .lobby-flag:hover { background: rgba(255,255,255,0.10); }
+      .lobby-flag.active {
+        border-color: #6cbf6c;
+        background: rgba(108,191,108,0.18);
+        transform: translateY(-1px);
+      }
+      #hud .flag { font-size: 12px; line-height: 1; }
       #gameover {
         position: fixed; inset: 0; display: flex;
         align-items: center; justify-content: center;
@@ -355,17 +401,19 @@
       <canvas id="lobby-map"></canvas>
       <div id="lobby-veil"></div>
       <div id="lobby-card">
-        <img id="lobby-icon" src="/image/js_icon.webp" alt="Stämme - Jäger und Sammler" />
-        <h1>Stämme - Jäger und Sammler</h1>
+        <img id="lobby-icon" src="/image/js_icon.webp" alt="Tribes" />
+        <h1 id="lobby-heading">Stämme: Jäger und Sammler</h1>
         <div id="lobby-title">Gib deinen Namen ein</div>
         <input id="name-input" maxlength="20" placeholder="Dein Name" autocomplete="off" />
+        <div id="lobby-lang-label">Sprache</div>
+        <div id="lobby-flags"></div>
         <div class="btn-row">
           <button id="play-btn" class="btn">Spielen</button>
         </div>
         <div id="lobby-status"></div>
       </div>
     </div>
-    <div id="hud"></div>
+    <div id="hud"><div class="hud-drag-handle"></div></div>
     <div id="toasts"></div>
     <div id="minimap-wrap" style="display:none">
       <div id="minimap-label">Karte</div>

@@ -1087,6 +1087,39 @@ export class Sim {
     }
   }
 
+  cmdIgniteCampfire(owner: PlayerId, i: number, j: number): void {
+    if (!this.active[owner]) return;
+    if (!this.isWalkable(i, j)) return;
+    if (this.objectKindAt(i, j) !== null) return;
+    const r = this.resources[owner];
+    if (r.holz < 1 || r.stein < 1) return;
+    let nearest = Infinity;
+    for (const u of this.units.values()) {
+      if (u.owner !== owner) continue;
+      const dx = u.gx - (i + 0.5);
+      const dy = u.gy - (j + 0.5);
+      const d2 = dx * dx + dy * dy;
+      if (d2 < nearest) nearest = d2;
+    }
+    const SIGHT = 10;
+    if (nearest > SIGHT * SIGHT) return;
+    r.holz -= 1;
+    r.stein -= 1;
+    const id = this.campfireIdFor(owner);
+    if (this.campfires.has(id)) {
+      this.campfires.delete(id);
+      this.removedCampfireIds.push(id);
+    }
+    this.campfires.set(id, {
+      id,
+      owner,
+      gx: i + 0.5,
+      gy: j + 0.5,
+      fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+    });
+    this.campfireIgniteSec[owner] = 0;
+  }
+
   private objectKindAt(i: number, j: number): ObjectKind | null {
     if (
       hasTreeAt(this.seed, i, j) &&

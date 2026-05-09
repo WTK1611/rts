@@ -3,9 +3,12 @@ import { gridToScreen, TILE_H, TILE_W } from "./iso";
 import { groundHeight } from "../shared/worldgen";
 import { CAMPFIRE_RANGE } from "../shared/protocol";
 
+const FOG_DEPTH_OVERLAY = 1_550_000;
+
 export class Campfire {
   scene: Phaser.Scene;
   id: string;
+  owner: number;
   gx: number;
   gy: number;
   fuel = 1;
@@ -18,10 +21,12 @@ export class Campfire {
   ember: Phaser.GameObjects.Ellipse;
   private phase = Math.random() * Math.PI * 2;
   private worldSeed: number;
+  private aboveFog = false;
 
   constructor(
     scene: Phaser.Scene,
     id: string,
+    owner: number,
     gx: number,
     gy: number,
     fuel: number,
@@ -29,6 +34,7 @@ export class Campfire {
   ) {
     this.scene = scene;
     this.id = id;
+    this.owner = owner;
     this.gx = gx;
     this.gy = gy;
     this.fuel = fuel;
@@ -81,11 +87,22 @@ export class Campfire {
       this.container.setPosition(x, wy);
       this.shadow.setPosition(x, wy + 1);
       this.shadow.setDepth((gx + gy) * TILE_H - 0.5);
-      this.container.setDepth((gx + gy) * TILE_H);
       this.rangeRing.setDepth((gx + gy) * TILE_H - 0.6);
       this.drawRangeRing(x, wy);
+      this.applyDepth();
     }
     this.fuel = fuel;
+  }
+
+  setAboveFog(above: boolean): void {
+    if (this.aboveFog === above) return;
+    this.aboveFog = above;
+    this.applyDepth();
+  }
+
+  private applyDepth(): void {
+    const base = (this.gx + this.gy) * TILE_H;
+    this.container.setDepth(this.aboveFog ? FOG_DEPTH_OVERLAY : base);
   }
 
   private drawRangeRing(cx: number, cy: number): void {

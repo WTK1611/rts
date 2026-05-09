@@ -1,8 +1,8 @@
 import { UnitGender } from "./protocol";
 
-export type Language = "de" | "es" | "fr" | "it" | "en";
+export type Language = "de" | "es" | "fr" | "it" | "en" | "pt";
 
-export const LANGUAGES: Language[] = ["de", "es", "fr", "it", "en"];
+export const LANGUAGES: Language[] = ["de", "es", "fr", "it", "en", "pt"];
 
 export const LANGUAGE_LABEL: Record<Language, string> = {
   de: "Deutsch",
@@ -10,6 +10,7 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   fr: "Französisch",
   it: "Italienisch",
   en: "Englisch",
+  pt: "Portugiesisch",
 };
 
 export const LANGUAGE_FLAG: Record<Language, string> = {
@@ -18,6 +19,7 @@ export const LANGUAGE_FLAG: Record<Language, string> = {
   fr: "🇫🇷",
   it: "🇮🇹",
   en: "🇬🇧",
+  pt: "🇵🇹",
 };
 
 interface NamePool {
@@ -104,6 +106,22 @@ export const NAMES: Record<Language, NamePool> = {
       "Florence", "Eleanor", "Helen", "Victoria", "Caroline",
       "Lydia", "Harriet", "Penelope", "Olivia", "Edith",
       "Joanne", "Rose", "Jane", "Lillian", "Diana",
+    ],
+  },
+  pt: {
+    m: [
+      "João", "Pedro", "Tiago", "Manuel", "António",
+      "Rui", "Diogo", "Bruno", "Ricardo", "Miguel",
+      "Filipe", "Hugo", "Vasco", "Bernardo", "Henrique",
+      "Afonso", "Duarte", "Gonçalo", "Tomás", "Joaquim",
+      "Eduardo", "Fernando", "Rodrigo", "Inácio", "Salvador",
+    ],
+    f: [
+      "Maria", "Ana", "Joana", "Beatriz", "Catarina",
+      "Mariana", "Inês", "Carolina", "Sofia", "Margarida",
+      "Leonor", "Matilde", "Constança", "Isabel", "Filipa",
+      "Patrícia", "Helena", "Cristina", "Teresa", "Lúcia",
+      "Madalena", "Rita", "Bárbara", "Diana", "Clara",
     ],
   },
 };

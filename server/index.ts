@@ -3,7 +3,6 @@ import { Sim } from "./sim";
 import { AIBot } from "./aiBot";
 import {
   AnimalSnapshot,
-  CampfireSnapshot,
   ClientMessage,
   MAX_PLAYERS,
   PlayerId,
@@ -12,7 +11,7 @@ import {
   TICK_RATE,
   UnitSnapshot,
 } from "../shared/protocol";
-import { Language, languageForSlot } from "../shared/names";
+import { Language, LANGUAGES, languageForSlot } from "../shared/names";
 import { addScore, rankFor, topScores } from "./db";
 
 const LEADERBOARD_TOP_N = 50;
@@ -67,6 +66,11 @@ const TRIBE_NAMES_BY_LANG: Record<Language, string[]> = {
     "Loups", "Ours", "Aigles", "Faucons", "Cerfs",
     "Corbeaux", "Lynx", "Bisons", "Sangliers", "Renards",
     "Bouquetins", "Chamois",
+  ],
+  pt: [
+    "Lobos", "Ursos", "Águias", "Falcões", "Veados",
+    "Corvos", "Linces", "Bisontes", "Javalis", "Raposas",
+    "Cabras", "Camurças",
   ],
 };
 
@@ -187,31 +191,6 @@ function botSlotIds(): PlayerId[] {
   return out;
 }
 
-function visibleCampfiresFor(
-  ownerId: PlayerId,
-  units: UnitSnapshot[],
-  allCampfires: CampfireSnapshot[],
-): CampfireSnapshot[] {
-  const myUnits: UnitSnapshot[] = [];
-  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
-  const out: CampfireSnapshot[] = [];
-  for (const f of allCampfires) {
-    if (f.owner === ownerId) {
-      out.push(f);
-      continue;
-    }
-    if (myUnits.length === 0) continue;
-    for (const u of myUnits) {
-      const dx = f.gx - u.gx;
-      const dy = f.gy - u.gy;
-      if (dx * dx + dy * dy <= UNIT_VIEW_RADIUS_SQ) {
-        out.push(f);
-        break;
-      }
-    }
-  }
-  return out;
-}
 
 function visibleUnitsFor(
   ownerId: PlayerId,
@@ -245,17 +224,25 @@ function visibleUnitsFor(
   return out;
 }
 
-function joinPlayer(ws: WebSocket, name: string): void {
+function joinPlayer(
+  ws: WebSocket,
+  name: string,
+  requestedLanguage?: string,
+): void {
   const slotId = world.players.findIndex((p) => p === null);
   if (slotId === -1) {
     send(ws, {
       type: "error",
-      message: `Welt ist voll (max. ${MAX_PLAYERS} Spieler)`,
+      message: `world full (max. ${MAX_PLAYERS} players)`,
     });
     return;
   }
 
-  const language = languageForSlot(world.sim.seed, slotId);
+  const language: Language =
+    requestedLanguage &&
+    (LANGUAGES as readonly string[]).includes(requestedLanguage)
+      ? (requestedLanguage as Language)
+      : languageForSlot(world.sim.seed, slotId);
   const slot: PlayerSlot = { ws, name, id: slotId, language };
   world.players[slotId] = slot;
   slots.set(ws, slot);
@@ -266,7 +253,6 @@ function joinPlayer(ws: WebSocket, name: string): void {
   const allAnimals = world.sim.animalsSnapshot();
   const allCampfires = world.sim.campfiresSnapshot();
   const visibleAnimals = visibleAnimalsFor(slotId, allUnits, allAnimals);
-  const visibleCampfires = visibleCampfiresFor(slotId, allUnits, allCampfires);
   const known = world.knownAnimals[slotId];
   known.clear();
   for (const a of visibleAnimals) known.add(a.id);
@@ -277,7 +263,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
 
   const knownF = world.knownCampfires[slotId];
   knownF.clear();
-  for (const f of visibleCampfires) knownF.add(f.id);
+  for (const f of allCampfires) knownF.add(f.id);
 
   send(ws, {
     type: "init",
@@ -293,7 +279,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
     botSlots: botSlotIds(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
-    campfires: visibleCampfires,
+    campfires: allCampfires,
     tribeCounts: world.sim.tribeCounts(),
     artifacts: world.sim.artifactsSnapshot(),
   });
@@ -398,19 +384,9 @@ function tick(): void {
       }
     }
 
-    const visibleCampfires = visibleCampfiresFor(slot.id, units, allCampfires);
     const visibleCampfireIds = new Set<string>();
-    for (const f of visibleCampfires) visibleCampfireIds.add(f.id);
-    const knownF = world.knownCampfires[slot.id];
-    const removedCampfireIds: string[] = [];
-    for (const id of diedCampfireIds) {
-      if (knownF.has(id)) removedCampfireIds.push(id);
-    }
-    for (const id of knownF) {
-      if (!visibleCampfireIds.has(id) && !removedCampfireIds.includes(id)) {
-        removedCampfireIds.push(id);
-      }
-    }
+    for (const f of allCampfires) visibleCampfireIds.add(f.id);
+    const removedCampfireIds: string[] = [...diedCampfireIds];
     world.knownCampfires[slot.id] = visibleCampfireIds;
 
     send(slot.ws, {
@@ -431,7 +407,7 @@ function tick(): void {
       growthActive: growth.active,
       extinctTribes,
       respawnedTribes,
-      campfires: visibleCampfires,
+      campfires: allCampfires,
       removedCampfireIds,
       tribeCounts,
       artifactFinds,
@@ -482,8 +458,8 @@ wss.on("connection", (ws) => {
         send(ws, { type: "error", message: "already joined" });
         return;
       }
-      const name = (msg.name || "Spieler").trim().slice(0, 20) || "Spieler";
-      joinPlayer(ws, name);
+      const name = (msg.name || "Player").trim().slice(0, 20) || "Player";
+      joinPlayer(ws, name, msg.language);
       return;
     }
 
@@ -522,6 +498,8 @@ wss.on("connection", (ws) => {
       world.sim.cmdHarvest(slot.id, msg.unitIds, msg.i, msg.j);
     } else if (msg.type === "hunt") {
       world.sim.cmdHunt(slot.id, msg.unitIds, msg.animalId);
+    } else if (msg.type === "igniteCampfire") {
+      world.sim.cmdIgniteCampfire(slot.id, msg.i, msg.j);
     }
   });
 
