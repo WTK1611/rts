@@ -349,3 +349,32 @@ export function parseFishId(id: string): { i: number; j: number } | null {
 export function fishMeatAt(seed: number, i: number, j: number): number {
   return 4 + (hash3(seed ^ 0xf15, i, j) % 4);
 }
+
+export function hasStoneAt(seed: number, i: number, j: number): boolean {
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasTreeAt(seed, i, j)) return false;
+  if (hasBushAt(seed, i, j)) return false;
+  if (hasMushroomAt(seed, i, j)) return false;
+  if (!isLandTile(seed, i, j)) return false;
+  const b = biomeAt(seed, i, j);
+  const base =
+    b === "wueste" ? 0.04 :
+    b === "savanne" ? 0.03 :
+    b === "wald" ? 0.02 :
+    0.025;
+  return rand01(seed ^ 0x57e, i, j) < base;
+}
+
+export function stoneIdAt(i: number, j: number): string {
+  return `s_${i}_${j}`;
+}
+
+export function parseStoneId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^s_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function stoneAmountAt(seed: number, i: number, j: number): number {
+  return 4 + (hash3(seed ^ 0x57e, i, j) % 4);
+}

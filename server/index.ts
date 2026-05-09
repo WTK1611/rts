@@ -88,6 +88,7 @@ function tick(): void {
     units: world.sim.unitsSnapshot(),
     resources: world.sim.resources.map((r) => ({ ...r })),
     newRemovedObjects: world.sim.consumeNewRemovedObjects(),
+    respawnedObjects: world.sim.consumeRespawnedObjects(),
     newFootprints: world.sim.consumeNewFootprints(),
   });
 }

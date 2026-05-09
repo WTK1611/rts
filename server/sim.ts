@@ -17,11 +17,13 @@ import {
   hasBushAt,
   hasFishAt,
   hasMushroomAt,
+  hasStoneAt,
   hasTreeAt,
   isLandTile,
   mushroomBerriesAt,
   spawnsFromSeed,
   SpawnArea,
+  stoneAmountAt,
   treeWoodAt,
 } from "../shared/worldgen";
 
@@ -31,6 +33,15 @@ const BUSH_HARVEST_AMOUNT = 3;
 const MUSH_HARVEST_AMOUNT = 1;
 const FISH_HARVEST_AMOUNT = 1;
 const TRIBE_SIZE = 4;
+const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
+const MUSHROOM_AUTOPICK_GAIN = 1;
+const BUSH_REGROW_TICKS = TICK_RATE * 90;
+const BUSH_AUTOPICK_GAIN = 1;
+const TREE_REGROW_TICKS = TICK_RATE * 120;
+const TREE_AUTOPICK_GAIN = 1;
+const STONE_AUTOPICK_GAIN = 1;
+const STONE_HARVEST_AMOUNT = 2;
+const FISH_AUTOPICK_GAIN = 1;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -59,7 +70,9 @@ function objKey(kind: ObjectKind, i: number, j: number): string {
         ? "b"
         : kind === "mushroom"
           ? "m"
-          : "f";
+          : kind === "fish"
+            ? "f"
+            : "s";
   return `${p}_${i}_${j}`;
 }
 
@@ -75,6 +88,8 @@ export class Sim {
     emptyResources(),
   );
   newRemovedObjects: RemovedObject[] = [];
+  respawnedObjects: RemovedObject[] = [];
+  regrow: Map<string, number> = new Map();
   footprints: Footprint[] = [];
   newFootprints: Footprint[] = [];
   tick = 0;
@@ -154,6 +169,12 @@ export class Sim {
     return out;
   }
 
+  consumeRespawnedObjects(): RemovedObject[] {
+    const out = this.respawnedObjects;
+    this.respawnedObjects = [];
+    return out;
+  }
+
   consumeNewFootprints(): Footprint[] {
     const out = this.newFootprints;
     this.newFootprints = [];
@@ -214,6 +235,10 @@ export class Sim {
       hasFishAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("fish", i, j))
     ) return "fish";
+    if (
+      hasStoneAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("stone", i, j))
+    ) return "stone";
     return null;
   }
 
@@ -319,6 +344,106 @@ export class Sim {
     const fp: Footprint = { o: u.owner, i: ti, j: tj, t: this.tick };
     this.footprints.push(fp);
     this.newFootprints.push(fp);
+    this.tryAutoPick(u, ti, tj);
+  }
+
+  private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
+    if (hasTreeAt(this.seed, ti, tj)) {
+      const k = objKey("tree", ti, tj);
+      if (!this.removedKeys.has(k)) {
+        this.autoPickAndRegrow(
+          u, "tree", ti, tj, "holz",
+          TREE_AUTOPICK_GAIN, TREE_REGROW_TICKS,
+        );
+        return;
+      }
+    }
+    if (hasBushAt(this.seed, ti, tj)) {
+      const k = objKey("bush", ti, tj);
+      if (!this.removedKeys.has(k)) {
+        this.autoPickAndRegrow(
+          u, "bush", ti, tj, "beeren",
+          BUSH_AUTOPICK_GAIN, BUSH_REGROW_TICKS,
+        );
+        return;
+      }
+    }
+    if (hasMushroomAt(this.seed, ti, tj)) {
+      const k = objKey("mushroom", ti, tj);
+      if (!this.removedKeys.has(k)) {
+        this.autoPickAndRegrow(
+          u, "mushroom", ti, tj, "pilze",
+          MUSHROOM_AUTOPICK_GAIN, MUSHROOM_REGROW_TICKS,
+        );
+        return;
+      }
+    }
+    if (hasStoneAt(this.seed, ti, tj)) {
+      const k = objKey("stone", ti, tj);
+      if (!this.removedKeys.has(k)) {
+        this.autoPickAndRegrow(
+          u, "stone", ti, tj, "stein",
+          STONE_AUTOPICK_GAIN, 0,
+        );
+      }
+    }
+    this.tryAutoPickShallowFish(u, ti, tj);
+  }
+
+  private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
+    const adj: Array<[number, number]> = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1],
+    ];
+    for (const [di, dj] of adj) {
+      const ni = ti + di;
+      const nj = tj + dj;
+      if (!hasFishAt(this.seed, ni, nj)) continue;
+      const k = objKey("fish", ni, nj);
+      if (this.removedKeys.has(k)) continue;
+      this.autoPickAndRegrow(
+        u, "fish", ni, nj, "fisch",
+        FISH_AUTOPICK_GAIN, 0,
+      );
+    }
+  }
+
+  private autoPickAndRegrow(
+    u: SimUnit,
+    kind: ObjectKind,
+    ti: number,
+    tj: number,
+    resKey: keyof Resources,
+    gain: number,
+    regrowTicks: number,
+  ): void {
+    const k = objKey(kind, ti, tj);
+    this.removedKeys.add(k);
+    this.remaining.delete(k);
+    const ro: RemovedObject = { kind, i: ti, j: tj };
+    this.removedObjects.push(ro);
+    this.newRemovedObjects.push(ro);
+    if (regrowTicks > 0) {
+      this.regrow.set(k, this.tick + regrowTicks);
+    }
+    this.resources[u.owner][resKey] += gain;
+  }
+
+  private expireRegrows(): void {
+    if (this.regrow.size === 0) return;
+    for (const [k, expire] of this.regrow) {
+      if (this.tick < expire) continue;
+      this.regrow.delete(k);
+      this.removedKeys.delete(k);
+      const idx = this.removedObjects.findIndex(
+        (o) => objKey(o.kind, o.i, o.j) === k,
+      );
+      if (idx >= 0) {
+        const ro = this.removedObjects[idx];
+        this.removedObjects.splice(idx, 1);
+        this.respawnedObjects.push(ro);
+      }
+    }
   }
 
   private expireFootprints(): void {
@@ -373,6 +498,7 @@ export class Sim {
       }
     }
     this.expireFootprints();
+    this.expireRegrows();
   }
 
   private objectStillThere(t: { kind: ObjectKind; i: number; j: number }): boolean {
@@ -381,7 +507,8 @@ export class Sim {
     if (t.kind === "tree") return hasTreeAt(this.seed, t.i, t.j);
     if (t.kind === "bush") return hasBushAt(this.seed, t.i, t.j);
     if (t.kind === "mushroom") return hasMushroomAt(this.seed, t.i, t.j);
-    return hasFishAt(this.seed, t.i, t.j);
+    if (t.kind === "fish") return hasFishAt(this.seed, t.i, t.j);
+    return hasStoneAt(this.seed, t.i, t.j);
   }
 
   private applyHarvestTick(
@@ -402,12 +529,16 @@ export class Sim {
       baseTotal = bushBerriesAt(this.seed, t.i, t.j);
     } else if (t.kind === "mushroom") {
       amount = MUSH_HARVEST_AMOUNT;
-      resKey = "beeren";
+      resKey = "pilze";
       baseTotal = mushroomBerriesAt(this.seed, t.i, t.j);
-    } else {
+    } else if (t.kind === "fish") {
       amount = FISH_HARVEST_AMOUNT;
-      resKey = "fleisch";
+      resKey = "fisch";
       baseTotal = fishMeatAt(this.seed, t.i, t.j);
+    } else {
+      amount = STONE_HARVEST_AMOUNT;
+      resKey = "stein";
+      baseTotal = stoneAmountAt(this.seed, t.i, t.j);
     }
     const remaining = (this.remaining.get(k) ?? baseTotal) - amount;
     this.resources[u.owner][resKey] += amount;

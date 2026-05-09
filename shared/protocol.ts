@@ -21,7 +21,9 @@ export interface Resources {
   holz: number;
   wasser: number;
   beeren: number;
+  pilze: number;
   fleisch: number;
+  fisch: number;
   stein: number;
 }
 
@@ -29,15 +31,20 @@ export const RESOURCE_KEYS: Array<keyof Resources> = [
   "holz",
   "wasser",
   "beeren",
+  "pilze",
   "fleisch",
+  "fisch",
   "stein",
 ];
 
 export function emptyResources(): Resources {
-  return { holz: 0, wasser: 0, beeren: 0, fleisch: 0, stein: 0 };
+  return {
+    holz: 0, wasser: 0, beeren: 0, pilze: 0,
+    fleisch: 0, fisch: 0, stein: 0,
+  };
 }
 
-export type ObjectKind = "tree" | "bush" | "mushroom" | "fish";
+export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone";
 
 export interface RemovedObject {
   kind: ObjectKind;
@@ -73,6 +80,7 @@ export interface StateMessage {
   units: UnitSnapshot[];
   resources: Resources[];
   newRemovedObjects: RemovedObject[];
+  respawnedObjects: RemovedObject[];
   newFootprints: Footprint[];
 }
 

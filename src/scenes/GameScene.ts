@@ -5,6 +5,7 @@ import { Tree } from "../Tree";
 import { Bush } from "../Bush";
 import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
+import { Stone } from "../Stone";
 import { Net } from "../net";
 import {
   Footprint,
@@ -27,6 +28,7 @@ import {
   hasBushAt,
   hasFishAt,
   hasMushroomAt,
+  hasStoneAt,
   hasTreeAt,
   heightAt,
   isLandTile,
@@ -50,6 +52,7 @@ interface Chunk {
   bushes: Map<string, Bush>;
   mushrooms: Map<string, Mushroom>;
   fishes: Map<string, Fish>;
+  stones: Map<string, Stone>;
 }
 
 export interface GameSceneInit {
@@ -78,7 +81,16 @@ const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
 function objKey(kind: ObjectKind, i: number, j: number): string {
-  const p = kind === "tree" ? "t" : kind === "bush" ? "b" : "m";
+  const p =
+    kind === "tree"
+      ? "t"
+      : kind === "bush"
+        ? "b"
+        : kind === "mushroom"
+          ? "m"
+          : kind === "fish"
+            ? "f"
+            : "s";
   return `${p}_${i}_${j}`;
 }
 
@@ -95,6 +107,7 @@ export class GameScene extends Phaser.Scene {
   private bushes: Map<string, Bush> = new Map();
   private mushrooms: Map<string, Mushroom> = new Map();
   private fishes: Map<string, Fish> = new Map();
+  private stones: Map<string, Stone> = new Map();
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -398,6 +411,7 @@ export class GameScene extends Phaser.Scene {
     const bushes = new Map<string, Bush>();
     const mushrooms = new Map<string, Mushroom>();
     const fishes = new Map<string, Fish>();
+    const stones = new Map<string, Stone>();
     const i0 = cx * CHUNK_SIZE;
     const j0 = cy * CHUNK_SIZE;
     for (let dj = 0; dj < CHUNK_SIZE; dj++) {
@@ -433,11 +447,19 @@ export class GameScene extends Phaser.Scene {
             fishes.set(id, f);
             this.fishes.set(id, f);
           }
+        } else if (hasStoneAt(this.seed, i, j)) {
+          const id = objKey("stone", i, j);
+          if (!this.removedKeys.has(id) && !this.stones.has(id)) {
+            const s = new Stone(this, i, j);
+            stones.set(id, s);
+            this.stones.set(id, s);
+          }
         }
       }
     }
     this.chunks.set(`${cx},${cy}`, {
-      cx, cy, graphics: g, elevGraphics: elev, trees, bushes, mushrooms, fishes,
+      cx, cy, graphics: g, elevGraphics: elev,
+      trees, bushes, mushrooms, fishes, stones,
     });
   }
 
@@ -463,6 +485,11 @@ export class GameScene extends Phaser.Scene {
       f.container.destroy();
       f.shadow.destroy();
       this.fishes.delete(fid);
+    }
+    for (const [sid, s] of chunk.stones) {
+      s.container.destroy();
+      s.shadow.destroy();
+      this.stones.delete(sid);
     }
     this.chunks.delete(key);
   }
@@ -708,6 +735,12 @@ export class GameScene extends Phaser.Scene {
       f.container.setVisible(v);
       f.shadow.setVisible(v);
     }
+    for (const s of this.stones.values()) {
+      const k = `${s.i},${s.j}`;
+      const v = this.visible.has(k);
+      s.container.setVisible(v);
+      s.shadow.setVisible(v);
+    }
   }
 
   private drawFootprints(): void {
@@ -910,6 +943,9 @@ export class GameScene extends Phaser.Scene {
     for (const ro of msg.newRemovedObjects) {
       this.applyRemoved(ro);
     }
+    for (const ro of msg.respawnedObjects) {
+      this.applyRespawn(ro);
+    }
     for (const fp of msg.newFootprints) {
       this.footprints.push(fp);
     }
@@ -961,13 +997,60 @@ export class GameScene extends Phaser.Scene {
         this.mushrooms.delete(k);
         for (const c of this.chunks.values()) c.mushrooms.delete(k);
       }
-    } else {
+    } else if (ro.kind === "fish") {
       const f = this.fishes.get(k);
       if (f) {
         f.remove();
         this.fishes.delete(k);
         for (const c of this.chunks.values()) c.fishes.delete(k);
       }
+    } else {
+      const s = this.stones.get(k);
+      if (s) {
+        s.remove();
+        this.stones.delete(k);
+        for (const c of this.chunks.values()) c.stones.delete(k);
+      }
+    }
+  }
+
+  private applyRespawn(ro: RemovedObject): void {
+    const k = objKey(ro.kind, ro.i, ro.j);
+    if (!this.removedKeys.has(k)) return;
+    this.removedKeys.delete(k);
+    const cx = Math.floor(ro.i / CHUNK_SIZE);
+    const cy = Math.floor(ro.j / CHUNK_SIZE);
+    const chunk = this.chunks.get(`${cx},${cy}`);
+    if (!chunk) return;
+    const v = this.visible.has(`${ro.i},${ro.j}`);
+    if (ro.kind === "mushroom") {
+      if (this.mushrooms.has(k)) return;
+      const m = new Mushroom(this, ro.i, ro.j);
+      chunk.mushrooms.set(k, m);
+      this.mushrooms.set(k, m);
+      m.container.setVisible(v);
+      m.shadow.setVisible(v);
+    } else if (ro.kind === "bush") {
+      if (this.bushes.has(k)) return;
+      const b = new Bush(this, ro.i, ro.j);
+      chunk.bushes.set(k, b);
+      this.bushes.set(k, b);
+      b.container.setVisible(v);
+      b.shadow.setVisible(v);
+    } else if (ro.kind === "tree") {
+      if (this.trees.has(k)) return;
+      const t = new Tree(this, k, ro.i, ro.j);
+      chunk.trees.set(k, t);
+      this.trees.set(k, t);
+      t.container.setVisible(v);
+      t.shadow.setVisible(v);
+    } else if (ro.kind === "stone") {
+      if (this.stones.has(k)) return;
+      const s = new Stone(this, ro.i, ro.j);
+      chunk.stones.set(k, s);
+      this.stones.set(k, s);
+      s.container.setVisible(v);
+      s.shadow.setVisible(v);
     }
   }
 
@@ -1050,6 +1133,10 @@ export class GameScene extends Phaser.Scene {
       hasFishAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("fish", i, j))
     ) return true;
+    if (
+      hasStoneAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("stone", i, j))
+    ) return true;
     return false;
   }
 
@@ -1109,13 +1196,16 @@ export class GameScene extends Phaser.Scene {
     const myName = this.names[this.playerId] ?? "Du";
     const myColor = this.playerColorCss(this.playerId);
     const myRes = this.resources[this.playerId] ?? {
-      holz: 0, wasser: 0, beeren: 0, fleisch: 0, stein: 0,
+      holz: 0, wasser: 0, beeren: 0, pilze: 0,
+      fleisch: 0, fisch: 0, stein: 0,
     };
     const labels: Record<keyof Resources, string> = {
       holz: "Holz",
       wasser: "Wasser",
       beeren: "Beeren",
+      pilze: "Pilze",
       fleisch: "Fleisch",
+      fisch: "Fisch",
       stein: "Stein",
     };
     const resHtml = RESOURCE_KEYS.map(
