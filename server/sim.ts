@@ -72,6 +72,7 @@ const CAMPFIRE_IGNITE_MIN_UNITS = 2;
 const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
 const CAMPFIRE_BURN_PER_FUEL_SEC = 25;
 const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
+const CAMPFIRE_REPEL_RADIUS = CAMPFIRE_RANGE + 2.5;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -597,6 +598,65 @@ export class Sim {
         continue;
       }
       const spec = ANIMAL_SPECS[a.kind];
+
+      if (spec.aggressive || spec.predator) {
+        let nearestFire: SimCampfire | null = null;
+        let nearestFireDist = CAMPFIRE_REPEL_RADIUS;
+        for (const f of this.campfires.values()) {
+          const d = Math.hypot(f.gx - a.gx, f.gy - a.gy);
+          if (d < nearestFireDist) {
+            nearestFire = f;
+            nearestFireDist = d;
+          }
+        }
+        if (nearestFire) {
+          a.attackTargetUnitId = null;
+          a.attackTargetAnimalId = null;
+          a.state = "flee";
+          a.fleeRepathTimer -= dt;
+          if (a.path.length === 0 || a.fleeRepathTimer <= 0) {
+            a.fleeRepathTimer = PREY_FLEE_REPATH_SEC;
+            const dx = a.gx - nearestFire.gx;
+            const dy = a.gy - nearestFire.gy;
+            const d = Math.hypot(dx, dy) || 1;
+            const fd = CAMPFIRE_REPEL_RADIUS + 2;
+            const ti = Math.floor(a.gx + (dx / d) * fd);
+            const tj = Math.floor(a.gy + (dy / d) * fd);
+            if (this.isWalkable(ti, tj)) {
+              const path = findPath(
+                (x, y) => this.isWalkable(x, y),
+                Math.floor(a.gx),
+                Math.floor(a.gy),
+                ti,
+                tj,
+                new Set<string>(),
+              );
+              if (path && path.length > 1) {
+                a.path = path
+                  .slice(1)
+                  .map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
+              }
+            }
+          }
+          if (a.path.length > 0) {
+            const wp = a.path[0];
+            const ddx = wp.gx - a.gx;
+            const ddy = wp.gy - a.gy;
+            const sd = Math.hypot(ddx, ddy);
+            const moveSpeed = spec.speed * 0.9;
+            if (sd < 0.04) {
+              a.gx = wp.gx;
+              a.gy = wp.gy;
+              a.path.shift();
+            } else {
+              const step = Math.min(moveSpeed * dt, sd);
+              a.gx += (ddx / sd) * step;
+              a.gy += (ddy / sd) * step;
+            }
+          }
+          continue;
+        }
+      }
 
       if (a.attackTargetUnitId) {
         const t = this.units.get(a.attackTargetUnitId);

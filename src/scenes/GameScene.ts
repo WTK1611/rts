@@ -58,6 +58,11 @@ interface DragState {
   isBox: boolean;
 }
 
+interface SurfSeg {
+  pts: Array<{ x: number; y: number }>;
+  phase: number;
+}
+
 interface Chunk {
   cx: number;
   cy: number;
@@ -67,6 +72,8 @@ interface Chunk {
   mushrooms: Map<string, Mushroom>;
   fishes: Map<string, Fish>;
   stones: Map<string, Stone>;
+  surfSegments: SurfSeg[];
+  bbox: { x: number; y: number; w: number; h: number };
 }
 
 export interface GameSceneInit {
@@ -183,6 +190,8 @@ export class GameScene extends Phaser.Scene {
   private tribeRallyGfx!: Phaser.GameObjects.Graphics;
   private tribeRallyPhase = 0;
   private moveTargetGfx!: Phaser.GameObjects.Graphics;
+  private surfGfx!: Phaser.GameObjects.Graphics;
+  private lastSurfMs = -1000;
   private moveTarget: {
     i: number;
     j: number;
@@ -280,6 +289,9 @@ export class GameScene extends Phaser.Scene {
     this.moveTargetGfx.setDepth(1_680_000);
     this.moveTargetGfx.setVisible(false);
 
+    this.surfGfx = this.add.graphics();
+    this.surfGfx.setDepth(-50000);
+
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x6aaad6);
     const spawn = initData.init.spawn;
@@ -357,12 +369,13 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
-  update(_time: number, deltaMs: number): void {
+  update(time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
     for (const u of this.units.values()) u.update(dt);
     for (const a of this.animals.values()) a.update(dt);
     for (const f of this.campfires.values()) f.update(dt);
     for (const ar of this.artifacts.values()) ar.update(dt);
+    this.updateSurf(time);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -410,24 +423,18 @@ export class GameScene extends Phaser.Scene {
       if (c.n < 2) continue;
       const ax = c.cx / c.n;
       const ay = c.cy / c.n;
-      const ti = Math.floor(ax);
-      const tj = Math.floor(ay);
       const color = this.playerColors[owner] ?? 0xffffff;
-      const { x, y } = gridToScreen(ti, tj);
-      const drawDiamond = () => {
-        g.beginPath();
-        g.moveTo(x, y);
-        g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
-        g.lineTo(x, y + TILE_H);
-        g.lineTo(x - TILE_W / 2, y + TILE_H / 2);
-        g.closePath();
-      };
+      const { x: tx, y: ty } = gridToScreen(ax, ay);
+      const cx = tx;
+      const cy = ty + TILE_H / 2;
+      const rw = TILE_W;
+      const rh = TILE_H;
       g.fillStyle(color, 0.18 * pulse + 0.1);
-      drawDiamond();
-      g.fillPath();
+      g.fillEllipse(cx, cy, rw, rh);
       g.lineStyle(2, color, 0.55 + 0.3 * pulse);
-      drawDiamond();
-      g.strokePath();
+      g.strokeEllipse(cx, cy, rw, rh);
+      g.fillStyle(color, 0.9);
+      g.fillCircle(cx, cy, 2.5);
     }
   }
 
@@ -828,10 +835,59 @@ export class GameScene extends Phaser.Scene {
     }
     rt.draw(g, -ofx, -ofy);
     g.destroy();
+    const surfSegments: SurfSeg[] = [];
+    for (let dj = 0; dj < CHUNK_SIZE; dj++) {
+      for (let di = 0; di < CHUNK_SIZE; di++) {
+        this.collectSurfSegmentsForTile(i0 + di, j0 + dj, surfSegments);
+      }
+    }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
       trees, bushes, mushrooms, fishes, stones,
+      surfSegments,
+      bbox: { x: ofx, y: ofy, w, h },
     });
+  }
+
+  private collectSurfSegmentsForTile(i: number, j: number, out: SurfSeg[]): void {
+    if (this.isWaterAt(i, j)) return;
+    const cornerTouchesWater = (ci: number, cj: number): boolean =>
+      this.isWaterAt(ci - 1, cj - 1) ||
+      this.isWaterAt(ci, cj - 1) ||
+      this.isWaterAt(ci - 1, cj) ||
+      this.isWaterAt(ci, cj);
+    const NB_DELTA: Array<[number, number]> = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ];
+    let anyWaterNb = false;
+    for (const [di, dj] of NB_DELTA) {
+      if (this.isWaterAt(i + di, j + dj)) { anyWaterNb = true; break; }
+    }
+    if (!anyWaterNb) return;
+    const hN = cornerTouchesWater(i, j) ? 0 : heightAt(this.seed, i, j);
+    const hE = cornerTouchesWater(i + 1, j) ? 0 : heightAt(this.seed, i + 1, j);
+    const hS = cornerTouchesWater(i + 1, j + 1) ? 0 : heightAt(this.seed, i + 1, j + 1);
+    const hW = cornerTouchesWater(i, j + 1) ? 0 : heightAt(this.seed, i, j + 1);
+    const { x, y } = gridToScreen(i, j);
+    const corners = [
+      { x: x, y: y - hN },
+      { x: x + TILE_W / 2, y: y + TILE_H / 2 - hE },
+      { x: x, y: y + TILE_H - hS },
+      { x: x - TILE_W / 2, y: y + TILE_H / 2 - hW },
+    ];
+    for (let e = 0; e < 4; e++) {
+      const [di, dj] = NB_DELTA[e];
+      if (!this.isWaterAt(i + di, j + dj)) continue;
+      const a = corners[e];
+      const b = corners[(e + 1) % 4];
+      const wave = this.edgeWavePoints(i, j, e, a.x, a.y, b.x, b.y);
+      const pts = [{ x: a.x, y: a.y }, ...wave, { x: b.x, y: b.y }];
+      const phase = (i * 0.37 + j * 0.71 + e * 1.13) % (Math.PI * 2);
+      out.push({ pts, phase });
+    }
   }
 
   private unloadChunk(key: string, chunk: Chunk): void {
@@ -1108,6 +1164,38 @@ export class GameScene extends Phaser.Scene {
     }
     g.closePath();
     g.fillPath();
+  }
+
+  private updateSurf(timeMs: number): void {
+    if (timeMs - this.lastSurfMs < 70) return;
+    this.lastSurfMs = timeMs;
+    const g = this.surfGfx;
+    g.clear();
+    const view = this.cameras.main.worldView;
+    const t = timeMs * 0.0022;
+    const buckets: SurfSeg[][] = [[], [], [], []];
+    for (const ch of this.chunks.values()) {
+      const bb = ch.bbox;
+      if (bb.x + bb.w < view.x || bb.x > view.right) continue;
+      if (bb.y + bb.h < view.y || bb.y > view.bottom) continue;
+      for (const seg of ch.surfSegments) {
+        const a = 0.5 + 0.5 * Math.sin(t + seg.phase);
+        const b = Math.min(3, Math.floor(a * 4));
+        buckets[b].push(seg);
+      }
+    }
+    const alphas = [0.18, 0.32, 0.5, 0.7];
+    for (let b = 0; b < 4; b++) {
+      const segs = buckets[b];
+      if (!segs.length) continue;
+      g.lineStyle(2, 0xffffff, alphas[b]);
+      for (const seg of segs) {
+        g.beginPath();
+        g.moveTo(seg.pts[0].x, seg.pts[0].y);
+        for (let k = 1; k < seg.pts.length; k++) g.lineTo(seg.pts[k].x, seg.pts[k].y);
+        g.strokePath();
+      }
+    }
   }
 
   private waterShadeAt(i: number, j: number): number {

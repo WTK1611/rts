@@ -43,6 +43,10 @@ export class Animal {
   gy: number;
   targetGx: number;
   targetGy: number;
+  private srcGx: number;
+  private srcGy: number;
+  private snapElapsed = 0;
+  private static readonly SNAP_DURATION = 0.07;
   hp: number;
   hpMax: number;
   state: AnimalSnapshot["state"];
@@ -63,6 +67,8 @@ export class Animal {
     this.gy = snap.gy;
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    this.srcGx = snap.gx;
+    this.srcGy = snap.gy;
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
     this.state = snap.state;
@@ -183,8 +189,11 @@ export class Animal {
   }
 
   applySnapshot(snap: AnimalSnapshot): void {
+    this.srcGx = this.gx;
+    this.srcGy = this.gy;
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    this.snapElapsed = 0;
     const dx = snap.gx - this.gx;
     if (Math.abs(dx) > 0.005) this.facing = dx > 0 ? 1 : -1;
     this.hp = snap.hp;
@@ -201,9 +210,10 @@ export class Animal {
   }
 
   update(dtSec: number): void {
-    const lerp = 1 - Math.pow(0.001, dtSec * 4);
-    this.gx += (this.targetGx - this.gx) * lerp;
-    this.gy += (this.targetGy - this.gy) * lerp;
+    this.snapElapsed += dtSec;
+    const t = Math.min(1, this.snapElapsed / Animal.SNAP_DURATION);
+    this.gx = this.srcGx + (this.targetGx - this.srcGx) * t;
+    this.gy = this.srcGy + (this.targetGy - this.srcGy) * t;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(this.worldSeed, this.gx, this.gy);
     this.bobPhase += dtSec * (this.state === "wander" || this.state === "flee" ? 9 : 2);

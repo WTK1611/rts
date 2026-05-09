@@ -35,6 +35,10 @@ export class Unit {
   gy: number;
   targetGx: number;
   targetGy: number;
+  private srcGx: number;
+  private srcGy: number;
+  private snapElapsed = 0;
+  private static readonly SNAP_DURATION = 0.07;
   selected = false;
   state: UnitSnapshot["state"] = "idle";
   worldSeed: number;
@@ -65,6 +69,8 @@ export class Unit {
     this.gy = snap.gy;
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    this.srcGx = snap.gx;
+    this.srcGy = snap.gy;
     this.worldSeed = worldSeed;
     this.hp = snap.hp;
     this.hpMax = snap.hpMax;
@@ -173,8 +179,11 @@ export class Unit {
   }
 
   applySnapshot(snap: UnitSnapshot, isLocal: boolean): void {
+    this.srcGx = this.gx;
+    this.srcGy = this.gy;
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    this.snapElapsed = 0;
     if (this.owner !== snap.owner || this.color !== snap.color) {
       this.owner = snap.owner;
       this.color = snap.color;
@@ -284,9 +293,10 @@ export class Unit {
   }
 
   update(dtSec: number): void {
-    const lerp = 1 - Math.pow(0.001, dtSec * 4);
-    this.gx += (this.targetGx - this.gx) * lerp;
-    this.gy += (this.targetGy - this.gy) * lerp;
+    this.snapElapsed += dtSec;
+    const t = Math.min(1, this.snapElapsed / Unit.SNAP_DURATION);
+    this.gx = this.srcGx + (this.targetGx - this.srcGx) * t;
+    this.gy = this.srcGy + (this.targetGy - this.srcGy) * t;
 
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(this.worldSeed, this.gx, this.gy);
