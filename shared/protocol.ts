@@ -98,6 +98,7 @@ export interface InitMessage {
   resources: Resources[];
   names: string[];
   languages: string[];
+  botSlots: PlayerId[];
   footprints: Footprint[];
   animals: AnimalSnapshot[];
 }
@@ -127,6 +128,7 @@ export interface StateMessage {
   encounters: EncounterEvent[];
   growthProgress: number[];
   growthActive: boolean[];
+  extinctTribes: PlayerId[];
 }
 
 export interface OpponentJoinedMessage {

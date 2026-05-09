@@ -154,17 +154,32 @@ function visibleAnimalsFor(
   return out;
 }
 
+function botSlotIds(): PlayerId[] {
+  const out: PlayerId[] = [];
+  for (const p of world.players) {
+    if (p && p.bot) out.push(p.id);
+  }
+  return out;
+}
+
 function visibleUnitsFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
 ): UnitSnapshot[] {
+  const botOwners = new Set(botSlotIds());
   const myUnits: UnitSnapshot[] = [];
   const others: UnitSnapshot[] = [];
+  const out: UnitSnapshot[] = [];
   for (const u of units) {
-    if (u.owner === ownerId) myUnits.push(u);
-    else others.push(u);
+    if (u.owner === ownerId) {
+      myUnits.push(u);
+      out.push(u);
+    } else if (botOwners.has(u.owner)) {
+      out.push(u);
+    } else {
+      others.push(u);
+    }
   }
-  const out: UnitSnapshot[] = myUnits.slice();
   if (myUnits.length === 0) return out;
   for (const a of others) {
     for (const u of myUnits) {
@@ -217,6 +232,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
     resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
     languages: languagesOf(),
+    botSlots: botSlotIds(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
   });

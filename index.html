@@ -6,12 +6,27 @@
     <meta name="theme-color" content="#1a3a1a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="J&amp;S" />
+    <meta name="apple-mobile-web-app-title" content="Stämme" />
     <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <title>Jäger und Sammler</title>
+    <title>Stämme - Jäger und Sammler</title>
+    <!-- Matomo -->
+    <script>
+      var _paq = window._paq = window._paq || [];
+      /* tracker methods like "setCustomDimension" should be called before "trackPageView" */
+      _paq.push(['trackPageView']);
+      _paq.push(['enableLinkTracking']);
+      (function() {
+        var u="//matomo.nbnl.de/";
+        _paq.push(['setTrackerUrl', u+'matomo.php']);
+        _paq.push(['setSiteId', '2']);
+        var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+        g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+      })();
+    </script>
+    <!-- End Matomo Code -->
     <style>
       html, body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
       #game {
@@ -90,6 +105,22 @@
       }
       #hud .others .row { display: flex; gap: 8px; align-items: center; line-height: 1.5; }
       #hud .others .swatch { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 8px; }
+      #hud .me.clickable, #hud .others .row.clickable {
+        pointer-events: auto; cursor: pointer;
+        padding: 2px 6px; margin: 0 -6px; border-radius: 4px;
+        transition: background 0.12s;
+      }
+      #hud .me.clickable:hover, #hud .others .row.clickable:hover {
+        background: rgba(255,255,255,0.08);
+      }
+      #hud .me.active, #hud .others .row.active {
+        background: rgba(126,207,255,0.18);
+        outline: 1px solid rgba(126,207,255,0.4);
+      }
+      #hud .others .row .eye {
+        margin-left: auto; color: #88a088; font-size: 11px;
+      }
+      #hud .others .row.active .eye { color: #7ecfff; }
       #hud .controls {
         margin-top: 8px; padding-top: 6px;
         border-top: 1px solid rgba(255,255,255,0.08);
@@ -183,8 +214,9 @@
         border: 1px solid rgba(108, 191, 108, 0.25);
       }
       #lobby-icon {
-        display: block; margin: 0 auto 12px;
-        width: 96px; height: 96px;
+        display: block; margin: 0 auto 16px;
+        width: 100%; max-width: 320px;
+        height: auto; aspect-ratio: 1 / 1;
         border-radius: 16px;
         box-shadow: 0 6px 18px rgba(0,0,0,0.45);
       }
@@ -300,9 +332,9 @@
       <canvas id="lobby-map"></canvas>
       <div id="lobby-veil"></div>
       <div id="lobby-card">
-        <img id="lobby-icon" src="/image/js_icon.webp" alt="Jäger und Sammler" width="96" height="96" />
-        <h1>Jäger und Sammler</h1>
-        <div id="lobby-title">Name eingeben — wir verbinden dich automatisch</div>
+        <img id="lobby-icon" src="/image/js_icon.webp" alt="Stämme - Jäger und Sammler" />
+        <h1>Stämme - Jäger und Sammler</h1>
+        <div id="lobby-title">Gib deinen Namen ein</div>
         <input id="name-input" maxlength="20" placeholder="Dein Name" autocomplete="off" />
         <div class="btn-row">
           <button id="play-btn" class="btn">Spielen</button>

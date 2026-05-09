@@ -12,9 +12,9 @@ export default defineConfig({
         "icon.png",
       ],
       manifest: {
-        name: "Jäger und Sammler",
-        short_name: "J&S",
-        description: "Jäger und Sammler — multiplayer survival.",
+        name: "Stämme - Jäger und Sammler",
+        short_name: "Stämme",
+        description: "Stämme - Jäger und Sammler — multiplayer survival.",
         lang: "de",
         start_url: "/",
         scope: "/",

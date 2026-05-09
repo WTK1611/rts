@@ -91,6 +91,8 @@ export class GameScene extends Phaser.Scene {
   private seed = 0;
   private names: string[] = [];
   private tribeLanguages: string[] = [];
+  private botSlots: PlayerId[] = [];
+  private spectatorTarget: PlayerId | null = null;
   private removedKeys = new Set<string>();
   private serverTick = 0;
 
@@ -178,6 +180,7 @@ export class GameScene extends Phaser.Scene {
     this.resources = data.init.resources.map((r) => ({ ...r }));
     this.names = data.init.names;
     this.tribeLanguages = data.init.languages ?? [];
+    this.botSlots = data.init.botSlots ?? [];
     this.removedKeys = new Set(
       data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
     );
@@ -238,6 +241,19 @@ export class GameScene extends Phaser.Scene {
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
 
+    const spectateKeys: Array<[number, number]> = [
+      [Phaser.Input.Keyboard.KeyCodes.ONE, 0],
+      [Phaser.Input.Keyboard.KeyCodes.TWO, 1],
+      [Phaser.Input.Keyboard.KeyCodes.THREE, 2],
+      [Phaser.Input.Keyboard.KeyCodes.FOUR, 3],
+    ];
+    for (const [code, idx] of spectateKeys) {
+      kb.addKey(code).on("down", () => this.spectateBot(idx));
+    }
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.ZERO).on("down", () =>
+      this.stopSpectating(),
+    );
+
     this.input.mouse?.disableContextMenu();
     this.input.addPointer(1);
     this.input.on("pointerdown", this.onPointerDown, this);
@@ -266,6 +282,9 @@ export class GameScene extends Phaser.Scene {
     this.net.onMessage((msg) => this.onServerMessage(msg));
 
     this.hud = document.getElementById("hud");
+    if (this.hud) {
+      this.hud.addEventListener("click", (e) => this.onHudClick(e));
+    }
     this.minimapWrap = document.getElementById("minimap-wrap");
     this.minimapVisible = false;
     if (this.minimapWrap) this.minimapWrap.style.display = "none";
@@ -357,6 +376,58 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private spectateBot(index: number): void {
+    const slot = this.botSlots[index];
+    if (slot === undefined) return;
+    this.spectateSlot(slot);
+  }
+
+  private spectateSlot(slot: PlayerId): void {
+    if (slot === this.playerId) {
+      this.stopSpectating();
+      return;
+    }
+    if (!this.botSlots.includes(slot)) return;
+    if (this.spectatorTarget === slot) {
+      this.stopSpectating();
+      return;
+    }
+    this.spectatorTarget = slot;
+    this.userPanned = false;
+    this.visObjectCache.clear();
+    this.visSourceHash = -1;
+    const name = this.names[slot] || `Stamm ${slot}`;
+    this.showToast(`Beobachte: ${name}`, "join");
+    this.updateHud();
+  }
+
+  private stopSpectating(): void {
+    if (this.spectatorTarget === null) return;
+    this.spectatorTarget = null;
+    this.userPanned = false;
+    this.visObjectCache.clear();
+    this.visSourceHash = -1;
+    this.showToast("Zurück zu deinem Stamm", "join");
+    this.updateHud();
+  }
+
+  private cameraFollowOwner(): PlayerId {
+    return this.spectatorTarget ?? this.playerId;
+  }
+
+  private onHudClick(e: MouseEvent): void {
+    const target = (e.target as HTMLElement | null)?.closest(
+      "[data-spectate-slot]",
+    ) as HTMLElement | null;
+    if (!target) return;
+    const raw = target.getAttribute("data-spectate-slot");
+    if (raw === null) return;
+    e.stopPropagation();
+    const slot = Number(raw);
+    if (!Number.isFinite(slot)) return;
+    this.spectateSlot(slot);
+  }
+
   private applyTribeKeys(dt: number): void {
     const dx = (this.keyD.isDown ? 1 : 0) - (this.keyA.isDown ? 1 : 0);
     const dy = (this.keyS.isDown ? 1 : 0) - (this.keyW.isDown ? 1 : 0);
@@ -404,11 +475,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyTribeFollow(): void {
+    const owner = this.cameraFollowOwner();
     let cx = 0;
     let cy = 0;
     let n = 0;
     for (const u of this.units.values()) {
-      if (u.owner !== this.playerId) continue;
+      if (u.owner !== owner) continue;
       cx += u.gx;
       cy += u.gy;
       n++;
@@ -419,8 +491,8 @@ export class GameScene extends Phaser.Scene {
     const w = gridToScreen(cx, cy);
     const h = groundHeight(this.seed, cx, cy);
     const cam = this.cameras.main;
-    this.camTargetX = w.x - cam.width / (2 * cam.zoom);
-    this.camTargetY = w.y - h - cam.height / (2 * cam.zoom);
+    this.camTargetX = w.x - cam.width / 2;
+    this.camTargetY = w.y - h - cam.height / 2;
   }
 
   private applyEdgePan(dt: number, baseSpeed: number): void {
@@ -478,8 +550,8 @@ export class GameScene extends Phaser.Scene {
     const cy1 = Math.floor(j1 / CHUNK_SIZE);
 
     const cam = this.cameras.main;
-    const centerX = cam.scrollX + cam.width / (2 * cam.zoom);
-    const centerY = cam.scrollY + cam.height / (2 * cam.zoom);
+    const centerX = cam.scrollX + cam.width / 2;
+    const centerY = cam.scrollY + cam.height / 2;
 
     const needed = new Set<string>();
     const toQueue: Array<{ cx: number; cy: number; key: string; d: number }> = [];
@@ -779,10 +851,14 @@ export class GameScene extends Phaser.Scene {
     return 0x102540;
   }
 
+  private isSightSource(owner: PlayerId): boolean {
+    return owner === this.playerId || owner === this.spectatorTarget;
+  }
+
   private updateFog(): void {
     let srcHash = 0;
     for (const u of this.units.values()) {
-      if (u.owner !== this.playerId) continue;
+      if (!this.isSightSource(u.owner)) continue;
       const fi = Math.floor(u.gx);
       const fj = Math.floor(u.gy);
       srcHash = (Math.imul(srcHash, 31) + fi) | 0;
@@ -802,7 +878,7 @@ export class GameScene extends Phaser.Scene {
     if (sourceChanged) {
       this.visible.clear();
       for (const u of this.units.values()) {
-        if (u.owner !== this.playerId) continue;
+        if (!this.isSightSource(u.owner)) continue;
         const r = SIGHT_RADIUS;
         const r2 = r * r;
         const cx = u.gx;
@@ -919,7 +995,7 @@ export class GameScene extends Phaser.Scene {
     for (const u of this.units.values()) {
       const key = `u:${u.id}`;
       let v: boolean;
-      if (u.owner === this.playerId) {
+      if (this.isSightSource(u.owner)) {
         v = true;
       } else {
         const i = Math.floor(u.gx);
@@ -1086,8 +1162,8 @@ export class GameScene extends Phaser.Scene {
     const tgx = ccx + (mx / MINIMAP_PX_PER_TILE - half);
     const tgy = ccy + (my / MINIMAP_PX_PER_TILE - half);
     const target = gridToScreen(tgx, tgy);
-    this.camTargetX = target.x - cam.width / (2 * cam.zoom);
-    this.camTargetY = target.y - cam.height / (2 * cam.zoom);
+    this.camTargetX = target.x - cam.width / 2;
+    this.camTargetY = target.y - cam.height / 2;
     this.userPanned = true;
   }
 
@@ -1662,10 +1738,18 @@ export class GameScene extends Phaser.Scene {
       if (!n) continue;
       const c = this.playerColorCss(i);
       const flag = this.flagFor(i);
+      const isBot = this.botSlots.includes(i);
+      const active = this.spectatorTarget === i;
+      const cls =
+        "row" +
+        (isBot ? " clickable" : "") +
+        (active ? " active" : "");
+      const attr = isBot ? ` data-spectate-slot="${i}"` : "";
+      const eye = isBot ? `<span class="eye">${active ? "◉" : "◎"}</span>` : "";
       otherRows.push(
-        `<div class="row"><span class="swatch" style="background:${c}"></span>` +
+        `<div class="${cls}"${attr}><span class="swatch" style="background:${c}"></span>` +
           `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as Language] ?? ""}">${flag}</span> ` : ""}` +
-          `${escapeHtml(n)}</div>`,
+          `${escapeHtml(n)}${eye}</div>`,
       );
     }
     const othersHtml = otherRows.length
@@ -1673,8 +1757,10 @@ export class GameScene extends Phaser.Scene {
       : `<div class="others">Warte auf weitere Stämme …</div>`;
 
     const myFlag = this.flagFor(this.playerId);
+    const meActive = this.spectatorTarget === null ? " active" : "";
     this.hud.innerHTML =
-      `<div class="me"><span class="swatch" style="background:${myColor}"></span>` +
+      `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
+      `<span class="swatch" style="background:${myColor}"></span>` +
       `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""}</div>` +
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
