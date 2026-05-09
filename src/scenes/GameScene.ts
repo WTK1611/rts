@@ -1007,6 +1007,24 @@ export class GameScene extends Phaser.Scene {
 
   private applyState(msg: StateMessage): void {
     this.serverTick = msg.tick;
+    if (msg.newUnits && msg.newUnits.length > 0) {
+      let ownGrew = 0;
+      for (const snap of msg.newUnits) {
+        if (this.units.has(snap.id)) continue;
+        this.units.set(
+          snap.id,
+          new Unit(this, snap, snap.owner === this.playerId, this.seed),
+        );
+        if (snap.owner === this.playerId) ownGrew++;
+      }
+      if (ownGrew > 0) {
+        const txt =
+          ownGrew === 1
+            ? "Dein Stamm wächst: ein neues Mitglied ist dazugekommen"
+            : `Dein Stamm wächst: ${ownGrew} neue Mitglieder sind dazugekommen`;
+        this.showToast(txt, "join");
+      }
+    }
     for (const snap of msg.units) {
       const u = this.units.get(snap.id);
       if (u) u.applySnapshot(snap);
