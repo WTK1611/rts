@@ -747,14 +747,16 @@ export class GameScene extends Phaser.Scene {
       const age = this.serverTick - fp.t;
       const lifeFrac = 1 - age / FOOTPRINT_LIFETIME_TICKS;
       if (lifeFrac <= 0) continue;
-      const alpha = 0.7 * lifeFrac;
+      const ageFrac = 1 - lifeFrac;
+      const color = lerpColor(0xb8895a, 0x2a1808, ageFrac);
+      const alpha = 0.55 + 0.3 * lifeFrac;
       const { x, y } = gridToScreen(fp.i + 0.5, fp.j + 0.5);
       const cy = y + TILE_H / 2 - 1;
       const seed = (fp.i * 73 + fp.j * 19 + fp.t) | 0;
       const side = (seed & 1) ? 1 : -1;
       const ang = (((seed >> 1) & 0x7) / 8 - 0.5) * 0.6;
-      this.drawFootprint(x - 2 * side, cy - 1, ang, alpha);
-      this.drawFootprint(x + 2 * side, cy + 2, ang, alpha * 0.85);
+      this.drawFootprint(x - 2 * side, cy - 1, ang, color, alpha);
+      this.drawFootprint(x + 2 * side, cy + 2, ang, color, alpha * 0.85);
     }
   }
 
@@ -762,6 +764,7 @@ export class GameScene extends Phaser.Scene {
     cx: number,
     cy: number,
     angle: number,
+    color: number,
     alpha: number,
   ): void {
     const g = this.footprintsGfx;
@@ -771,7 +774,7 @@ export class GameScene extends Phaser.Scene {
       x: cx + px * cs - py * sn,
       y: cy + px * sn + py * cs,
     });
-    g.fillStyle(0x4a2f15, alpha);
+    g.fillStyle(color, alpha);
     const heel = rot(0, 1.2);
     g.fillEllipse(heel.x, heel.y, 3.4, 2.4);
     const ball = rot(0, -1.4);
