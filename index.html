@@ -42,27 +42,29 @@
       #hud .res .ico.stein   { background: #909090; }
       #hud .res .label { color: #c8d8c8; }
       #hud .res b { color: #f0f5f0; font-weight: 600; }
-      #hud .growth { margin-top: 8px; padding-top: 6px;
-        border-top: 1px solid rgba(255,255,255,0.08);
-        font-size: 12px; color: #c8d8c8;
+      #hud .growth {
+        margin: -4px 0 8px;
+        font-size: 10px; line-height: 1.2;
+        color: #a8b8a8;
       }
       #hud .growth .label-row {
         display: flex; justify-content: space-between;
-        align-items: baseline; margin-bottom: 4px;
+        align-items: baseline; gap: 8px; margin-bottom: 2px;
       }
-      #hud .growth .state { color: #88a088; font-size: 11px; }
+      #hud .growth .lbl { color: #88a088; }
+      #hud .growth .state { color: #88a088; }
       #hud .growth .state.active { color: #9cd99c; }
       #hud .growth .state.imminent { color: #ffd84d; font-weight: 600; }
       #hud .growth .state.full { color: #b8c8b8; }
       #hud .growth .bar {
         position: relative;
-        height: 6px; background: rgba(255,255,255,0.08);
-        border-radius: 3px; overflow: hidden;
+        height: 3px; background: rgba(255,255,255,0.08);
+        border-radius: 2px; overflow: hidden;
       }
       #hud .growth .fill {
         position: absolute; inset: 0 auto 0 0;
         background: #4d8a4d;
-        border-radius: 3px;
+        border-radius: 2px;
         transition: width 0.25s linear, background 0.2s linear;
       }
       #hud .growth.paused .fill { background: #6a7a6a; }
@@ -71,8 +73,8 @@
         animation: growthPulse 1s ease-in-out infinite;
       }
       @keyframes growthPulse {
-        0%, 100% { box-shadow: 0 0 6px rgba(255, 216, 77, 0.5); }
-        50% { box-shadow: 0 0 12px rgba(255, 216, 77, 1); }
+        0%, 100% { box-shadow: 0 0 4px rgba(255, 216, 77, 0.5); }
+        50% { box-shadow: 0 0 8px rgba(255, 216, 77, 1); }
       }
       #hud .others { margin-top: 8px; padding-top: 6px;
         border-top: 1px solid rgba(255,255,255,0.08);
@@ -102,10 +104,9 @@
         #hud .res .item { gap: 4px; }
         #hud .res .ico { width: 8px; height: 8px; flex-basis: 8px; }
         #hud .growth {
-          margin-top: 4px; padding-top: 4px; font-size: 10px;
+          margin: -2px 0 4px; font-size: 9px;
         }
-        #hud .growth .state { font-size: 9px; }
-        #hud .growth .bar { height: 4px; }
+        #hud .growth .bar { height: 2px; }
         #hud .others {
           margin-top: 4px; padding-top: 4px; font-size: 10px;
         }

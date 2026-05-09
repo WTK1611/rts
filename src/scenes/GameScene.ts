@@ -1533,8 +1533,8 @@ export class GameScene extends Phaser.Scene {
     this.hud.innerHTML =
       `<div class="me"><span class="swatch" style="background:${myColor}"></span>` +
       `Stamm von ${escapeHtml(myName)}</div>` +
-      `<div class="res">${resHtml}</div>` +
       this.growthHudHtml() +
+      `<div class="res">${resHtml}</div>` +
       othersHtml;
   }
 
@@ -1584,7 +1584,7 @@ export class GameScene extends Phaser.Scene {
     const fillPct = count >= MAX_TRIBE_SIZE ? 100 : Math.round(progress * 100);
     return (
       `<div class="${cls}">` +
-      `<div class="label-row"><span>Wachstum</span>` +
+      `<div class="label-row"><span class="lbl">Wachstum</span>` +
       `<span class="${stateCls}">${escapeHtml(stateLabel)}</span></div>` +
       `<div class="bar"><div class="fill" style="width:${fillPct}%"></div></div>` +
       `</div>`

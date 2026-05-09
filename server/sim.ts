@@ -291,6 +291,33 @@ export class Sim {
   }
 
   private startHunt(u: SimUnit, a: SimAnimal, blocked: Set<string>): void {
+    const bestPath = this.findHuntApproach(u, a, blocked);
+    if (!bestPath) return;
+    u.path =
+      bestPath.length > 1
+        ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
+        : [];
+    u.huntTarget = a.id;
+    u.harvestTarget = null;
+    u.huntTimer = 0;
+    u.state = u.path.length > 0 ? "moving" : "harvesting";
+  }
+
+  private repathToHuntable(
+    u: SimUnit,
+    a: SimAnimal,
+    blocked: Set<string>,
+  ): void {
+    const bestPath = this.findHuntApproach(u, a, blocked);
+    if (!bestPath || bestPath.length < 2) return;
+    u.path = bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
+  }
+
+  private findHuntApproach(
+    u: SimUnit,
+    a: SimAnimal,
+    blocked: Set<string>,
+  ): ReturnType<typeof findPath> {
     const ti = Math.floor(a.gx);
     const tj = Math.floor(a.gy);
     const candidates: Array<{ i: number; j: number }> = [];
@@ -317,15 +344,7 @@ export class Sim {
       );
       if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
     }
-    if (!bestPath) return;
-    u.path =
-      bestPath.length > 1
-        ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
-        : [];
-    u.huntTarget = a.id;
-    u.harvestTarget = null;
-    u.huntTimer = 0;
-    u.state = u.path.length > 0 ? "moving" : "harvesting";
+    return bestPath;
   }
 
   private stepAnimals(dt: number): void {
@@ -561,6 +580,7 @@ export class Sim {
   }
 
   private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
+    const claimed = new Set<string>();
     for (const u of this.units.values()) {
       if (u.owner !== hunter.owner) continue;
       if (u.id === hunter.id) continue;
@@ -569,7 +589,11 @@ export class Sim {
       if (u.hp <= 0) continue;
       const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
       if (d > GROUP_FIGHT_RANGE) continue;
-      this.startHunt(u, a, new Set<string>());
+      const blocked = this.blockedTilesFor(u, claimed);
+      this.startHunt(u, a, blocked);
+      const last = u.path[u.path.length - 1];
+      if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
     }
   }
 
@@ -625,17 +649,7 @@ export class Sim {
       ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
       : null;
     if (lastTile !== `${ti},${tj}`) {
-      const path = findPath(
-        (x, y) => this.isWalkable(x, y),
-        Math.floor(u.gx),
-        Math.floor(u.gy),
-        ti,
-        tj,
-        new Set<string>(),
-      );
-      if (path && path.length > 1) {
-        u.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
-      }
+      this.repathToHuntable(u, a, this.blockedTilesFor(u, new Set()));
     }
     u.state = "moving";
 
@@ -940,7 +954,7 @@ export class Sim {
       if (a.hp <= 0) continue;
       if (Math.floor(a.gx) !== ti) continue;
       if (Math.floor(a.gy) !== tj) continue;
-      this.startHunt(u, a, new Set<string>());
+      this.startHunt(u, a, this.blockedTilesFor(u, new Set()));
       return;
     }
   }
@@ -1321,27 +1335,42 @@ export class Sim {
   }
 
   private spreadIdleUnits(): void {
-    const occupants = new Map<string, SimUnit>();
+    const groups = new Map<string, SimUnit[]>();
+    const dest = new Set<string>();
     for (const u of this.units.values()) {
-      if (u.state !== "idle") {
-        occupants.set(`${Math.floor(u.gx)},${Math.floor(u.gy)}`, u);
+      if (u.path.length === 0) {
+        const key = `${Math.floor(u.gx)},${Math.floor(u.gy)}`;
+        const arr = groups.get(key) ?? [];
+        arr.push(u);
+        groups.set(key, arr);
+      } else {
+        const last = u.path[u.path.length - 1];
+        dest.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       }
     }
-    for (const u of this.units.values()) {
-      if (u.state !== "idle") continue;
-      const ti = Math.floor(u.gx);
-      const tj = Math.floor(u.gy);
-      const key = `${ti},${tj}`;
-      const existing = occupants.get(key);
-      if (!existing) {
-        occupants.set(key, u);
-        continue;
+    const blocked = new Set<string>(dest);
+    for (const key of groups.keys()) blocked.add(key);
+
+    for (const arr of groups.values()) {
+      if (arr.length <= 1) continue;
+      for (let i = 1; i < arr.length; i++) {
+        const u = arr[i];
+        const ti = Math.floor(u.gx);
+        const tj = Math.floor(u.gy);
+        if (u.harvestTarget && this.objectStillThere(u.harvestTarget)) {
+          const t = u.harvestTarget;
+          this.startHarvest(u, t.kind, t.i, t.j, blocked);
+        } else if (u.huntTarget && this.animals.has(u.huntTarget)) {
+          const a = this.animals.get(u.huntTarget)!;
+          this.startHunt(u, a, blocked);
+        } else {
+          const free = this.findFreeTileNear(ti, tj, blocked);
+          if (!free) continue;
+          this.startMove(u, free.i, free.j, blocked);
+        }
+        const last = u.path[u.path.length - 1];
+        if (last) blocked.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       }
-      const blocked = new Set<string>(occupants.keys());
-      const free = this.findFreeTileNear(ti, tj, blocked);
-      if (!free) continue;
-      this.startMove(u, free.i, free.j, blocked);
-      occupants.set(`${free.i},${free.j}`, u);
     }
   }
 

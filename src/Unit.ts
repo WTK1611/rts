@@ -190,6 +190,8 @@ export class Unit {
       this.body.setAngle(lean);
       this.head.setAngle(lean);
       this.hair.setAngle(lean);
+      this.hairBack?.setAngle(lean);
+      this.beard?.setAngle(lean);
     }
     const hairAlpha = age > OLD_THRESHOLD_SEC
       ? 0.4 + 0.6 * (1 - Math.min(1, (age - OLD_THRESHOLD_SEC) / (MAX_AGE_SEC - OLD_THRESHOLD_SEC)))
