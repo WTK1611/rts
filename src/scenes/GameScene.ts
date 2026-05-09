@@ -444,33 +444,19 @@ export class GameScene extends Phaser.Scene {
     const len = Math.hypot(gdx, gdy);
     if (len === 0) return;
 
-    let anySelected = false;
-    for (const u of this.units.values()) {
-      if (u.owner === this.playerId && u.selected) {
-        anySelected = true;
-        break;
-      }
-    }
-
-    let cx = 0;
-    let cy = 0;
-    let n = 0;
-    const ids: string[] = [];
+    let chief: Unit | null = null;
+    const followers: Unit[] = [];
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
-      if (anySelected && !u.selected) continue;
-      cx += u.gx;
-      cy += u.gy;
-      n++;
-      ids.push(u.id);
+      if (u.isChief) chief = u;
+      else followers.push(u);
     }
-    if (n === 0) return;
-    cx /= n;
-    cy /= n;
+    if (!chief) return;
 
     const stepDist = 8;
-    const ti = Math.floor(cx + (gdx / len) * stepDist);
-    const tj = Math.floor(cy + (gdy / len) * stepDist);
+    const ti = Math.floor(chief.gx + (gdx / len) * stepDist);
+    const tj = Math.floor(chief.gy + (gdy / len) * stepDist);
+    const ids: string[] = [chief.id, ...followers.map((u) => u.id)];
     this.net.send({ type: "move", unitIds: ids, i: ti, j: tj });
   }
 
@@ -1410,7 +1396,29 @@ export class GameScene extends Phaser.Scene {
     if (msg.growthActive) this.growthActive = msg.growthActive;
     const myProg = this.growthProgress[this.playerId] ?? 0;
     const myActive = this.growthActive[this.playerId] ?? false;
+    let countsChanged = false;
+    if (msg.tribeCounts) {
+      if (msg.tribeCounts.length !== this.tribeCounts.length) {
+        countsChanged = true;
+      } else {
+        for (let i = 0; i < msg.tribeCounts.length; i++) {
+          if (msg.tribeCounts[i] !== this.tribeCounts[i]) {
+            countsChanged = true;
+            break;
+          }
+        }
+      }
+      this.tribeCounts = msg.tribeCounts;
+    }
+    if (msg.respawnedTribes && msg.respawnedTribes.length > 0) {
+      for (const owner of msg.respawnedTribes) {
+        if (owner === this.playerId) continue;
+        const name = this.names[owner] || `Stamm ${owner}`;
+        this.showToast(`Stamm von ${name} ist zurückgekehrt`, "join");
+      }
+    }
     if (
+      countsChanged ||
       Math.abs(myProg - myProgPrev) > 0.005 ||
       myActive !== myActivePrev
     ) {
