@@ -267,6 +267,7 @@ function tick(): void {
   const respawnedObjects = world.sim.consumeRespawnedObjects();
   const newFootprints = world.sim.consumeNewFootprints();
   const deadUnitIds = world.sim.consumeDeadUnitIds();
+  const extinctTribes = world.sim.consumeExtinctTribes();
   const newUnits = world.sim.consumeNewUnits();
   const encounters = world.sim.consumeEncounterEvents();
   const growth = world.sim.growthSnapshot();
@@ -328,6 +329,7 @@ function tick(): void {
       encounters,
       growthProgress: growth.progress,
       growthActive: growth.active,
+      extinctTribes,
     });
   }
 }

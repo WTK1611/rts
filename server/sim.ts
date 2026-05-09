@@ -192,6 +192,7 @@ export class Sim {
   animals: Map<string, SimAnimal> = new Map();
   removedAnimalIds: string[] = [];
   deadUnitIds: string[] = [];
+  extinctTribes: PlayerId[] = [];
   newUnits: UnitSnapshot[] = [];
   growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
   growthActive: boolean[] = new Array(MAX_PLAYERS).fill(false);
@@ -259,6 +260,12 @@ export class Sim {
   consumeDeadUnitIds(): string[] {
     const out = this.deadUnitIds;
     this.deadUnitIds = [];
+    return out;
+  }
+
+  consumeExtinctTribes(): PlayerId[] {
+    const out = this.extinctTribes;
+    this.extinctTribes = [];
     return out;
   }
 
@@ -1411,10 +1418,19 @@ export class Sim {
   }
 
   private reapDeadUnits(): void {
+    const before: number[] = new Array(MAX_PLAYERS).fill(0);
+    for (const u of this.units.values()) before[u.owner]++;
     for (const u of this.units.values()) {
       if (u.hp <= 0) {
         this.deadUnitIds.push(u.id);
         this.units.delete(u.id);
+      }
+    }
+    const after: number[] = new Array(MAX_PLAYERS).fill(0);
+    for (const u of this.units.values()) after[u.owner]++;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (this.active[p] && before[p] > 0 && after[p] === 0) {
+        this.extinctTribes.push(p);
       }
     }
   }
