@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTS</title>
+    <style>
+      html, body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
+      #game { width: 100vw; height: 100vh; }
+      #hud {
+        position: fixed; top: 8px; left: 8px; color: #ddd;
+        font-family: system-ui, sans-serif; font-size: 13px;
+        background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 4px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="hud">Linksklick: Einheit auswählen · Rechtsklick: bewegen</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
