@@ -155,7 +155,7 @@ export class GameScene extends Phaser.Scene {
     this.hoverTile.setDepth(-99999);
 
     this.footprintsGfx = this.add.graphics();
-    this.footprintsGfx.setDepth(-99000);
+    this.footprintsGfx.setDepth(1_600_000);
 
     this.fog = this.add.graphics();
     this.fog.setDepth(1_500_000);
@@ -744,8 +744,6 @@ export class GameScene extends Phaser.Scene {
 
     for (const fp of this.footprints) {
       if (fp.i < i0 || fp.i > i1 || fp.j < j0 || fp.j > j1) continue;
-      const k = `${fp.i},${fp.j}`;
-      if (!this.explored.has(k)) continue;
       const age = this.serverTick - fp.t;
       const lifeFrac = 1 - age / FOOTPRINT_LIFETIME_TICKS;
       if (lifeFrac <= 0) continue;
