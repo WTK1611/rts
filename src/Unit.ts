@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
 import { PlayerId, UnitSnapshot } from "../shared/protocol";
+import { groundHeight } from "../shared/worldgen";
 
 function shade(color: number, factor: number): number {
   const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
@@ -26,11 +27,12 @@ export class Unit {
   targetGy: number;
   selected = false;
   state: UnitSnapshot["state"] = "idle";
+  worldSeed: number;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
 
-  constructor(scene: Phaser.Scene, snap: UnitSnapshot, isLocal: boolean) {
+  constructor(scene: Phaser.Scene, snap: UnitSnapshot, isLocal: boolean, worldSeed: number) {
     this.scene = scene;
     this.id = snap.id;
     this.owner = snap.owner;
@@ -39,8 +41,10 @@ export class Unit {
     this.gy = snap.gy;
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    this.worldSeed = worldSeed;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
+    const h = groundHeight(worldSeed, this.gx, this.gy);
 
     this.shadow = scene.add.ellipse(0, 1, 22, 9, 0x000000, 0.4);
 
@@ -63,7 +67,7 @@ export class Unit {
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
     const hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
 
-    this.container = scene.add.container(x, y, [
+    this.container = scene.add.container(x, y - h, [
       this.shadow,
       this.ownerRing,
       this.selectionRing,
@@ -119,9 +123,10 @@ export class Unit {
     this.gy += (this.targetGy - this.gy) * lerp;
 
     const { x, y } = gridToScreen(this.gx, this.gy);
+    const h = groundHeight(this.worldSeed, this.gx, this.gy);
     this.bobPhase += dtSec * (this.state === "moving" ? 11 : 3);
     const bob = this.state === "moving" ? Math.sin(this.bobPhase) * 1.2 : 0;
-    this.container.setPosition(x, y + bob);
+    this.container.setPosition(x, y - h + bob);
     this.shadow.setScale(1, 1 - Math.abs(bob) * 0.04);
     this.updateDepth();
   }

@@ -23,11 +23,14 @@ import {
   biomeAt,
   Biome,
   BIOME_PALETTES,
+  groundHeight,
   hasBushAt,
   hasFishAt,
   hasMushroomAt,
   hasTreeAt,
+  heightAt,
   isLandTile,
+  MAX_TERRAIN_HEIGHT_PX,
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
@@ -57,7 +60,6 @@ export interface GameSceneInit {
 const SIGHT_RADIUS = 5.5;
 const CHUNK_SIZE = 16;
 const VIEW_PAD_TILES = 8;
-const FELSEN_ELEV = 6;
 
 const BIOME_MINI_COLOR: Record<Biome, string> = {
   wiesen: "#3a6b3a",
@@ -67,6 +69,8 @@ const BIOME_MINI_COLOR: Record<Biome, string> = {
   lake: "#244a72",
   river: "#3a78b0",
   felsen: "#707070",
+  gebirge: "#383838",
+  canyon: "#8a4528",
 };
 
 const MINIMAP_PX = 200;
@@ -147,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     const initData = (this as Phaser.Scene).scene.settings.data as GameSceneInit;
 
     for (const u of initData.init.units) {
-      this.units.set(u.id, new Unit(this, u, u.owner === this.playerId));
+      this.units.set(u.id, new Unit(this, u, u.owner === this.playerId, this.seed));
       this.playerColors[u.owner] = u.color;
     }
 
@@ -404,21 +408,21 @@ export class GameScene extends Phaser.Scene {
         if (hasTreeAt(this.seed, i, j)) {
           const id = objKey("tree", i, j);
           if (!this.removedKeys.has(id) && !this.trees.has(id)) {
-            const t = new Tree(this, id, i, j);
+            const t = new Tree(this, id, i, j, this.seed);
             trees.set(id, t);
             this.trees.set(id, t);
           }
         } else if (hasBushAt(this.seed, i, j)) {
           const id = objKey("bush", i, j);
           if (!this.removedKeys.has(id) && !this.bushes.has(id)) {
-            const b = new Bush(this, i, j);
+            const b = new Bush(this, i, j, this.seed);
             bushes.set(id, b);
             this.bushes.set(id, b);
           }
         } else if (hasMushroomAt(this.seed, i, j)) {
           const id = objKey("mushroom", i, j);
           if (!this.removedKeys.has(id) && !this.mushrooms.has(id)) {
-            const m = new Mushroom(this, i, j);
+            const m = new Mushroom(this, i, j, this.seed);
             mushrooms.set(id, m);
             this.mushrooms.set(id, m);
           }
@@ -465,7 +469,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawTile(
     g: Phaser.GameObjects.Graphics,
-    elev: Phaser.GameObjects.Graphics,
+    _elev: Phaser.GameObjects.Graphics,
     i: number,
     j: number,
   ): void {
@@ -476,30 +480,42 @@ export class GameScene extends Phaser.Scene {
     const fill = palette[variant];
     const isWater = biome === "lake" || biome === "river";
 
-    if (biome === "felsen") {
-      this.drawFelsenTile(elev, i, j, x, y, fill);
-      return;
-    }
+    const hN = isWater ? 0 : heightAt(this.seed, i, j);
+    const hE = isWater ? 0 : heightAt(this.seed, i + 1, j);
+    const hS = isWater ? 0 : heightAt(this.seed, i + 1, j + 1);
+    const hW = isWater ? 0 : heightAt(this.seed, i, j + 1);
+    const avgH = (hN + hE + hS + hW) * 0.25;
 
     let tileFill = fill;
     if (isWater) {
       tileFill = this.waterShadeAt(i, j);
+    } else {
+      const SLOPE_SCALE = 16;
+      const slopeY = (hS - hN) / SLOPE_SCALE;
+      const slopeX = (hE - hW) / SLOPE_SCALE;
+      const light = Phaser.Math.Clamp(slopeY * 0.55 + slopeX * 0.35, -0.55, 0.55);
+      const elevTint = (avgH / MAX_TERRAIN_HEIGHT_PX) * 0.15;
+      const brightness = Phaser.Math.Clamp(1 + light + elevTint, 0.45, 1.45);
+      tileFill = shadeColor(fill, brightness);
     }
+
     g.fillStyle(tileFill, 1);
-    g.lineStyle(1, isWater ? 0x16304a : 0x244524, isWater ? 0.2 : 0.18);
     g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
-    g.lineTo(x, y + TILE_H);
-    g.lineTo(x - TILE_W / 2, y + TILE_H / 2);
+    g.moveTo(x, y - hN);
+    g.lineTo(x + TILE_W / 2, y + TILE_H / 2 - hE);
+    g.lineTo(x, y + TILE_H - hS);
+    g.lineTo(x - TILE_W / 2, y + TILE_H / 2 - hW);
     g.closePath();
     g.fillPath();
-    g.strokePath();
+    if (isWater) {
+      g.lineStyle(1, 0x16304a, 0.2);
+      g.strokePath();
+    }
 
     const decor = tileDecor(this.seed, i, j);
     const dx = (((decor >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.4;
     const dy = (((decor >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.4;
-    const cy = y + TILE_H / 2;
+    const cy = y + TILE_H / 2 - avgH;
 
     if (isWater) {
       if ((decor >> 3) % 5 === 0) {
@@ -543,6 +559,39 @@ export class GameScene extends Phaser.Scene {
         g.fillStyle(0x6c5a30, 0.7);
         g.fillCircle(x + dx, cy + dy, 1.6);
       }
+    } else if (biome === "felsen") {
+      const r = ((decor >> 3) & 0xff) / 255;
+      g.fillStyle(0x4a4a4a, 0.85);
+      g.fillCircle(x + dx, cy + dy, 2 + r * 1.5);
+      g.fillStyle(0x9a9a9a, 0.6);
+      g.fillCircle(x + dx - 1.5, cy + dy - 1, 1.2);
+      if ((decor >> 11) % 5 === 0) {
+        g.fillStyle(0x3a3a3a, 0.8);
+        g.fillCircle(x + dx + 4, cy + dy + 2, 1.4);
+      }
+    } else if (biome === "gebirge") {
+      const r = ((decor >> 3) & 0xff) / 255;
+      g.fillStyle(0x2a2a2a, 0.9);
+      g.fillTriangle(
+        x + dx, cy + dy - 4 - r * 2,
+        x + dx - 3, cy + dy + 1,
+        x + dx + 3, cy + dy + 1,
+      );
+      g.fillStyle(0xb0b0b0, 0.55);
+      g.fillTriangle(
+        x + dx - 0.4, cy + dy - 3 - r * 2,
+        x + dx - 1.4, cy + dy + 0.5,
+        x + dx + 0.5, cy + dy + 0.5,
+      );
+    } else if (biome === "canyon") {
+      g.fillStyle(0x4a2a18, 0.65);
+      g.fillRect(x + dx - 4, cy + dy, 8, 1.2);
+      if ((decor >> 11) % 3 === 0) {
+        g.fillStyle(0x2e1a10, 0.7);
+        g.fillRect(x + dx - 2, cy + dy + 2, 4, 0.8);
+      }
+      g.fillStyle(0xd28a58, 0.4);
+      g.fillCircle(x + dx + 1, cy + dy - 1.4, 1.2);
     } else {
       if ((decor >> 3) % 7 === 0) {
         g.fillStyle(0x6cbf6c, 0.45);
@@ -574,64 +623,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     return 0x102540;
-  }
-
-  private drawFelsenTile(
-    g: Phaser.GameObjects.Graphics,
-    i: number,
-    j: number,
-    x: number,
-    y: number,
-    fill: number,
-  ): void {
-    const E = FELSEN_ELEV;
-    const yt = y - E;
-    const decor = tileDecor(this.seed, i, j);
-
-    const dark = 0x303030;
-    const darker = 0x222222;
-
-    g.fillStyle(darker, 1);
-    g.beginPath();
-    g.moveTo(x - TILE_W / 2, y + TILE_H / 2 - E);
-    g.lineTo(x, y + TILE_H - E);
-    g.lineTo(x, y + TILE_H);
-    g.lineTo(x - TILE_W / 2, y + TILE_H / 2);
-    g.closePath();
-    g.fillPath();
-
-    g.fillStyle(dark, 1);
-    g.beginPath();
-    g.moveTo(x + TILE_W / 2, y + TILE_H / 2 - E);
-    g.lineTo(x, y + TILE_H - E);
-    g.lineTo(x, y + TILE_H);
-    g.lineTo(x + TILE_W / 2, y + TILE_H / 2);
-    g.closePath();
-    g.fillPath();
-
-    g.fillStyle(fill, 1);
-    g.lineStyle(1, 0x404040, 0.35);
-    g.beginPath();
-    g.moveTo(x, yt);
-    g.lineTo(x + TILE_W / 2, yt + TILE_H / 2);
-    g.lineTo(x, yt + TILE_H);
-    g.lineTo(x - TILE_W / 2, yt + TILE_H / 2);
-    g.closePath();
-    g.fillPath();
-    g.strokePath();
-
-    const dx = (((decor >> 5) & 0xff) / 255 - 0.5) * TILE_W * 0.4;
-    const dy = (((decor >> 13) & 0xff) / 255 - 0.5) * TILE_H * 0.4;
-    const cy = yt + TILE_H / 2;
-    const r = ((decor >> 3) & 0xff) / 255;
-    g.fillStyle(0x4a4a4a, 0.85);
-    g.fillCircle(x + dx, cy + dy, 2 + r * 1.5);
-    g.fillStyle(0x9a9a9a, 0.6);
-    g.fillCircle(x + dx - 1.5, cy + dy - 1, 1.2);
-    if ((decor >> 11) % 5 === 0) {
-      g.fillStyle(0x3a3a3a, 0.8);
-      g.fillCircle(x + dx + 4, cy + dy + 2, 1.4);
-    }
   }
 
   private updateFog(): void {
@@ -872,7 +863,7 @@ export class GameScene extends Phaser.Scene {
     for (const snap of msg.units) {
       this.playerColors[snap.owner] = snap.color;
       if (!this.units.has(snap.id)) {
-        this.units.set(snap.id, new Unit(this, snap, snap.owner === this.playerId));
+        this.units.set(snap.id, new Unit(this, snap, snap.owner === this.playerId, this.seed));
       }
     }
     this.updateHud();
@@ -1164,6 +1155,13 @@ export class GameScene extends Phaser.Scene {
     }
     return "#888888";
   }
+}
+
+function shadeColor(color: number, factor: number): number {
+  const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
+  const g = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
+  const b = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
+  return (r << 16) | (g << 8) | b;
 }
 
 function lerpColor(a: number, b: number, t: number): number {

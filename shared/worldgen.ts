@@ -88,7 +88,9 @@ export type Biome =
   | "wald"
   | "savanne"
   | "wueste"
-  | "felsen";
+  | "felsen"
+  | "gebirge"
+  | "canyon";
 
 export const BIOME_PALETTES: Record<Biome, number[]> = {
   wiesen: [0x355d35, 0x3a6b3a, 0x437a43, 0x2f5a2f, 0x4d8a4d, 0x335a33],
@@ -98,6 +100,25 @@ export const BIOME_PALETTES: Record<Biome, number[]> = {
   lake: [0x1f3e64, 0x244a72, 0x2a5680, 0x1c3658],
   river: [0x356ea0, 0x3a78b0, 0x4486bf, 0x305f8c],
   felsen: [0x6a6a6a, 0x787878, 0x5e5e5e, 0x848484, 0x707070, 0x606060],
+  gebirge: [0x484848, 0x383838, 0x525252, 0x303030, 0x5a5a5a, 0x404040],
+  canyon: [0xa05530, 0x8a4528, 0xb46038, 0x6c3a20, 0xc26b40, 0x744028],
+};
+
+interface HeightProfile {
+  base: number;
+  hill: number;
+}
+
+const HEIGHT_PROFILES: Record<Biome, HeightProfile> = {
+  lake: { base: 0, hill: 0 },
+  river: { base: 0, hill: 0 },
+  wiesen: { base: 0, hill: 2 },
+  wald: { base: 3, hill: 9 },
+  savanne: { base: 4, hill: 12 },
+  wueste: { base: 1, hill: 6 },
+  felsen: { base: 22, hill: 22 },
+  gebirge: { base: 46, hill: 30 },
+  canyon: { base: -22, hill: 6 },
 };
 
 function smoothstep(t: number): number {
@@ -132,10 +153,43 @@ function fbm(seed: number, x: number, y: number, octaves: number): number {
   return total / max;
 }
 
+export function elevationAt(seed: number, i: number, j: number): number {
+  return fbm(seed ^ 0xeeeeee, i * 0.03, j * 0.03, 4);
+}
+
+export const MAX_TERRAIN_HEIGHT_PX = 76;
+const WATER_LEVEL = 0.30;
+
+export function heightAt(seed: number, i: number, j: number): number {
+  const b = biomeAt(seed, i, j);
+  const p = HEIGHT_PROFILES[b];
+  if (p.base === 0 && p.hill === 0) return 0;
+  const hill = fbm(seed ^ 0xa1b2c3, i * 0.10, j * 0.10, 3);
+  return p.base + hill * p.hill;
+}
+
+export function groundHeight(seed: number, gx: number, gy: number): number {
+  const i = Math.floor(gx);
+  const j = Math.floor(gy);
+  const fx = gx - i;
+  const fy = gy - j;
+  const h00 = heightAt(seed, i, j);
+  const h10 = heightAt(seed, i + 1, j);
+  const h01 = heightAt(seed, i, j + 1);
+  const h11 = heightAt(seed, i + 1, j + 1);
+  return (
+    h00 * (1 - fx) * (1 - fy) +
+    h10 * fx * (1 - fy) +
+    h01 * (1 - fx) * fy +
+    h11 * fx * fy
+  );
+}
+
 function biomeRaw(seed: number, i: number, j: number): Biome {
-  const elev = fbm(seed ^ 0xeeeeee, i * 0.03, j * 0.03, 4);
-  if (elev < 0.33) return "lake";
-  if (elev > 0.78) return "felsen";
+  const elev = elevationAt(seed, i, j);
+  if (elev < WATER_LEVEL) return "lake";
+  if (elev > 0.85) return "gebirge";
+  if (elev > 0.72) return "felsen";
 
   const r = Math.abs(
     valueNoise(seed ^ 0x717171, i * 0.05 + 17.3, j * 0.05 + 7.7) - 0.5,
@@ -144,6 +198,14 @@ function biomeRaw(seed: number, i: number, j: number): Biome {
 
   const temp = fbm(seed ^ 0x111111, i * 0.045, j * 0.045, 3);
   const moist = fbm(seed ^ 0x222222, i * 0.055, j * 0.055, 3);
+  const dry = temp > 0.58 && moist < 0.5;
+
+  if (dry) {
+    const canyonRidge = Math.abs(
+      valueNoise(seed ^ 0xc417, i * 0.04 + 5.1, j * 0.04 + 11.7) - 0.5,
+    );
+    if (canyonRidge < 0.022) return "canyon";
+  }
 
   if (temp > 0.58) {
     if (moist < 0.38) return "wueste";
@@ -161,7 +223,7 @@ export function biomeAt(seed: number, i: number, j: number): Biome {
 
 export function isLandTile(seed: number, i: number, j: number): boolean {
   const b = biomeAt(seed, i, j);
-  return b !== "lake" && b !== "river" && b !== "felsen";
+  return b !== "lake" && b !== "river" && b !== "gebirge";
 }
 
 export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean {
@@ -180,7 +242,13 @@ export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean 
 export function hasTreeAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
   const biome = biomeRaw(seed, i, j);
-  if (biome === "lake" || biome === "river" || biome === "felsen") return false;
+  if (
+    biome === "lake" ||
+    biome === "river" ||
+    biome === "felsen" ||
+    biome === "gebirge" ||
+    biome === "canyon"
+  ) return false;
   let threshold: number;
   switch (biome) {
     case "wald":

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
+import { groundHeight } from "../shared/worldgen";
 
 export class Mushroom {
   scene: Phaser.Scene;
@@ -8,7 +9,7 @@ export class Mushroom {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
 
-  constructor(scene: Phaser.Scene, i: number, j: number) {
+  constructor(scene: Phaser.Scene, i: number, j: number, worldSeed: number) {
     this.scene = scene;
     this.i = i;
     this.j = j;
@@ -17,8 +18,10 @@ export class Mushroom {
     const cluster = 1 + (seed % 3);
     const scale = 0.95 + ((seed >> 5) % 5) / 30;
     const { x, y } = gridToScreen(i + 0.5, j + 0.5);
+    const h = groundHeight(worldSeed, i + 0.5, j + 0.5);
+    const wy = y - h;
 
-    this.shadow = scene.add.ellipse(x, y + 1, 11, 5, 0x000000, 0.28);
+    this.shadow = scene.add.ellipse(x, wy + 1, 11, 5, 0x000000, 0.28);
     this.shadow.setDepth((i + 0.5 + j + 0.5) * TILE_H - 0.5);
 
     const parts: Phaser.GameObjects.GameObject[] = [];
@@ -38,7 +41,7 @@ export class Mushroom {
       parts.push(stem, cap, dot1, dot2);
     }
 
-    this.container = scene.add.container(x, y, parts);
+    this.container = scene.add.container(x, wy, parts);
     this.container.setScale(scale);
     this.container.setDepth((i + 0.5 + j + 0.5) * TILE_H);
   }

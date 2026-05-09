@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
+import { groundHeight } from "../shared/worldgen";
 
 const VARIANTS = [
   { trunkW: 5, trunkH: 12, leafW: 22, leafH: 24, leafColor: 0x2e7a2e },
@@ -17,7 +18,7 @@ export class Tree {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
 
-  constructor(scene: Phaser.Scene, id: string, i: number, j: number) {
+  constructor(scene: Phaser.Scene, id: string, i: number, j: number, worldSeed: number) {
     this.scene = scene;
     this.id = id;
     this.i = i;
@@ -29,8 +30,10 @@ export class Tree {
     const scale = 1 + jitter;
 
     const { x, y } = gridToScreen(i + 0.5, j + 0.5);
+    const h = groundHeight(worldSeed, i + 0.5, j + 0.5);
+    const wy = y - h;
 
-    this.shadow = scene.add.ellipse(x, y + 2, v.leafW * 0.9, v.leafH * 0.35, 0x000000, 0.32);
+    this.shadow = scene.add.ellipse(x, wy + 2, v.leafW * 0.9, v.leafH * 0.35, 0x000000, 0.32);
     this.shadow.setDepth((i + 0.5 + j + 0.5) * TILE_H - 0.5);
 
     const trunk = scene.add.rectangle(0, -v.trunkH / 2, v.trunkW, v.trunkH, 0x5a3a1a);
@@ -48,7 +51,7 @@ export class Tree {
       0.55,
     );
 
-    this.container = scene.add.container(x, y, [trunk, leavesShadow, leaves, highlight]);
+    this.container = scene.add.container(x, wy, [trunk, leavesShadow, leaves, highlight]);
     this.container.setScale(scale);
     this.container.setDepth((i + 0.5 + j + 0.5) * TILE_H);
   }
