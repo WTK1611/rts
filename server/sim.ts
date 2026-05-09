@@ -23,7 +23,7 @@ import {
   UnitGender,
   UnitSnapshot,
 } from "../shared/protocol";
-import { Language, languageForSlot, pickFirstName } from "../shared/names";
+import { NameLanguage, languageForSlot, pickFirstName } from "../shared/names";
 import {
   artifactsFromSeed,
   Biome,
@@ -239,7 +239,7 @@ export class Sim {
   newUnits: UnitSnapshot[] = [];
   pregnancyTimer: Map<string, number> = new Map();
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
-  tribeLanguage: Language[] = new Array(MAX_PLAYERS).fill("de");
+  tribeLanguage: NameLanguage[] = new Array(MAX_PLAYERS).fill("de");
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
   campfires: Map<string, SimCampfire> = new Map();
@@ -862,7 +862,7 @@ export class Sim {
     return true;
   }
 
-  addPlayer(p: PlayerId, language?: Language): UnitSnapshot[] {
+  addPlayer(p: PlayerId, language?: NameLanguage): UnitSnapshot[] {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
     this.clearPregnanciesFor(p);
@@ -877,10 +877,13 @@ export class Sim {
     ];
     const created: SimUnit[] = [];
     const lang = this.tribeLanguage[p];
+    const usedNames = new Set<string>();
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 180;
       const gender = STARTING_GENDERS[k];
+      const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
+      usedNames.add(firstName);
       const u: SimUnit = {
         id: `u_p${p}_${k}`,
         owner: p,
@@ -901,7 +904,7 @@ export class Sim {
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
         ageSec: CHILD_AGE_SEC + ageJitter,
         gender,
-        firstName: pickFirstName(this.seed, lang, gender, p, k),
+        firstName,
         isChief: false,
         autoFollowing: false,
         autoFollowScanTimer: 0,
@@ -914,7 +917,7 @@ export class Sim {
     return created.map(this.snap);
   }
 
-  respawnTribe(p: PlayerId, language?: Language): UnitSnapshot[] {
+  respawnTribe(p: PlayerId, language?: NameLanguage): UnitSnapshot[] {
     this.active[p] = true;
     this.clearPregnanciesFor(p);
     this.resources[p] = emptyResources();
@@ -935,11 +938,14 @@ export class Sim {
     const created: SimUnit[] = [];
     const lang = this.tribeLanguage[p];
     const base = this.nextUnitIdx[p];
+    const usedNames = this.collectTribeNames(p);
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const idx = base + k;
       const ageJitter = rand01(this.seed ^ 0xa6e, idx, p) * 180;
       const gender = STARTING_GENDERS[k];
+      const firstName = pickFirstName(this.seed, lang, gender, p, idx, usedNames);
+      usedNames.add(firstName);
       const u: SimUnit = {
         id: `u_p${p}_${idx}`,
         owner: p,
@@ -960,7 +966,7 @@ export class Sim {
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, idx, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
         ageSec: CHILD_AGE_SEC + ageJitter,
         gender,
-        firstName: pickFirstName(this.seed, lang, gender, p, idx),
+        firstName,
         isChief: false,
         idleSec: 0,
         autoFollowing: false,
@@ -1809,6 +1815,8 @@ export class Sim {
     const gender: UnitGender =
       rand01(this.seed ^ 0xb1a, p, k) < 0.5 ? "m" : "f";
     const lang = this.tribeLanguage[p];
+    const usedNames = this.collectTribeNames(p);
+    const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
     const u: SimUnit = {
       id: `u_p${p}_${k}`,
       owner: p,
@@ -1829,7 +1837,7 @@ export class Sim {
       autoHuntScanTimer: 0,
       ageSec: 0,
       gender,
-      firstName: pickFirstName(this.seed, lang, gender, p, k),
+      firstName,
       isChief: false,
       idleSec: 0,
       autoFollowing: false,
@@ -1837,6 +1845,14 @@ export class Sim {
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));
+  }
+
+  private collectTribeNames(p: PlayerId): Set<string> {
+    const names = new Set<string>();
+    for (const u of this.units.values()) {
+      if (u.owner === p) names.add(u.firstName);
+    }
+    return names;
   }
 
   private updateChiefs(): void {

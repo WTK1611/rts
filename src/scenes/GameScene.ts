@@ -47,7 +47,7 @@ import {
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
-import { LANGUAGE_FLAG, LANGUAGE_LABEL, Language } from "../../shared/names";
+import { LANGUAGE_FLAG, LANGUAGE_LABEL, NameLanguage } from "../../shared/names";
 import { BIOME_MINI_COLOR } from "../biomeColors";
 import { t } from "../i18n";
 
@@ -2333,7 +2333,7 @@ export class GameScene extends Phaser.Scene {
       const eye = isBot ? `<span class="eye">${active ? "◉" : "◎"}</span>` : "";
       otherRows.push(
         `<div class="${cls}"${attr}><span class="swatch" style="background:${c}"></span>` +
-          `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as Language] ?? ""}">${flag}</span> ` : ""}` +
+          `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as NameLanguage] ?? ""}">${flag}</span> ` : ""}` +
           `${escapeHtml(n)} ${countChip(tribeCounts[i] ?? 0)}${eye}</div>`,
       );
     }
@@ -2355,7 +2355,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private flagFor(playerId: PlayerId): string {
-    const lang = this.tribeLanguages[playerId] as Language | undefined;
+    const lang = this.tribeLanguages[playerId] as NameLanguage | undefined;
     if (!lang) return "";
     return LANGUAGE_FLAG[lang] ?? "";
   }

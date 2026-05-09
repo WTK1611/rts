@@ -2,24 +2,42 @@ import { UnitGender } from "./protocol";
 
 export type Language = "de" | "es" | "fr" | "it" | "en" | "pt";
 
+export type NameLanguage = Language | "sv" | "el" | "ru" | "pl";
+
 export const LANGUAGES: Language[] = ["de", "es", "fr", "it", "en", "pt"];
 
-export const LANGUAGE_LABEL: Record<Language, string> = {
+export const NAME_LANGUAGES: NameLanguage[] = [
+  ...LANGUAGES,
+  "sv",
+  "el",
+  "ru",
+  "pl",
+];
+
+export const LANGUAGE_LABEL: Record<NameLanguage, string> = {
   de: "Deutsch",
   es: "Spanisch",
   fr: "Französisch",
   it: "Italienisch",
   en: "Englisch",
   pt: "Portugiesisch",
+  sv: "Schwedisch",
+  el: "Griechisch",
+  ru: "Russisch",
+  pl: "Polnisch",
 };
 
-export const LANGUAGE_FLAG: Record<Language, string> = {
+export const LANGUAGE_FLAG: Record<NameLanguage, string> = {
   de: "🇩🇪",
   es: "🇪🇸",
   fr: "🇫🇷",
   it: "🇮🇹",
   en: "🇬🇧",
   pt: "🇵🇹",
+  sv: "🇸🇪",
+  el: "🇬🇷",
+  ru: "🇷🇺",
+  pl: "🇵🇱",
 };
 
 interface NamePool {
@@ -27,7 +45,7 @@ interface NamePool {
   f: string[];
 }
 
-export const NAMES: Record<Language, NamePool> = {
+export const NAMES: Record<NameLanguage, NamePool> = {
   de: {
     m: [
       "Hans", "Karl", "Wilhelm", "Friedrich", "Heinrich",
@@ -124,6 +142,70 @@ export const NAMES: Record<Language, NamePool> = {
       "Madalena", "Rita", "Bárbara", "Diana", "Clara",
     ],
   },
+  sv: {
+    m: [
+      "Erik", "Sven", "Lars", "Olof", "Björn",
+      "Anders", "Gustav", "Per", "Nils", "Magnus",
+      "Knut", "Stig", "Ulf", "Ragnar", "Harald",
+      "Sigurd", "Torsten", "Holger", "Einar", "Hjalmar",
+      "Folke", "Arvid", "Mats", "Sune", "Bo",
+    ],
+    f: [
+      "Astrid", "Ingrid", "Sigrid", "Greta", "Linnea",
+      "Kerstin", "Britta", "Margit", "Elsa", "Karin",
+      "Maja", "Saga", "Freja", "Ebba", "Hilda",
+      "Tova", "Ylva", "Gunilla", "Inga", "Solveig",
+      "Birgitta", "Vilma", "Stina", "Ronja", "Annika",
+    ],
+  },
+  el: {
+    m: [
+      "Δημήτριος", "Νικόλαος", "Γεώργιος", "Κωνσταντίνος", "Αλέξανδρος",
+      "Ιωάννης", "Παναγιώτης", "Στέφανος", "Χρήστος", "Ανδρέας",
+      "Πέτρος", "Θεόδωρος", "Λεωνίδας", "Ηλίας", "Σπυρίδων",
+      "Βασίλειος", "Μιχαήλ", "Φίλιππος", "Αναστάσιος", "Λάμπρος",
+      "Ευάγγελος", "Ορέστης", "Παύλος", "Αχιλλέας", "Θησέας",
+    ],
+    f: [
+      "Μαρία", "Ελένη", "Σοφία", "Αικατερίνη", "Δέσποινα",
+      "Παναγιώτα", "Γεωργία", "Ελευθερία", "Αναστασία", "Ευαγγελία",
+      "Δήμητρα", "Άρτεμις", "Καλλιόπη", "Φωτεινή", "Ολυμπία",
+      "Ευδοκία", "Θεοδώρα", "Στέλλα", "Ζωή", "Ευτυχία",
+      "Αθηνά", "Ιφιγένεια", "Ασπασία", "Ευρυδίκη", "Χρυσούλα",
+    ],
+  },
+  ru: {
+    m: [
+      "Иван", "Алексей", "Николай", "Дмитрий", "Сергей",
+      "Владимир", "Михаил", "Андрей", "Виктор", "Борис",
+      "Юрий", "Олег", "Павел", "Игорь", "Степан",
+      "Фёдор", "Василий", "Григорий", "Антон", "Максим",
+      "Леонид", "Вячеслав", "Аркадий", "Тимофей", "Святослав",
+    ],
+    f: [
+      "Ольга", "Елена", "Татьяна", "Ирина", "Наталья",
+      "Мария", "Светлана", "Любовь", "Анна", "Екатерина",
+      "Галина", "Людмила", "Зинаида", "Валентина", "Надежда",
+      "Ксения", "Полина", "Дарья", "Алёна", "Аглая",
+      "Раиса", "Лариса", "Софья", "Антонина", "Вера",
+    ],
+  },
+  pl: {
+    m: [
+      "Jan", "Piotr", "Krzysztof", "Andrzej", "Stanisław",
+      "Tomasz", "Paweł", "Marek", "Jakub", "Wojciech",
+      "Tadeusz", "Mateusz", "Mikołaj", "Zbigniew", "Henryk",
+      "Kazimierz", "Władysław", "Leszek", "Bartosz", "Łukasz",
+      "Filip", "Maciej", "Sławomir", "Dariusz", "Eryk",
+    ],
+    f: [
+      "Anna", "Maria", "Katarzyna", "Małgorzata", "Agnieszka",
+      "Krystyna", "Barbara", "Ewa", "Elżbieta", "Zofia",
+      "Halina", "Jadwiga", "Wanda", "Magdalena", "Jolanta",
+      "Aleksandra", "Marta", "Karolina", "Iwona", "Beata",
+      "Bożena", "Łucja", "Stanisława", "Joanna", "Helena",
+    ],
+  },
 };
 
 function mix32(seed: number, a: number, b: number): number {
@@ -136,17 +218,30 @@ function mix32(seed: number, a: number, b: number): number {
 
 export function pickFirstName(
   seed: number,
-  language: Language,
+  language: NameLanguage,
   gender: UnitGender,
   slot: number,
   idx: number,
+  used?: ReadonlySet<string>,
 ): string {
   const pool = NAMES[language][gender];
   const h = mix32(seed, slot * 7919 + idx, gender === "m" ? 0xa11ce : 0xb0b);
-  return pool[h % pool.length];
+  const start = h % pool.length;
+  if (used && used.size > 0) {
+    for (let i = 0; i < pool.length; i++) {
+      const candidate = pool[(start + i) % pool.length];
+      if (!used.has(candidate)) return candidate;
+    }
+    const base = pool[start];
+    for (let n = 2; n < 1000; n++) {
+      const candidate = `${base} ${n}`;
+      if (!used.has(candidate)) return candidate;
+    }
+  }
+  return pool[start];
 }
 
-export function languageForSlot(seed: number, slot: number): Language {
+export function languageForSlot(seed: number, slot: number): NameLanguage {
   const h = mix32(seed, slot, 0x1a4e9);
-  return LANGUAGES[h % LANGUAGES.length];
+  return NAME_LANGUAGES[h % NAME_LANGUAGES.length];
 }

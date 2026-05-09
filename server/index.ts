@@ -11,7 +11,13 @@ import {
   TICK_RATE,
   UnitSnapshot,
 } from "../shared/protocol";
-import { Language, LANGUAGES, languageForSlot } from "../shared/names";
+import {
+  Language,
+  LANGUAGES,
+  NameLanguage,
+  NAME_LANGUAGES,
+  languageForSlot,
+} from "../shared/names";
 import { addScore, rankFor, topScores } from "./db";
 
 const LEADERBOARD_TOP_N = 50;
@@ -33,7 +39,7 @@ interface PlayerSlot {
   ws: WebSocket | null;
   name: string;
   id: PlayerId;
-  language: Language;
+  language: NameLanguage;
   bot?: AIBot;
 }
 
@@ -41,7 +47,7 @@ const BOT_COUNT = 3;
 const BOT_RESPAWN_DELAY_MS = 12000;
 const pendingBotRespawns: Map<PlayerId, number> = new Map();
 
-const TRIBE_NAMES_BY_LANG: Record<Language, string[]> = {
+const TRIBE_NAMES_BY_LANG: Record<NameLanguage, string[]> = {
   de: [
     "Wölfe", "Bären", "Adler", "Mammuts", "Falken",
     "Wisente", "Luchse", "Raben", "Hirsche", "Eber",
@@ -72,13 +78,33 @@ const TRIBE_NAMES_BY_LANG: Record<Language, string[]> = {
     "Corvos", "Linces", "Bisontes", "Javalis", "Raposas",
     "Cabras", "Camurças",
   ],
+  sv: [
+    "Vargar", "Björnar", "Örnar", "Falkar", "Hjortar",
+    "Korpar", "Lodjur", "Visenter", "Vildsvin", "Rävar",
+    "Stenbockar", "Älgar",
+  ],
+  el: [
+    "Λύκοι", "Αρκούδες", "Αετοί", "Γεράκια", "Ελάφια",
+    "Κοράκια", "Λύγκες", "Βίσωνες", "Αγριόχοιροι", "Αλεπούδες",
+    "Λέοντες", "Ταύροι",
+  ],
+  ru: [
+    "Волки", "Медведи", "Орлы", "Соколы", "Олени",
+    "Вороны", "Рыси", "Зубры", "Кабаны", "Лисы",
+    "Туры", "Лоси",
+  ],
+  pl: [
+    "Wilki", "Niedźwiedzie", "Orły", "Sokoły", "Jelenie",
+    "Kruki", "Rysie", "Żubry", "Dziki", "Lisy",
+    "Tury", "Łosie",
+  ],
 };
 
 function pickBotNames(
   count: number,
-): Array<{ name: string; language: Language }> {
-  const pool: Array<{ name: string; language: Language }> = [];
-  for (const lang of Object.keys(TRIBE_NAMES_BY_LANG) as Language[]) {
+): Array<{ name: string; language: NameLanguage }> {
+  const pool: Array<{ name: string; language: NameLanguage }> = [];
+  for (const lang of NAME_LANGUAGES) {
     for (const name of TRIBE_NAMES_BY_LANG[lang]) {
       pool.push({ name, language: lang });
     }
@@ -238,7 +264,7 @@ function joinPlayer(
     return;
   }
 
-  const language: Language =
+  const language: NameLanguage =
     requestedLanguage &&
     (LANGUAGES as readonly string[]).includes(requestedLanguage)
       ? (requestedLanguage as Language)
