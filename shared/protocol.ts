@@ -17,6 +17,7 @@ export interface UnitSnapshot {
   hpMax: number;
   ageSec: number;
   gender: UnitGender;
+  firstName: string;
 }
 
 export interface SpawnInfo {
@@ -96,6 +97,7 @@ export interface InitMessage {
   spawn: SpawnInfo;
   resources: Resources[];
   names: string[];
+  languages: string[];
   footprints: Footprint[];
   animals: AnimalSnapshot[];
 }
@@ -105,6 +107,8 @@ export interface EncounterEvent {
   b: PlayerId;
   bornForA: boolean;
   bornForB: boolean;
+  transfersAtoB: number;
+  transfersBtoA: number;
 }
 
 export interface StateMessage {
@@ -118,6 +122,7 @@ export interface StateMessage {
   animals: AnimalSnapshot[];
   removedAnimalIds: string[];
   deadUnitIds: string[];
+  outOfSightUnitIds: string[];
   newUnits: UnitSnapshot[];
   encounters: EncounterEvent[];
   growthProgress: number[];
@@ -128,6 +133,7 @@ export interface OpponentJoinedMessage {
   type: "opponentJoined";
   playerId: PlayerId;
   name: string;
+  language: string;
   units: UnitSnapshot[];
 }
 

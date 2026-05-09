@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Sim } from "./sim";
+import { AIBot } from "./aiBot";
 import {
   AnimalSnapshot,
   ClientMessage,
@@ -9,15 +10,66 @@ import {
   TICK_RATE,
   UnitSnapshot,
 } from "../shared/protocol";
+import { Language, languageForSlot } from "../shared/names";
 
 interface PlayerSlot {
-  ws: WebSocket;
+  ws: WebSocket | null;
   name: string;
   id: PlayerId;
+  language: Language;
+  bot?: AIBot;
+}
+
+const BOT_COUNT = 3;
+
+const TRIBE_NAMES_BY_LANG: Record<Language, string[]> = {
+  de: [
+    "Wölfe", "Bären", "Adler", "Mammuts", "Falken",
+    "Wisente", "Luchse", "Raben", "Hirsche", "Eber",
+    "Füchse", "Steinböcke",
+  ],
+  en: [
+    "Wolves", "Bears", "Eagles", "Hawks", "Lions",
+    "Stags", "Ravens", "Bison", "Lynx", "Boars",
+    "Foxes", "Ibex",
+  ],
+  it: [
+    "Lupi", "Orsi", "Aquile", "Falchi", "Cervi",
+    "Corvi", "Linci", "Bisonti", "Cinghiali", "Volpi",
+    "Stambecchi", "Camosci",
+  ],
+  es: [
+    "Lobos", "Osos", "Águilas", "Halcones", "Ciervos",
+    "Cuervos", "Linces", "Bisontes", "Jabalíes", "Zorros",
+    "Íbices", "Sarrios",
+  ],
+  fr: [
+    "Loups", "Ours", "Aigles", "Faucons", "Cerfs",
+    "Corbeaux", "Lynx", "Bisons", "Sangliers", "Renards",
+    "Bouquetins", "Chamois",
+  ],
+};
+
+function pickBotNames(
+  count: number,
+): Array<{ name: string; language: Language }> {
+  const pool: Array<{ name: string; language: Language }> = [];
+  for (const lang of Object.keys(TRIBE_NAMES_BY_LANG) as Language[]) {
+    for (const name of TRIBE_NAMES_BY_LANG[lang]) {
+      pool.push({ name, language: lang });
+    }
+  }
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
 }
 
 const ANIMAL_VIEW_RADIUS = 10;
 const ANIMAL_VIEW_RADIUS_SQ = ANIMAL_VIEW_RADIUS * ANIMAL_VIEW_RADIUS;
+const UNIT_VIEW_RADIUS = 10;
+const UNIT_VIEW_RADIUS_SQ = UNIT_VIEW_RADIUS * UNIT_VIEW_RADIUS;
 
 const world = {
   sim: new Sim((Date.now() ^ Math.floor(Math.random() * 0xffffff)) >>> 0),
@@ -27,6 +79,11 @@ const world = {
     { length: MAX_PLAYERS },
     () => new Set<string>(),
   ),
+  knownUnits: Array.from(
+    { length: MAX_PLAYERS },
+    () => new Set<string>(),
+  ),
+  bots: [] as AIBot[],
 };
 
 const slots = new Map<WebSocket, PlayerSlot>();
@@ -38,12 +95,41 @@ function send(ws: WebSocket, msg: ServerMessage): void {
 function broadcast(msg: ServerMessage): void {
   const data = JSON.stringify(msg);
   for (const p of world.players) {
-    if (p && p.ws.readyState === p.ws.OPEN) p.ws.send(data);
+    if (!p || !p.ws) continue;
+    if (p.ws.readyState === p.ws.OPEN) p.ws.send(data);
+  }
+}
+
+function spawnBots(): void {
+  const picks = pickBotNames(BOT_COUNT);
+  for (const pick of picks) {
+    let slotId = -1;
+    for (let i = MAX_PLAYERS - 1; i >= 0; i--) {
+      if (world.players[i] === null) {
+        slotId = i;
+        break;
+      }
+    }
+    if (slotId === -1) return;
+    world.sim.addPlayer(slotId, pick.language);
+    const bot = new AIBot(world.sim, slotId);
+    world.players[slotId] = {
+      ws: null,
+      name: pick.name,
+      id: slotId,
+      language: pick.language,
+      bot,
+    };
+    world.bots.push(bot);
   }
 }
 
 function namesOf(): string[] {
   return world.players.map((p) => p?.name ?? "");
+}
+
+function languagesOf(): string[] {
+  return world.players.map((p) => p?.language ?? "");
 }
 
 function visibleAnimalsFor(
@@ -68,6 +154,31 @@ function visibleAnimalsFor(
   return out;
 }
 
+function visibleUnitsFor(
+  ownerId: PlayerId,
+  units: UnitSnapshot[],
+): UnitSnapshot[] {
+  const myUnits: UnitSnapshot[] = [];
+  const others: UnitSnapshot[] = [];
+  for (const u of units) {
+    if (u.owner === ownerId) myUnits.push(u);
+    else others.push(u);
+  }
+  const out: UnitSnapshot[] = myUnits.slice();
+  if (myUnits.length === 0) return out;
+  for (const a of others) {
+    for (const u of myUnits) {
+      const dx = a.gx - u.gx;
+      const dy = a.gy - u.gy;
+      if (dx * dx + dy * dy <= UNIT_VIEW_RADIUS_SQ) {
+        out.push(a);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 function joinPlayer(ws: WebSocket, name: string): void {
   const slotId = world.players.findIndex((p) => p === null);
   if (slotId === -1) {
@@ -78,10 +189,11 @@ function joinPlayer(ws: WebSocket, name: string): void {
     return;
   }
 
-  const slot: PlayerSlot = { ws, name, id: slotId };
+  const language = languageForSlot(world.sim.seed, slotId);
+  const slot: PlayerSlot = { ws, name, id: slotId, language };
   world.players[slotId] = slot;
   slots.set(ws, slot);
-  world.sim.addPlayer(slotId);
+  world.sim.addPlayer(slotId, language);
 
   const allUnits = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
@@ -89,6 +201,10 @@ function joinPlayer(ws: WebSocket, name: string): void {
   const known = world.knownAnimals[slotId];
   known.clear();
   for (const a of visibleAnimals) known.add(a.id);
+
+  const knownU = world.knownUnits[slotId];
+  knownU.clear();
+  for (const u of allUnits) knownU.add(u.id);
 
   send(ws, {
     type: "init",
@@ -100,6 +216,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
     spawn: world.sim.spawns[slotId],
     resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
+    languages: languagesOf(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
   });
@@ -107,12 +224,16 @@ function joinPlayer(ws: WebSocket, name: string): void {
   const newUnits = allUnits.filter((u) => u.owner === slotId);
   for (const other of world.players) {
     if (!other || other.id === slotId) continue;
+    if (!other.ws) continue;
     send(other.ws, {
       type: "opponentJoined",
       playerId: slotId,
       name,
+      language,
       units: newUnits,
     });
+    const otherKnown = world.knownUnits[other.id];
+    for (const u of newUnits) otherKnown.add(u.id);
   }
 }
 
@@ -120,6 +241,7 @@ function tick(): void {
   const now = Date.now();
   const dt = (now - world.lastTick) / 1000;
   world.lastTick = now;
+  for (const bot of world.bots) bot.update(dt);
   world.sim.step(dt);
 
   const units = world.sim.unitsSnapshot();
@@ -139,6 +261,7 @@ function tick(): void {
 
   for (const slot of world.players) {
     if (!slot) continue;
+    if (!slot.ws) continue;
     if (slot.ws.readyState !== slot.ws.OPEN) continue;
 
     const visible = visibleAnimalsFor(slot.id, units, allAnimals);
@@ -152,10 +275,31 @@ function tick(): void {
     }
     world.knownAnimals[slot.id] = visibleIds;
 
+    const visibleUnits = visibleUnitsFor(slot.id, units);
+    const visibleUnitIds = new Set<string>();
+    for (const u of visibleUnits) visibleUnitIds.add(u.id);
+
+    const knownU = world.knownUnits[slot.id];
+    const outOfSightUnitIds: string[] = [];
+    const deadSet = new Set(deadUnitIds);
+    for (const id of knownU) {
+      if (!visibleUnitIds.has(id) && !deadSet.has(id)) {
+        outOfSightUnitIds.push(id);
+      }
+    }
+    world.knownUnits[slot.id] = visibleUnitIds;
+
+    const visibleNewUnits: UnitSnapshot[] = [];
+    for (const nu of newUnits) {
+      if (nu.owner === slot.id || visibleUnitIds.has(nu.id)) {
+        visibleNewUnits.push(nu);
+      }
+    }
+
     send(slot.ws, {
       type: "state",
       tick: tickNo,
-      units,
+      units: visibleUnits,
       resources,
       newRemovedObjects,
       respawnedObjects,
@@ -163,7 +307,8 @@ function tick(): void {
       animals: visible,
       removedAnimalIds,
       deadUnitIds,
-      newUnits,
+      outOfSightUnitIds,
+      newUnits: visibleNewUnits,
       encounters,
       growthProgress: growth.progress,
       growthActive: growth.active,
@@ -179,9 +324,10 @@ function disconnect(ws: WebSocket): void {
   slots.delete(ws);
   world.players[slot.id] = null;
   world.knownAnimals[slot.id] = new Set();
+  world.knownUnits[slot.id] = new Set();
   const removedUnitIds = world.sim.removePlayer(slot.id);
   for (const other of world.players) {
-    if (!other) continue;
+    if (!other || !other.ws) continue;
     send(other.ws, {
       type: "opponentLeft",
       playerId: slot.id,
@@ -190,9 +336,12 @@ function disconnect(ws: WebSocket): void {
   }
 }
 
+spawnBots();
+
 const port = Number(process.env.PORT ?? 8787);
 const wss = new WebSocketServer({ port });
 console.log(`[rts-server] listening on ws://0.0.0.0:${port}`);
+console.log(`[rts-server] ${world.bots.length} KI-Stämme aktiv`);
 
 wss.on("connection", (ws) => {
   ws.on("message", (raw) => {

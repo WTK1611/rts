@@ -41,11 +41,13 @@ export class Unit {
   hpMax: number;
   ageSec: number;
   gender: UnitGender;
+  firstName: string;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
   private hpBarBg: Phaser.GameObjects.Rectangle;
   private hpBarFill: Phaser.GameObjects.Rectangle;
+  private nameLabel: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, snap: UnitSnapshot, isLocal: boolean, worldSeed: number) {
     this.scene = scene;
@@ -61,6 +63,7 @@ export class Unit {
     this.hpMax = snap.hpMax;
     this.ageSec = snap.ageSec;
     this.gender = snap.gender;
+    this.firstName = snap.firstName;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -99,6 +102,17 @@ export class Unit {
     this.hpBarFill = scene.add.rectangle(-9, -38, 18, 3, 0x4ed44e)
       .setOrigin(0, 0.5);
 
+    this.nameLabel = scene.add
+      .text(0, -46, snap.firstName, {
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontSize: "10px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+      })
+      .setOrigin(0.5, 1);
+
     const layers: Phaser.GameObjects.GameObject[] = [
       this.shadow,
       this.ownerRing,
@@ -110,7 +124,7 @@ export class Unit {
     if (this.hairBack) layers.push(this.hairBack);
     layers.push(this.head, this.hair);
     if (this.beard) layers.push(this.beard);
-    layers.push(this.hpBarBg, this.hpBarFill);
+    layers.push(this.hpBarBg, this.hpBarFill, this.nameLabel);
     this.container = scene.add.container(x, y - h, layers);
     this.refreshHpBar();
     this.applyLifeCycleVisuals();
@@ -145,9 +159,14 @@ export class Unit {
     }
   }
 
-  applySnapshot(snap: UnitSnapshot): void {
+  applySnapshot(snap: UnitSnapshot, isLocal: boolean): void {
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
+    if (this.owner !== snap.owner || this.color !== snap.color) {
+      this.owner = snap.owner;
+      this.color = snap.color;
+      this.refreshOwnerVisuals(isLocal);
+    }
     if (this.state !== snap.state) {
       this.state = snap.state;
       this.updateStateAnim();
@@ -162,6 +181,16 @@ export class Unit {
       this.ageSec = snap.ageSec;
       this.applyLifeCycleVisuals();
     }
+  }
+
+  private refreshOwnerVisuals(isLocal: boolean): void {
+    const dark = shade(this.color, 0.7);
+    const light = shade(this.color, 1.25);
+    this.body.setFillStyle(this.color);
+    this.bodyShadow.setFillStyle(dark, 0.6);
+    this.bodyHighlight.setFillStyle(light, 0.85);
+    const ringColor = isLocal ? 0xffffff : 0xff3333;
+    this.ownerRing.setStrokeStyle(1.5, ringColor, 0.7);
   }
 
   private applyLifeCycleVisuals(): void {

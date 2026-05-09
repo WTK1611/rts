@@ -16,6 +16,7 @@ import {
   UnitGender,
   UnitSnapshot,
 } from "../shared/protocol";
+import { Language, languageForSlot, pickFirstName } from "../shared/names";
 import {
   Biome,
   biomeAt,
@@ -61,7 +62,7 @@ export const PLAYER_COLORS: number[] = [
   0xff9933, 0x66e0d0, 0xff66c4, 0xd4b878, 0x9ca0ff,
 ];
 
-interface SimUnit {
+export interface SimUnit {
   id: string;
   owner: PlayerId;
   gx: number;
@@ -81,6 +82,7 @@ interface SimUnit {
   autoHuntScanTimer: number;
   ageSec: number;
   gender: UnitGender;
+  firstName: string;
 }
 
 const MAX_AGE_SEC = 420;
@@ -131,7 +133,7 @@ const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
 const GROUP_FIGHT_RANGE = 7;
 const ANIMAL_ESCAPE_RANGE_MULT = 1.8;
 
-interface SimAnimal {
+export interface SimAnimal {
   id: string;
   kind: AnimalKind;
   hp: number;
@@ -194,6 +196,7 @@ export class Sim {
   growthTimer: number[] = new Array(MAX_PLAYERS).fill(0);
   growthActive: boolean[] = new Array(MAX_PLAYERS).fill(false);
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
+  tribeLanguage: Language[] = new Array(MAX_PLAYERS).fill("de");
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
   tick = 0;
@@ -672,12 +675,13 @@ export class Sim {
     return true;
   }
 
-  addPlayer(p: PlayerId): UnitSnapshot[] {
+  addPlayer(p: PlayerId, language?: Language): UnitSnapshot[] {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
     this.growthTimer[p] = 0;
     this.growthActive[p] = false;
     this.nextUnitIdx[p] = TRIBE_SIZE;
+    this.tribeLanguage[p] = language ?? languageForSlot(this.seed, p);
     const a = this.spawns[p];
     const offsets: Array<[number, number]> = [
       [0, 0],
@@ -686,9 +690,11 @@ export class Sim {
       [1, 1],
     ];
     const created: SimUnit[] = [];
+    const lang = this.tribeLanguage[p];
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 180;
+      const gender = STARTING_GENDERS[k];
       const u: SimUnit = {
         id: `u_p${p}_${k}`,
         owner: p,
@@ -708,7 +714,8 @@ export class Sim {
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
         ageSec: CHILD_AGE_SEC + ageJitter,
-        gender: STARTING_GENDERS[k],
+        gender,
+        firstName: pickFirstName(this.seed, lang, gender, p, k),
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -757,6 +764,7 @@ export class Sim {
     hpMax: u.hpMax,
     ageSec: u.ageSec,
     gender: u.gender,
+    firstName: u.firstName,
   });
 
   consumeNewRemovedObjects(): RemovedObject[] {
@@ -1204,10 +1212,85 @@ export class Sim {
         if (!met) continue;
 
         this.lastEncounterTick.set(key, this.tick);
-        const bornForA = this.tryFreeBirth(a, byPlayer[a]);
-        const bornForB = this.tryFreeBirth(b, byPlayer[b]);
-        this.encounterEvents.push({ a, b, bornForA, bornForB });
+        const { aToB, bToA } = this.transferWomenForBalance(
+          a, b, byPlayer[a], byPlayer[b],
+        );
+        const listA = (aToB > 0 || bToA > 0)
+          ? byPlayer[a].filter((u) => u.owner === a)
+              .concat(byPlayer[b].filter((u) => u.owner === a))
+          : byPlayer[a];
+        const listB = (aToB > 0 || bToA > 0)
+          ? byPlayer[b].filter((u) => u.owner === b)
+              .concat(byPlayer[a].filter((u) => u.owner === b))
+          : byPlayer[b];
+        const bornForA = this.tryFreeBirth(a, listA);
+        const bornForB = this.tryFreeBirth(b, listB);
+        this.encounterEvents.push({
+          a, b, bornForA, bornForB,
+          transfersAtoB: aToB,
+          transfersBtoA: bToA,
+        });
       }
+    }
+  }
+
+  private transferWomenForBalance(
+    a: PlayerId,
+    b: PlayerId,
+    listA: SimUnit[],
+    listB: SimUnit[],
+  ): { aToB: number; bToA: number } {
+    const surplus = (list: SimUnit[]) => {
+      let m = 0;
+      let f = 0;
+      for (const u of list) {
+        if (u.gender === "m") m++;
+        else f++;
+      }
+      const paired = Math.min(m, f);
+      return { surplusM: m - paired, surplusF: f - paired };
+    };
+    const sA = surplus(listA);
+    const sB = surplus(listB);
+    let aToB = 0;
+    let bToA = 0;
+    if (sA.surplusF > 0 && sB.surplusM > 0) {
+      aToB = Math.min(
+        sA.surplusF,
+        sB.surplusM,
+        Math.max(0, MAX_TRIBE_SIZE - listB.length),
+      );
+    } else if (sA.surplusM > 0 && sB.surplusF > 0) {
+      bToA = Math.min(
+        sB.surplusF,
+        sA.surplusM,
+        Math.max(0, MAX_TRIBE_SIZE - listA.length),
+      );
+    }
+    if (aToB > 0) this.transferWomen(listA, b, aToB);
+    if (bToA > 0) this.transferWomen(listB, a, bToA);
+    return { aToB, bToA };
+  }
+
+  private transferWomen(
+    srcList: SimUnit[],
+    targetOwner: PlayerId,
+    count: number,
+  ): void {
+    const newColor = PLAYER_COLORS[targetOwner % PLAYER_COLORS.length];
+    let moved = 0;
+    for (const u of srcList) {
+      if (moved >= count) break;
+      if (u.gender !== "f") continue;
+      u.owner = targetOwner;
+      u.color = newColor;
+      u.path = [];
+      u.harvestTarget = null;
+      u.huntTarget = null;
+      u.huntTimer = 0;
+      u.harvestTimer = 0;
+      u.state = "idle";
+      moved++;
     }
   }
 
@@ -1300,6 +1383,7 @@ export class Sim {
     const k = this.nextUnitIdx[p]++;
     const gender: UnitGender =
       rand01(this.seed ^ 0xb1a, p, k) < 0.5 ? "m" : "f";
+    const lang = this.tribeLanguage[p];
     const u: SimUnit = {
       id: `u_p${p}_${k}`,
       owner: p,
@@ -1320,6 +1404,7 @@ export class Sim {
       autoHuntScanTimer: 0,
       ageSec: 0,
       gender,
+      firstName: pickFirstName(this.seed, lang, gender, p, k),
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));

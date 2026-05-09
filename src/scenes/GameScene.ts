@@ -38,6 +38,7 @@ import {
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
+import { LANGUAGE_FLAG, LANGUAGE_LABEL, Language } from "../../shared/names";
 import { BIOME_MINI_COLOR } from "../biomeColors";
 
 interface DragState {
@@ -49,8 +50,7 @@ interface DragState {
 interface Chunk {
   cx: number;
   cy: number;
-  graphics: Phaser.GameObjects.Graphics;
-  elevGraphics: Phaser.GameObjects.Graphics;
+  rt: Phaser.GameObjects.RenderTexture;
   trees: Map<string, Tree>;
   bushes: Map<string, Bush>;
   mushrooms: Map<string, Mushroom>;
@@ -90,6 +90,7 @@ export class GameScene extends Phaser.Scene {
   private playerId: PlayerId = 0;
   private seed = 0;
   private names: string[] = [];
+  private tribeLanguages: string[] = [];
   private removedKeys = new Set<string>();
   private serverTick = 0;
 
@@ -158,6 +159,13 @@ export class GameScene extends Phaser.Scene {
   private lastFootprintsBoundsKey = "";
   private lastFootprintsCount = -1;
 
+  private visSourceHash = -1;
+  private visBoundsKey = "";
+  private lastHoverIJ = "";
+  private visObjectCache = new Map<string, boolean>();
+  private chunkLoadQueue: Array<{ cx: number; cy: number; key: string }> = [];
+  private chunkLoadQueued = new Set<string>();
+
   constructor() {
     super("GameScene");
   }
@@ -169,6 +177,7 @@ export class GameScene extends Phaser.Scene {
     this.serverTick = data.init.tick;
     this.resources = data.init.resources.map((r) => ({ ...r }));
     this.names = data.init.names;
+    this.tribeLanguages = data.init.languages ?? [];
     this.removedKeys = new Set(
       data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
     );
@@ -468,24 +477,62 @@ export class GameScene extends Phaser.Scene {
     const cy0 = Math.floor(j0 / CHUNK_SIZE);
     const cy1 = Math.floor(j1 / CHUNK_SIZE);
 
+    const cam = this.cameras.main;
+    const centerX = cam.scrollX + cam.width / (2 * cam.zoom);
+    const centerY = cam.scrollY + cam.height / (2 * cam.zoom);
+
     const needed = new Set<string>();
+    const toQueue: Array<{ cx: number; cy: number; key: string; d: number }> = [];
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         const key = `${cx},${cy}`;
         needed.add(key);
-        if (!this.chunks.has(key)) this.loadChunk(cx, cy);
+        if (this.chunks.has(key) || this.chunkLoadQueued.has(key)) continue;
+        const chunkCx = (cx + 0.5) * CHUNK_SIZE;
+        const chunkCy = (cy + 0.5) * CHUNK_SIZE;
+        const sx = (chunkCx - chunkCy) * (TILE_W / 2);
+        const sy = (chunkCx + chunkCy) * (TILE_H / 2);
+        const dx = sx - centerX;
+        const dy = sy - centerY;
+        toQueue.push({ cx, cy, key, d: dx * dx + dy * dy });
       }
     }
+    if (toQueue.length > 0) {
+      toQueue.sort((a, b) => a.d - b.d);
+      for (const c of toQueue) {
+        this.chunkLoadQueue.push({ cx: c.cx, cy: c.cy, key: c.key });
+        this.chunkLoadQueued.add(c.key);
+      }
+    }
+
     for (const [key, chunk] of this.chunks) {
       if (!needed.has(key)) this.unloadChunk(key, chunk);
+    }
+
+    if (this.chunkLoadQueue.length > 0) {
+      const budget = this.chunks.size === 0 ? this.chunkLoadQueue.length : 1;
+      for (let i = 0; i < budget && this.chunkLoadQueue.length > 0; i++) {
+        const next = this.chunkLoadQueue.shift()!;
+        this.chunkLoadQueued.delete(next.key);
+        if (!needed.has(next.key)) continue;
+        this.loadChunk(next.cx, next.cy);
+      }
     }
   }
 
   private loadChunk(cx: number, cy: number): void {
-    const g = this.add.graphics();
-    g.setDepth(-100000);
-    const elev = this.add.graphics();
-    elev.setDepth(-99500);
+    const S = CHUNK_SIZE;
+    const PAD = 16;
+    const ofx = ((cx - cy) * S - (S - 1)) * (TILE_W / 2) - TILE_W / 2 - PAD;
+    const ofy = (cx + cy) * S * (TILE_H / 2) - MAX_TERRAIN_HEIGHT_PX - PAD;
+    const w = TILE_W * S + 2 * PAD;
+    const h = TILE_H * S + MAX_TERRAIN_HEIGHT_PX + 2 * PAD;
+
+    const rt = this.add.renderTexture(ofx, ofy, w, h);
+    rt.setOrigin(0, 0);
+    rt.setDepth(-100000);
+
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     const trees = new Map<string, Tree>();
     const bushes = new Map<string, Bush>();
     const mushrooms = new Map<string, Mushroom>();
@@ -497,7 +544,7 @@ export class GameScene extends Phaser.Scene {
       for (let di = 0; di < CHUNK_SIZE; di++) {
         const i = i0 + di;
         const j = j0 + dj;
-        this.drawTile(g, elev, i, j);
+        this.drawTile(g, g, i, j);
         if (hasTreeAt(this.seed, i, j)) {
           const id = objKey("tree", i, j);
           if (!this.removedKeys.has(id) && !this.trees.has(id)) {
@@ -536,15 +583,16 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+    rt.draw(g, -ofx, -ofy);
+    g.destroy();
     this.chunks.set(`${cx},${cy}`, {
-      cx, cy, graphics: g, elevGraphics: elev,
+      cx, cy, rt,
       trees, bushes, mushrooms, fishes, stones,
     });
   }
 
   private unloadChunk(key: string, chunk: Chunk): void {
-    chunk.graphics.destroy();
-    chunk.elevGraphics.destroy();
+    chunk.rt.destroy();
     for (const [tid, t] of chunk.trees) {
       t.container.destroy();
       t.shadow.destroy();
@@ -732,46 +780,63 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateFog(): void {
-    this.visible.clear();
-    let visHash = 0;
+    let srcHash = 0;
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
-      const r = SIGHT_RADIUS;
-      const r2 = r * r;
-      const cx = u.gx;
-      const cy = u.gy;
-      const i0 = Math.floor(cx - r);
-      const i1 = Math.floor(cx + r);
-      const j0 = Math.floor(cy - r);
-      const j1 = Math.floor(cy + r);
-      for (let j = j0; j <= j1; j++) {
-        for (let i = i0; i <= i1; i++) {
-          const dx = i + 0.5 - cx;
-          const dy = j + 0.5 - cy;
-          if (dx * dx + dy * dy <= r2) {
-            const k = `${i},${j}`;
-            if (!this.visible.has(k)) {
-              this.visible.add(k);
-              visHash = (Math.imul(visHash, 31) + i) | 0;
-              visHash = (Math.imul(visHash, 31) + j) | 0;
-              this.explored.add(k);
-            }
-          }
-        }
-      }
+      const fi = Math.floor(u.gx);
+      const fj = Math.floor(u.gy);
+      srcHash = (Math.imul(srcHash, 31) + fi) | 0;
+      srcHash = (Math.imul(srcHash, 31) + fj) | 0;
     }
 
     const { i0, i1, j0, j1 } = this.viewTileBounds();
     const boundsKey = `${i0},${i1},${j0},${j1}`;
+
+    const sourceChanged = srcHash !== this.visSourceHash;
+    const boundsChanged = boundsKey !== this.visBoundsKey;
+    if (!sourceChanged && !boundsChanged) {
+      this.applyDynamicVisibility();
+      return;
+    }
+
+    if (sourceChanged) {
+      this.visible.clear();
+      for (const u of this.units.values()) {
+        if (u.owner !== this.playerId) continue;
+        const r = SIGHT_RADIUS;
+        const r2 = r * r;
+        const cx = u.gx;
+        const cy = u.gy;
+        const ii0 = Math.floor(cx - r);
+        const ii1 = Math.floor(cx + r);
+        const jj0 = Math.floor(cy - r);
+        const jj1 = Math.floor(cy + r);
+        for (let j = jj0; j <= jj1; j++) {
+          for (let i = ii0; i <= ii1; i++) {
+            const dx = i + 0.5 - cx;
+            const dy = j + 0.5 - cy;
+            if (dx * dx + dy * dy <= r2) {
+              const k = `${i},${j}`;
+              if (!this.visible.has(k)) {
+                this.visible.add(k);
+                this.explored.add(k);
+              }
+            }
+          }
+        }
+      }
+      this.visSourceHash = srcHash;
+    }
+
     const exploredSize = this.explored.size;
     const fogChanged =
-      boundsKey !== this.lastFogBoundsKey ||
-      visHash !== this.lastFogVisibleHash ||
+      boundsChanged ||
+      sourceChanged ||
       exploredSize !== this.lastFogExploredSize;
 
     if (fogChanged) {
       this.lastFogBoundsKey = boundsKey;
-      this.lastFogVisibleHash = visHash;
+      this.lastFogVisibleHash = srcHash;
       this.lastFogExploredSize = exploredSize;
       this.fog.clear();
       for (let j = j0; j <= j1; j++) {
@@ -800,52 +865,79 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    for (const u of this.units.values()) {
-      const i = Math.floor(u.gx);
-      const j = Math.floor(u.gy);
-      const k = `${i},${j}`;
-      if (u.owner === this.playerId) {
-        u.container.setVisible(true);
-        continue;
-      }
-      u.container.setVisible(this.visible.has(k));
-    }
+    this.visBoundsKey = boundsKey;
+    this.applyStaticVisibility();
+    this.applyDynamicVisibility();
+  }
 
+  private applyStaticVisibility(): void {
+    const cache = this.visObjectCache;
     for (const t of this.trees.values()) {
-      const k = `${t.i},${t.j}`;
-      const v = this.visible.has(k);
+      const key = `t:${t.i},${t.j}`;
+      const v = this.visible.has(`${t.i},${t.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
       t.container.setVisible(v);
       t.shadow.setVisible(v);
     }
     for (const b of this.bushes.values()) {
-      const k = `${b.i},${b.j}`;
-      const v = this.visible.has(k);
+      const key = `b:${b.i},${b.j}`;
+      const v = this.visible.has(`${b.i},${b.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
       b.container.setVisible(v);
       b.shadow.setVisible(v);
     }
     for (const m of this.mushrooms.values()) {
-      const k = `${m.i},${m.j}`;
-      const v = this.visible.has(k);
+      const key = `m:${m.i},${m.j}`;
+      const v = this.visible.has(`${m.i},${m.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
       m.container.setVisible(v);
       m.shadow.setVisible(v);
     }
     for (const f of this.fishes.values()) {
-      const k = `${f.i},${f.j}`;
-      const v = this.visible.has(k);
+      const key = `f:${f.i},${f.j}`;
+      const v = this.visible.has(`${f.i},${f.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
       f.container.setVisible(v);
       f.shadow.setVisible(v);
     }
     for (const s of this.stones.values()) {
-      const k = `${s.i},${s.j}`;
-      const v = this.visible.has(k);
+      const key = `s:${s.i},${s.j}`;
+      const v = this.visible.has(`${s.i},${s.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
       s.container.setVisible(v);
       s.shadow.setVisible(v);
     }
+  }
+
+  private applyDynamicVisibility(): void {
+    const cache = this.visObjectCache;
+    for (const u of this.units.values()) {
+      const key = `u:${u.id}`;
+      let v: boolean;
+      if (u.owner === this.playerId) {
+        v = true;
+      } else {
+        const i = Math.floor(u.gx);
+        const j = Math.floor(u.gy);
+        v = this.visible.has(`${i},${j}`);
+      }
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      u.container.setVisible(v);
+    }
     for (const a of this.animals.values()) {
+      const key = `a:${a.id}`;
       const i = Math.floor(a.gx);
       const j = Math.floor(a.gy);
-      const k = `${i},${j}`;
-      a.container.setVisible(this.visible.has(k));
+      const v = this.visible.has(`${i},${j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      a.container.setVisible(v);
     }
   }
 
@@ -1008,9 +1100,11 @@ export class GameScene extends Phaser.Scene {
   private onOpponentJoined(msg: {
     playerId: PlayerId;
     name: string;
+    language?: string;
     units: import("../../shared/protocol").UnitSnapshot[];
   }): void {
     this.names[msg.playerId] = msg.name;
+    if (msg.language) this.tribeLanguages[msg.playerId] = msg.language;
     for (const snap of msg.units) {
       this.playerColors[snap.owner] = snap.color;
       if (!this.units.has(snap.id)) {
@@ -1060,12 +1154,29 @@ export class GameScene extends Phaser.Scene {
         if (ev.a !== this.playerId && ev.b !== this.playerId) continue;
         const otherId = ev.a === this.playerId ? ev.b : ev.a;
         const myBirth = ev.a === this.playerId ? ev.bornForA : ev.bornForB;
+        const myGain =
+          ev.a === this.playerId ? ev.transfersBtoA : ev.transfersAtoB;
+        const myLoss =
+          ev.a === this.playerId ? ev.transfersAtoB : ev.transfersBtoA;
         const name = this.names[otherId] || "anderem Stamm";
         if (myBirth) encounterBirthsForMe++;
-        const txt = myBirth
-          ? `Begegnung mit Stamm von ${name}: kostenlose Geburt!`
-          : `Begegnung mit Stamm von ${name}`;
-        this.showToast(txt, "join");
+        const parts: string[] = [`Begegnung mit Stamm von ${name}`];
+        if (myBirth) parts.push("kostenlose Geburt!");
+        if (myGain > 0) {
+          parts.push(
+            myGain === 1
+              ? "eine Frau ist zu dir gewechselt"
+              : `${myGain} Frauen sind zu dir gewechselt`,
+          );
+        }
+        if (myLoss > 0) {
+          parts.push(
+            myLoss === 1
+              ? "eine Frau hat deinen Stamm verlassen"
+              : `${myLoss} Frauen haben deinen Stamm verlassen`,
+          );
+        }
+        this.showToast(parts.join(": "), "join");
       }
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
@@ -1087,9 +1198,32 @@ export class GameScene extends Phaser.Scene {
         this.showToast(txt, "join");
       }
     }
+    if (msg.outOfSightUnitIds && msg.outOfSightUnitIds.length > 0) {
+      for (const id of msg.outOfSightUnitIds) {
+        const u = this.units.get(id);
+        if (!u) continue;
+        if (u.owner === this.playerId) continue;
+        u.destroy();
+        this.units.delete(id);
+        this.visObjectCache.delete(`u:${id}`);
+      }
+    }
     for (const snap of msg.units) {
       const u = this.units.get(snap.id);
-      if (u) u.applySnapshot(snap);
+      if (!u) {
+        const isLocalNew = snap.owner === this.playerId;
+        this.playerColors[snap.owner] = snap.color;
+        this.units.set(
+          snap.id,
+          new Unit(this, snap, isLocalNew, this.seed),
+        );
+        continue;
+      }
+      const isLocal = snap.owner === this.playerId;
+      if (u.owner === this.playerId && !isLocal && u.selected) {
+        u.setSelected(false);
+      }
+      u.applySnapshot(snap, isLocal);
     }
     for (const ro of msg.newRemovedObjects) {
       this.applyRemoved(ro);
@@ -1143,7 +1277,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (resChanged) {
-      this.resources = msg.resources.map((r) => ({ ...r }));
+      this.resources = msg.resources;
       this.updateHud();
     }
 
@@ -1305,7 +1439,13 @@ export class GameScene extends Phaser.Scene {
     this.lastPointerScreenX = p.x;
     this.lastPointerScreenY = p.y;
     const { gx, gy } = screenToGrid(p.worldX, p.worldY);
-    this.drawHover(Math.floor(gx), Math.floor(gy));
+    const i = Math.floor(gx);
+    const j = Math.floor(gy);
+    const ijKey = `${i},${j}`;
+    if (ijKey !== this.lastHoverIJ) {
+      this.lastHoverIJ = ijKey;
+      this.drawHover(i, j);
+    }
 
     if (!this.drag) return;
     const dx = p.x - this.drag.startX;
@@ -1521,8 +1661,10 @@ export class GameScene extends Phaser.Scene {
       const n = this.names[i];
       if (!n) continue;
       const c = this.playerColorCss(i);
+      const flag = this.flagFor(i);
       otherRows.push(
         `<div class="row"><span class="swatch" style="background:${c}"></span>` +
+          `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as Language] ?? ""}">${flag}</span> ` : ""}` +
           `${escapeHtml(n)}</div>`,
       );
     }
@@ -1530,12 +1672,19 @@ export class GameScene extends Phaser.Scene {
       ? `<div class="others">${otherRows.join("")}</div>`
       : `<div class="others">Warte auf weitere Stämme …</div>`;
 
+    const myFlag = this.flagFor(this.playerId);
     this.hud.innerHTML =
       `<div class="me"><span class="swatch" style="background:${myColor}"></span>` +
-      `Stamm von ${escapeHtml(myName)}</div>` +
+      `Stamm von ${escapeHtml(myName)}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""}</div>` +
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
       othersHtml;
+  }
+
+  private flagFor(playerId: PlayerId): string {
+    const lang = this.tribeLanguages[playerId] as Language | undefined;
+    if (!lang) return "";
+    return LANGUAGE_FLAG[lang] ?? "";
   }
 
   private growthHudHtml(): string {

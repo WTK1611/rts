@@ -100,6 +100,16 @@ function play(): void {
         },
         scene: [GameScene],
         disableContextMenu: true,
+        fps: {
+          target: 60,
+          smoothStep: true,
+        },
+        render: {
+          antialias: false,
+          pixelArt: false,
+          roundPixels: true,
+          powerPreference: "high-performance",
+        },
       });
       game.scene.start("GameScene", { net, init: msg });
     } else if (msg.type === "error") {
