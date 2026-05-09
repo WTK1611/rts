@@ -135,6 +135,7 @@ export class GameScene extends Phaser.Scene {
 
   private camTargetX = 0;
   private camTargetY = 0;
+  private lastZoom = 1;
 
   private lastPointerScreenX = -1;
   private lastPointerScreenY = -1;
@@ -262,9 +263,15 @@ export class GameScene extends Phaser.Scene {
     this.applyTribeKeys(dt);
     this.applyTribeFollow();
 
-    const lerp = 1 - Math.pow(0.001, dt);
-    cam.scrollX += (this.camTargetX - cam.scrollX) * lerp;
-    cam.scrollY += (this.camTargetY - cam.scrollY) * lerp;
+    if (cam.zoom !== this.lastZoom) {
+      this.lastZoom = cam.zoom;
+      cam.scrollX = this.camTargetX;
+      cam.scrollY = this.camTargetY;
+    } else {
+      const lerp = 1 - Math.pow(0.001, dt);
+      cam.scrollX += (this.camTargetX - cam.scrollX) * lerp;
+      cam.scrollY += (this.camTargetY - cam.scrollY) * lerp;
+    }
 
     this.updateChunks();
     this.updateFog();
@@ -344,9 +351,10 @@ export class GameScene extends Phaser.Scene {
     cx /= n;
     cy /= n;
     const w = gridToScreen(cx, cy);
+    const h = groundHeight(this.seed, cx, cy);
     const cam = this.cameras.main;
     this.camTargetX = w.x - cam.width / (2 * cam.zoom);
-    this.camTargetY = w.y - cam.height / (2 * cam.zoom);
+    this.camTargetY = w.y - h - cam.height / (2 * cam.zoom);
   }
 
   private applyEdgePan(dt: number, baseSpeed: number): void {
@@ -979,6 +987,12 @@ export class GameScene extends Phaser.Scene {
         a.destroy();
         this.animals.delete(id);
       }
+    }
+    for (const id of msg.deadUnitIds) {
+      const u = this.units.get(id);
+      if (!u) continue;
+      this.units.delete(id);
+      u.die(() => {});
     }
     for (const snap of msg.animals) {
       const a = this.animals.get(snap.id);

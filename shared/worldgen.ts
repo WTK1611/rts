@@ -1,7 +1,7 @@
 export const TILE_PALETTE_COUNT = 6;
 export const SPAWN_GUARD_RADIUS = 3;
-export const SPAWN_DISTANCE_MIN = 85;
-export const SPAWN_DISTANCE_MAX = 130;
+export const SPAWN_DISTANCE_MIN = 22;
+export const SPAWN_DISTANCE_MAX = 38;
 export const SPAWN_COUNT = 10;
 
 export interface SpawnArea {

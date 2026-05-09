@@ -28,9 +28,13 @@ export class Unit {
   selected = false;
   state: UnitSnapshot["state"] = "idle";
   worldSeed: number;
+  hp: number;
+  hpMax: number;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
+  private hpBarBg: Phaser.GameObjects.Rectangle;
+  private hpBarFill: Phaser.GameObjects.Rectangle;
 
   constructor(scene: Phaser.Scene, snap: UnitSnapshot, isLocal: boolean, worldSeed: number) {
     this.scene = scene;
@@ -42,6 +46,8 @@ export class Unit {
     this.targetGx = snap.gx;
     this.targetGy = snap.gy;
     this.worldSeed = worldSeed;
+    this.hp = snap.hp;
+    this.hpMax = snap.hpMax;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -67,6 +73,11 @@ export class Unit {
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
     const hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
 
+    this.hpBarBg = scene.add.rectangle(0, -38, 18, 3, 0x000000, 0.7)
+      .setStrokeStyle(0.5, 0x000000, 0.9);
+    this.hpBarFill = scene.add.rectangle(-9, -38, 18, 3, 0x4ed44e)
+      .setOrigin(0, 0.5);
+
     this.container = scene.add.container(x, y - h, [
       this.shadow,
       this.ownerRing,
@@ -76,7 +87,10 @@ export class Unit {
       bodyHighlight,
       this.head,
       hair,
+      this.hpBarBg,
+      this.hpBarFill,
     ]);
+    this.refreshHpBar();
     this.container.setSize(28, 36);
     this.container.setInteractive(
       new Phaser.Geom.Rectangle(-14, -32, 28, 36),
@@ -115,6 +129,20 @@ export class Unit {
       this.state = snap.state;
       this.updateStateAnim();
     }
+    if (this.hp !== snap.hp || this.hpMax !== snap.hpMax) {
+      this.hp = snap.hp;
+      this.hpMax = snap.hpMax;
+      this.refreshHpBar();
+    }
+  }
+
+  private refreshHpBar(): void {
+    const frac = this.hpMax > 0 ? Math.max(0, Math.min(1, this.hp / this.hpMax)) : 0;
+    this.hpBarFill.width = 18 * frac;
+    let color = 0x4ed44e;
+    if (frac < 0.33) color = 0xff5050;
+    else if (frac < 0.66) color = 0xf0c040;
+    this.hpBarFill.fillColor = color;
   }
 
   update(dtSec: number): void {
@@ -134,6 +162,33 @@ export class Unit {
   destroy(): void {
     this.harvestSwingTween?.stop();
     this.container.destroy();
+  }
+
+  die(onComplete: () => void): void {
+    this.harvestSwingTween?.stop();
+    this.harvestSwingTween = null;
+    this.scene.tweens.killTweensOf(this.selectionRing);
+    this.selectionRing.setVisible(false);
+    this.hpBarBg.setVisible(false);
+    this.hpBarFill.setVisible(false);
+    this.scene.tweens.add({
+      targets: this.container,
+      angle: 80,
+      y: this.container.y + 4,
+      duration: 600,
+      ease: "Cubic.easeIn",
+    });
+    this.scene.tweens.add({
+      targets: this.container,
+      alpha: 0,
+      delay: 2200,
+      duration: 1200,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        this.container.destroy();
+        onComplete();
+      },
+    });
   }
 
   private updateStateAnim(): void {

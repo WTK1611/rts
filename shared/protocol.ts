@@ -10,6 +10,8 @@ export interface UnitSnapshot {
   gy: number;
   state: "idle" | "moving" | "harvesting";
   color: number;
+  hp: number;
+  hpMax: number;
 }
 
 export interface SpawnInfo {
@@ -103,6 +105,7 @@ export interface StateMessage {
   newFootprints: Footprint[];
   animals: AnimalSnapshot[];
   removedAnimalIds: string[];
+  deadUnitIds: string[];
 }
 
 export interface OpponentJoinedMessage {

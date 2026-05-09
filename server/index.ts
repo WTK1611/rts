@@ -93,6 +93,7 @@ function tick(): void {
     newFootprints: world.sim.consumeNewFootprints(),
     animals: world.sim.animalsSnapshot(),
     removedAnimalIds: world.sim.consumeRemovedAnimalIds(),
+    deadUnitIds: world.sim.consumeDeadUnitIds(),
   });
 }
 

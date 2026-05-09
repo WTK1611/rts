@@ -68,7 +68,20 @@ interface SimUnit {
   huntTimer: number;
   harvestTimer: number;
   lastFootprintTile: { i: number; j: number } | null;
+  hp: number;
+  hpMax: number;
+  eatCooldown: number;
 }
+
+const UNIT_HP_MAX = 100;
+const UNIT_HP_LOSS_PER_TILE = 0.4;
+const UNIT_HP_LOSS_PER_SEC_IDLE = 0.25;
+const EAT_INTERVAL = 1.0;
+const HP_GAIN_FLEISCH = 15;
+const HP_GAIN_FISCH = 12;
+const HP_GAIN_BEEREN = 3;
+const HP_GAIN_PILZE = 2;
+const HP_GAIN_WASSER = 1;
 
 interface AnimalSpec {
   hp: number;
@@ -147,6 +160,7 @@ export class Sim {
   newFootprints: Footprint[] = [];
   animals: Map<string, SimAnimal> = new Map();
   removedAnimalIds: string[] = [];
+  deadUnitIds: string[] = [];
   tick = 0;
 
   constructor(seed: number) {
@@ -197,6 +211,12 @@ export class Sim {
   consumeRemovedAnimalIds(): string[] {
     const out = this.removedAnimalIds;
     this.removedAnimalIds = [];
+    return out;
+  }
+
+  consumeDeadUnitIds(): string[] {
+    const out = this.deadUnitIds;
+    this.deadUnitIds = [];
     return out;
   }
 
@@ -420,6 +440,9 @@ export class Sim {
         huntTimer: 0,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
+        hp: UNIT_HP_MAX,
+        hpMax: UNIT_HP_MAX,
+        eatCooldown: 0,
       };
       this.units.push(u);
       created.push(u);
@@ -457,6 +480,8 @@ export class Sim {
     gy: u.gy,
     state: u.state,
     color: u.color,
+    hp: u.hp,
+    hpMax: u.hpMax,
   });
 
   consumeNewRemovedObjects(): RemovedObject[] {
@@ -643,6 +668,7 @@ export class Sim {
     const fp: Footprint = { o: u.owner, i: ti, j: tj, t: this.tick };
     this.footprints.push(fp);
     this.newFootprints.push(fp);
+    u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_TILE);
     this.tryAutoPick(u, ti, tj);
   }
 
@@ -743,6 +769,31 @@ export class Sim {
     this.resources[u.owner][resKey] += gain;
   }
 
+  private hpGainForResource(resKey: keyof Resources): number {
+    if (resKey === "fleisch") return HP_GAIN_FLEISCH;
+    if (resKey === "fisch") return HP_GAIN_FISCH;
+    if (resKey === "beeren") return HP_GAIN_BEEREN;
+    if (resKey === "pilze") return HP_GAIN_PILZE;
+    if (resKey === "wasser") return HP_GAIN_WASSER;
+    return 0;
+  }
+
+  private autoEat(u: SimUnit): void {
+    if (u.hp >= u.hpMax) return;
+    const r = this.resources[u.owner];
+    const order: Array<keyof Resources> = [
+      "fleisch", "fisch", "pilze", "beeren", "wasser",
+    ];
+    for (const key of order) {
+      if (r[key] <= 0) continue;
+      const heal = this.hpGainForResource(key);
+      if (heal <= 0) continue;
+      r[key] -= 1;
+      u.hp = Math.min(u.hpMax, u.hp + heal);
+      return;
+    }
+  }
+
   private expireRegrows(): void {
     if (this.regrow.size === 0) return;
     for (const [k, expire] of this.regrow) {
@@ -774,6 +825,12 @@ export class Sim {
     this.tick++;
     this.stepAnimals(dt);
     for (const u of this.units) {
+      u.eatCooldown -= dt;
+      if (u.eatCooldown <= 0) {
+        u.eatCooldown = EAT_INTERVAL;
+        this.autoEat(u);
+      }
+      u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
       if (u.huntTarget) {
         if (this.tickHunt(u, dt)) continue;
       }
@@ -819,6 +876,21 @@ export class Sim {
     }
     this.expireFootprints();
     this.expireRegrows();
+    this.reapDeadUnits();
+  }
+
+  private reapDeadUnits(): void {
+    const survivors: SimUnit[] = [];
+    for (const u of this.units) {
+      if (u.hp <= 0) {
+        this.deadUnitIds.push(u.id);
+      } else {
+        survivors.push(u);
+      }
+    }
+    if (survivors.length !== this.units.length) {
+      this.units = survivors;
+    }
   }
 
   private objectStillThere(t: { kind: ObjectKind; i: number; j: number }): boolean {
