@@ -450,7 +450,7 @@ export class GameScene extends Phaser.Scene {
         } else if (hasStoneAt(this.seed, i, j)) {
           const id = objKey("stone", i, j);
           if (!this.removedKeys.has(id) && !this.stones.has(id)) {
-            const s = new Stone(this, i, j);
+            const s = new Stone(this, i, j, this.seed);
             stones.set(id, s);
             this.stones.set(id, s);
           }
@@ -1025,28 +1025,28 @@ export class GameScene extends Phaser.Scene {
     const v = this.visible.has(`${ro.i},${ro.j}`);
     if (ro.kind === "mushroom") {
       if (this.mushrooms.has(k)) return;
-      const m = new Mushroom(this, ro.i, ro.j);
+      const m = new Mushroom(this, ro.i, ro.j, this.seed);
       chunk.mushrooms.set(k, m);
       this.mushrooms.set(k, m);
       m.container.setVisible(v);
       m.shadow.setVisible(v);
     } else if (ro.kind === "bush") {
       if (this.bushes.has(k)) return;
-      const b = new Bush(this, ro.i, ro.j);
+      const b = new Bush(this, ro.i, ro.j, this.seed);
       chunk.bushes.set(k, b);
       this.bushes.set(k, b);
       b.container.setVisible(v);
       b.shadow.setVisible(v);
     } else if (ro.kind === "tree") {
       if (this.trees.has(k)) return;
-      const t = new Tree(this, k, ro.i, ro.j);
+      const t = new Tree(this, k, ro.i, ro.j, this.seed);
       chunk.trees.set(k, t);
       this.trees.set(k, t);
       t.container.setVisible(v);
       t.shadow.setVisible(v);
     } else if (ro.kind === "stone") {
       if (this.stones.has(k)) return;
-      const s = new Stone(this, ro.i, ro.j);
+      const s = new Stone(this, ro.i, ro.j, this.seed);
       chunk.stones.set(k, s);
       this.stones.set(k, s);
       s.container.setVisible(v);
