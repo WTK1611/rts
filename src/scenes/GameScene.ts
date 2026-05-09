@@ -169,6 +169,14 @@ export class GameScene extends Phaser.Scene {
   private growthBeaconPhase = 0;
   private tribeRallyGfx!: Phaser.GameObjects.Graphics;
   private tribeRallyPhase = 0;
+  private moveTargetGfx!: Phaser.GameObjects.Graphics;
+  private moveTarget: {
+    i: number;
+    j: number;
+    kind: "move" | "hunt" | "harvest";
+    age: number;
+  } | null = null;
+  private static readonly MOVE_TARGET_TTL = 0.8;
 
   private lastFogBoundsKey = "";
   private lastFogVisibleHash = 0;
@@ -204,6 +212,7 @@ export class GameScene extends Phaser.Scene {
     this.footprints = [...data.init.footprints];
     this.pendingAnimals = data.init.animals;
     this.pendingCampfires = data.init.campfires ?? [];
+    this.tribeCounts = data.init.tribeCounts ?? [];
   }
 
   create(): void {
@@ -248,6 +257,10 @@ export class GameScene extends Phaser.Scene {
 
     this.tribeRallyGfx = this.add.graphics();
     this.tribeRallyGfx.setDepth(1_650_000);
+
+    this.moveTargetGfx = this.add.graphics();
+    this.moveTargetGfx.setDepth(1_680_000);
+    this.moveTargetGfx.setVisible(false);
 
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x0a0e0a);
@@ -352,6 +365,7 @@ export class GameScene extends Phaser.Scene {
     this.drawFootprints();
     this.updateGrowthBeacon(dt);
     this.updateTribeRally(dt);
+    this.updateMoveTarget(dt);
   }
 
   private updateTribeRally(dt: number): void {
@@ -395,6 +409,61 @@ export class GameScene extends Phaser.Scene {
       drawDiamond();
       g.strokePath();
     }
+  }
+
+  private setMoveTarget(i: number, j: number, kind: "move" | "hunt" | "harvest"): void {
+    this.moveTarget = { i, j, kind, age: 0 };
+  }
+
+  private updateMoveTarget(dt: number): void {
+    const g = this.moveTargetGfx;
+    if (!this.moveTarget) {
+      if (g.visible) {
+        g.clear();
+        g.setVisible(false);
+      }
+      return;
+    }
+    this.moveTarget.age += dt;
+    const ttl = GameScene.MOVE_TARGET_TTL;
+    if (this.moveTarget.age >= ttl) {
+      this.moveTarget = null;
+      g.clear();
+      g.setVisible(false);
+      return;
+    }
+    const t = this.moveTarget.age / ttl;
+    const alpha = 1 - t;
+    const scale = 1 + t * 0.45;
+    const color =
+      this.moveTarget.kind === "hunt"
+        ? 0xff7e3a
+        : this.moveTarget.kind === "harvest"
+          ? 0x6cdf6c
+          : 0xffffff;
+    const { x, y } = gridToScreen(this.moveTarget.i, this.moveTarget.j);
+    const cx = x;
+    const cy = y + TILE_H / 2;
+    const hw = (TILE_W / 2) * scale;
+    const hh = (TILE_H / 2) * scale;
+    g.setVisible(true);
+    g.clear();
+    g.fillStyle(color, 0.18 * alpha);
+    g.beginPath();
+    g.moveTo(cx, cy - hh);
+    g.lineTo(cx + hw, cy);
+    g.lineTo(cx, cy + hh);
+    g.lineTo(cx - hw, cy);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(2, color, 0.9 * alpha);
+    g.beginPath();
+    g.moveTo(cx, cy - hh);
+    g.lineTo(cx + hw, cy);
+    g.lineTo(cx, cy + hh);
+    g.lineTo(cx - hw, cy);
+    g.closePath();
+    g.strokePath();
   }
 
   private updateGrowthBeacon(dt: number): void {
@@ -537,6 +606,7 @@ export class GameScene extends Phaser.Scene {
     const ti = Math.floor(chief.gx + (gdx / len) * stepDist);
     const tj = Math.floor(chief.gy + (gdy / len) * stepDist);
     this.net.send({ type: "move", unitIds: [chief.id], i: ti, j: tj });
+    this.setMoveTarget(ti, tj, "move");
   }
 
   private applyTribeFollow(): void {
@@ -1089,6 +1159,7 @@ export class GameScene extends Phaser.Scene {
       cache.set(key, v);
       f.container.setVisible(v);
       f.shadow.setVisible(v);
+      f.rangeRing.setVisible(v);
     }
   }
 
@@ -1501,7 +1572,26 @@ export class GameScene extends Phaser.Scene {
     if (msg.growthActive) this.growthActive = msg.growthActive;
     const myProg = this.growthProgress[this.playerId] ?? 0;
     const myActive = this.growthActive[this.playerId] ?? false;
+
+    let countsChanged = false;
+    if (msg.tribeCounts) {
+      const prev = this.tribeCounts;
+      const next = msg.tribeCounts;
+      if (prev.length !== next.length) {
+        countsChanged = true;
+      } else {
+        for (let i = 0; i < next.length; i++) {
+          if ((prev[i] ?? 0) !== (next[i] ?? 0)) {
+            countsChanged = true;
+            break;
+          }
+        }
+      }
+      this.tribeCounts = next;
+    }
+
     if (
+      countsChanged ||
       Math.abs(myProg - myProgPrev) > 0.005 ||
       myActive !== myActivePrev
     ) {
@@ -1754,10 +1844,13 @@ export class GameScene extends Phaser.Scene {
     const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
     if (animalId) {
       this.net.send({ type: "hunt", unitIds: ids, animalId });
+      this.setMoveTarget(i, j, "hunt");
     } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
       this.net.send({ type: "harvest", unitIds: ids, i, j });
+      this.setMoveTarget(i, j, "harvest");
     } else {
       this.net.send({ type: "move", unitIds: ids, i, j });
+      this.setMoveTarget(i, j, "move");
     }
   }
 
@@ -1774,10 +1867,13 @@ export class GameScene extends Phaser.Scene {
     const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
     if (animalId) {
       this.net.send({ type: "hunt", unitIds: ids, animalId });
+      this.setMoveTarget(i, j, "hunt");
     } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
       this.net.send({ type: "harvest", unitIds: ids, i, j });
+      this.setMoveTarget(i, j, "harvest");
     } else {
       this.net.send({ type: "move", unitIds: ids, i, j });
+      this.setMoveTarget(i, j, "move");
     }
   }
 
