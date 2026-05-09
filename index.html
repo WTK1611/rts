@@ -2,11 +2,17 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
     <title>Jäger und Sammler</title>
     <style>
       html, body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
-      #game { width: 100vw; height: 100vh; }
+      #game {
+        width: 100vw; height: 100vh;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
       #hud {
         position: fixed; top: 12px; left: 12px; color: #e8f0e8;
         font-family: system-ui, sans-serif;
@@ -78,6 +84,7 @@
       #minimap {
         display: block; width: 200px; height: 200px;
         image-rendering: pixelated; cursor: crosshair;
+        touch-action: none;
       }
       #lobby {
         position: fixed; inset: 0; display: flex;

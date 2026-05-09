@@ -140,6 +140,10 @@ export class GameScene extends Phaser.Scene {
   private lastPointerScreenX = -1;
   private lastPointerScreenY = -1;
 
+  private touchPan: { lastX: number; lastY: number; startX: number; startY: number; moved: boolean } | null = null;
+  private pinch: { startDist: number; startZoom: number } | null = null;
+  private userPanned = false;
+
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
@@ -210,6 +214,7 @@ export class GameScene extends Phaser.Scene {
     this.keyM.on("down", () => this.toggleMinimap());
 
     this.input.mouse?.disableContextMenu();
+    this.input.addPointer(1);
     this.input.on("pointerdown", this.onPointerDown, this);
     this.input.on("pointermove", this.onPointerMove, this);
     this.input.on("pointerup", this.onPointerUp, this);
@@ -241,9 +246,10 @@ export class GameScene extends Phaser.Scene {
     if (this.minimapCanvas) this.minimapCtx = this.minimapCanvas.getContext("2d");
     if (this.minimapWrap) this.minimapWrap.style.display = "block";
     if (this.minimapCanvas) {
-      this.minimapCanvas.addEventListener("mousedown", (e) =>
-        this.onMinimapClick(e),
-      );
+      this.minimapCanvas.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        this.onMinimapClick(e);
+      });
     }
 
     this.updateChunks();
@@ -261,7 +267,7 @@ export class GameScene extends Phaser.Scene {
     const speed = 600 / cam.zoom;
     this.applyEdgePan(dt, speed);
     this.applyTribeKeys(dt);
-    this.applyTribeFollow();
+    if (!this.userPanned) this.applyTribeFollow();
 
     if (cam.zoom !== this.lastZoom) {
       this.lastZoom = cam.zoom;
@@ -897,7 +903,7 @@ export class GameScene extends Phaser.Scene {
     ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
   }
 
-  private onMinimapClick(e: MouseEvent): void {
+  private onMinimapClick(e: MouseEvent | PointerEvent): void {
     if (!this.minimapCanvas) return;
     const rect = this.minimapCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -911,6 +917,7 @@ export class GameScene extends Phaser.Scene {
     const target = gridToScreen(tgx, tgy);
     this.camTargetX = target.x - cam.width / (2 * cam.zoom);
     this.camTargetY = target.y - cam.height / (2 * cam.zoom);
+    this.userPanned = true;
   }
 
   private onServerMessage(msg: ServerMessage): void {
@@ -1122,6 +1129,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerDown(p: Phaser.Input.Pointer): void {
+    if (p.wasTouch) {
+      this.onTouchDown(p);
+      return;
+    }
     if (p.rightButtonDown()) {
       this.commandSelected(p);
       return;
@@ -1139,7 +1150,26 @@ export class GameScene extends Phaser.Scene {
     this.drag = { startX: p.x, startY: p.y, isBox: false };
   }
 
+  private onTouchDown(p: Phaser.Input.Pointer): void {
+    this.lastPointerScreenX = -1;
+    this.lastPointerScreenY = -1;
+    const p1 = this.input.pointer1;
+    const p2 = this.input.pointer2;
+    if (p1.isDown && p2.isDown) {
+      const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+      this.pinch = { startDist: Math.max(1, dist), startZoom: this.cameras.main.zoom };
+      this.touchPan = null;
+      return;
+    }
+    this.pinch = null;
+    this.touchPan = { lastX: p.x, lastY: p.y, startX: p.x, startY: p.y, moved: false };
+  }
+
   private onPointerMove(p: Phaser.Input.Pointer): void {
+    if (p.wasTouch) {
+      this.onTouchMove(p);
+      return;
+    }
     this.lastPointerScreenX = p.x;
     this.lastPointerScreenY = p.y;
     const { gx, gy } = screenToGrid(p.worldX, p.worldY);
@@ -1152,7 +1182,43 @@ export class GameScene extends Phaser.Scene {
     if (this.drag.isBox) this.drawSelectionBox(p);
   }
 
+  private onTouchMove(p: Phaser.Input.Pointer): void {
+    const p1 = this.input.pointer1;
+    const p2 = this.input.pointer2;
+
+    if (this.pinch && p1.isDown && p2.isDown) {
+      const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+      const cam = this.cameras.main;
+      const next = this.pinch.startZoom * (dist / this.pinch.startDist);
+      cam.setZoom(Phaser.Math.Clamp(next, 0.5, 2.5));
+      this.userPanned = true;
+      return;
+    }
+
+    if (!this.touchPan) return;
+    const dxScreen = p.x - this.touchPan.lastX;
+    const dyScreen = p.y - this.touchPan.lastY;
+    this.touchPan.lastX = p.x;
+    this.touchPan.lastY = p.y;
+    if (!this.touchPan.moved) {
+      const totalDx = p.x - this.touchPan.startX;
+      const totalDy = p.y - this.touchPan.startY;
+      if (Math.hypot(totalDx, totalDy) > 8) this.touchPan.moved = true;
+    }
+    if (!this.touchPan.moved) return;
+    const cam = this.cameras.main;
+    cam.scrollX -= dxScreen / cam.zoom;
+    cam.scrollY -= dyScreen / cam.zoom;
+    this.camTargetX = cam.scrollX;
+    this.camTargetY = cam.scrollY;
+    this.userPanned = true;
+  }
+
   private onPointerUp(p: Phaser.Input.Pointer): void {
+    if (p.wasTouch) {
+      this.onTouchUp(p);
+      return;
+    }
     if (!this.drag) return;
     if (this.drag.isBox) {
       this.commitBoxSelection(p);
@@ -1163,6 +1229,41 @@ export class GameScene extends Phaser.Scene {
     }
     this.drag = null;
     this.selectionBox.clear();
+  }
+
+  private onTouchUp(p: Phaser.Input.Pointer): void {
+    const p1 = this.input.pointer1;
+    const p2 = this.input.pointer2;
+    if (this.pinch && (!p1.isDown || !p2.isDown)) {
+      this.pinch = null;
+      this.touchPan = null;
+      return;
+    }
+    if (!this.touchPan) return;
+    if (!this.touchPan.moved) {
+      this.commandAllUnits(p);
+    }
+    this.touchPan = null;
+  }
+
+  private commandAllUnits(p: Phaser.Input.Pointer): void {
+    const ids = [...this.units.values()]
+      .filter((u) => u.owner === this.playerId)
+      .map((u) => u.id);
+    if (ids.length === 0) return;
+    const { gx, gy } = screenToGrid(p.worldX, p.worldY);
+    const i = Math.floor(gx);
+    const j = Math.floor(gy);
+    const k = `${i},${j}`;
+    if (!this.explored.has(k)) return;
+    const animalId = this.visible.has(k) ? this.animalAt(i, j) : null;
+    if (animalId) {
+      this.net.send({ type: "hunt", unitIds: ids, animalId });
+    } else if (this.visible.has(k) && this.harvestableAt(i, j)) {
+      this.net.send({ type: "harvest", unitIds: ids, i, j });
+    } else {
+      this.net.send({ type: "move", unitIds: ids, i, j });
+    }
   }
 
   private commandSelected(p: Phaser.Input.Pointer): void {
