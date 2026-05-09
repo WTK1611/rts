@@ -71,6 +71,7 @@ interface SimUnit {
   hp: number;
   hpMax: number;
   eatCooldown: number;
+  autoHuntScanTimer: number;
 }
 
 const UNIT_HP_MAX = 100;
@@ -90,21 +91,30 @@ interface AnimalSpec {
   biomes: Biome[];
   density: number;
   wanderRadius: number;
+  damage: number;
+  aggressive: boolean;
+  detectRange: number;
+  autoHuntable: boolean;
+  autoHuntRange: number;
+  attackRange: number;
 }
 
 const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6 },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10 },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8 },
-  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8 },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12 },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6 },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5 },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5 },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5 },
+  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5 },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5 },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8 },
 };
 
 const ANIMAL_SPAWN_RADIUS = 220;
 const HUNT_INTERVAL = 0.9;
 const HUNT_DAMAGE = 2;
 const HUNT_RANGE = 1.5;
+const ANIMAL_ATTACK_INTERVAL = 1.0;
+const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
+const GROUP_FIGHT_RANGE = 7;
 
 interface SimAnimal {
   id: string;
@@ -118,6 +128,9 @@ interface SimAnimal {
   state: "idle" | "wander" | "flee" | "hunt";
   path: Array<{ gx: number; gy: number }>;
   decisionTimer: number;
+  attackTargetUnitId: string | null;
+  attackTimer: number;
+  repathTimer: number;
 }
 
 function kindHash(kind: AnimalKind): number {
@@ -195,6 +208,9 @@ export class Sim {
             state: "idle",
             path: [],
             decisionTimer: rand01(this.seed ^ 0xa17, i, j) * 4,
+            attackTargetUnitId: null,
+            attackTimer: 0,
+            repathTimer: 0,
           });
           break;
         }
@@ -291,6 +307,49 @@ export class Sim {
         continue;
       }
       const spec = ANIMAL_SPECS[a.kind];
+
+      if (a.attackTargetUnitId) {
+        const t = this.units.find((u) => u.id === a.attackTargetUnitId);
+        if (!t || t.hp <= 0) {
+          a.attackTargetUnitId = null;
+        } else {
+          const homeDist = Math.hypot(
+            a.gx - (a.homeI + 0.5),
+            a.gy - (a.homeJ + 0.5),
+          );
+          if (homeDist > spec.wanderRadius * 3) {
+            a.attackTargetUnitId = null;
+            a.path = [];
+          }
+        }
+      }
+
+      if (!a.attackTargetUnitId && spec.aggressive && spec.detectRange > 0) {
+        let nearest: SimUnit | null = null;
+        let nearestDist = spec.detectRange;
+        for (const u of this.units) {
+          if (u.hp <= 0) continue;
+          const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
+          if (d < nearestDist) {
+            nearest = u;
+            nearestDist = d;
+          }
+        }
+        if (nearest) {
+          a.attackTargetUnitId = nearest.id;
+          a.path = [];
+          a.repathTimer = 0;
+        }
+      }
+
+      if (a.attackTargetUnitId) {
+        const t = this.units.find((u) => u.id === a.attackTargetUnitId);
+        if (t) {
+          this.stepAnimalAttack(a, t, spec, dt);
+          continue;
+        }
+      }
+
       a.decisionTimer -= dt;
       if (a.path.length === 0 && a.decisionTimer <= 0) {
         a.decisionTimer = 2 + Math.random() * 5;
@@ -340,6 +399,130 @@ export class Sim {
     }
   }
 
+  private stepAnimalAttack(
+    a: SimAnimal,
+    t: SimUnit,
+    spec: AnimalSpec,
+    dt: number,
+  ): void {
+    a.state = "hunt";
+    const dx = t.gx - a.gx;
+    const dy = t.gy - a.gy;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= spec.attackRange) {
+      a.path = [];
+      a.attackTimer += dt;
+      if (a.attackTimer >= ANIMAL_ATTACK_INTERVAL) {
+        a.attackTimer = 0;
+        if (spec.damage > 0) {
+          t.hp = Math.max(0, t.hp - spec.damage);
+          if (t.huntTarget !== a.id) {
+            t.huntTarget = a.id;
+            t.harvestTarget = null;
+            t.huntTimer = 0;
+            t.path = [];
+            t.state = "harvesting";
+          }
+          this.callForHelp(t, a.id);
+        }
+      }
+      return;
+    }
+
+    a.repathTimer -= dt;
+    const ti = Math.floor(t.gx);
+    const tj = Math.floor(t.gy);
+    const last = a.path[a.path.length - 1];
+    const lastTile = last
+      ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
+      : null;
+    if (a.repathTimer <= 0 || lastTile !== `${ti},${tj}`) {
+      a.repathTimer = 0.5;
+      const path = findPath(
+        (x, y) => this.isWalkable(x, y),
+        Math.floor(a.gx),
+        Math.floor(a.gy),
+        ti,
+        tj,
+        new Set<string>(),
+      );
+      if (path && path.length > 1) {
+        a.path = path.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }));
+      }
+    }
+    if (a.path.length > 0) {
+      const wp = a.path[0];
+      const ddx = wp.gx - a.gx;
+      const ddy = wp.gy - a.gy;
+      const sd = Math.hypot(ddx, ddy);
+      const moveSpeed = spec.speed * 0.7;
+      if (sd < 0.04) {
+        a.gx = wp.gx;
+        a.gy = wp.gy;
+        a.path.shift();
+      } else {
+        const step = Math.min(moveSpeed * dt, sd);
+        a.gx += (ddx / sd) * step;
+        a.gy += (ddy / sd) * step;
+      }
+    }
+  }
+
+  private maybeAutoEngage(u: SimUnit): void {
+    let allyTarget: string | null = null;
+    let allyDist = Infinity;
+    for (const ally of this.units) {
+      if (ally.owner !== u.owner) continue;
+      if (ally.id === u.id) continue;
+      if (!ally.huntTarget) continue;
+      if (ally.hp <= 0) continue;
+      const d = Math.hypot(ally.gx - u.gx, ally.gy - u.gy);
+      if (d > GROUP_FIGHT_RANGE) continue;
+      if (d < allyDist) {
+        allyDist = d;
+        allyTarget = ally.huntTarget;
+      }
+    }
+    if (allyTarget && this.animals.has(allyTarget)) {
+      const a = this.animals.get(allyTarget)!;
+      this.startHunt(u, a, new Set<string>());
+      return;
+    }
+
+    let bestAnimal: SimAnimal | null = null;
+    let bestDist = Infinity;
+    for (const a of this.animals.values()) {
+      const spec = ANIMAL_SPECS[a.kind];
+      if (!spec.autoHuntable) continue;
+      if (a.hp <= 0) continue;
+      const d = Math.hypot(a.gx - u.gx, a.gy - u.gy);
+      if (d > spec.autoHuntRange) continue;
+      if (d < bestDist) {
+        bestDist = d;
+        bestAnimal = a;
+      }
+    }
+    if (bestAnimal) {
+      this.startHunt(u, bestAnimal, new Set<string>());
+    }
+  }
+
+  private callForHelp(victim: SimUnit, animalId: string): void {
+    for (const u of this.units) {
+      if (u.owner !== victim.owner) continue;
+      if (u.id === victim.id) continue;
+      if (u.huntTarget) continue;
+      if (u.hp <= 0) continue;
+      const d = Math.hypot(u.gx - victim.gx, u.gy - victim.gy);
+      if (d > GROUP_FIGHT_RANGE) continue;
+      u.huntTarget = animalId;
+      u.harvestTarget = null;
+      u.huntTimer = 0;
+      u.path = [];
+      u.state = "harvesting";
+    }
+  }
+
   private tickHunt(u: SimUnit, dt: number): boolean {
     if (!u.huntTarget) return false;
     const a = this.animals.get(u.huntTarget);
@@ -360,9 +543,13 @@ export class Sim {
       if (u.huntTimer >= HUNT_INTERVAL) {
         u.huntTimer = 0;
         a.hp -= HUNT_DAMAGE;
-        a.state = "flee";
+        const spec = ANIMAL_SPECS[a.kind];
+        if (spec.damage > 0) {
+          if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
+        } else {
+          a.state = "flee";
+        }
         if (a.hp <= 0) {
-          const spec = ANIMAL_SPECS[a.kind];
           this.resources[u.owner].fleisch += spec.meat;
           this.animals.delete(a.id);
           this.removedAnimalIds.push(a.id);
@@ -443,6 +630,7 @@ export class Sim {
         hp: UNIT_HP_MAX,
         hpMax: UNIT_HP_MAX,
         eatCooldown: 0,
+        autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
       };
       this.units.push(u);
       created.push(u);
@@ -831,6 +1019,17 @@ export class Sim {
         this.autoEat(u);
       }
       u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
+      u.autoHuntScanTimer -= dt;
+      if (
+        u.autoHuntScanTimer <= 0 &&
+        !u.huntTarget &&
+        !u.harvestTarget &&
+        u.state === "idle" &&
+        u.path.length === 0
+      ) {
+        u.autoHuntScanTimer = UNIT_AUTO_HUNT_SCAN_INTERVAL;
+        this.maybeAutoEngage(u);
+      }
       if (u.huntTarget) {
         if (this.tickHunt(u, dt)) continue;
       }
