@@ -2,6 +2,11 @@ import { findPath } from "../shared/pathfinding";
 import {
   AnimalKind,
   AnimalSnapshot,
+  ARTIFACT_DISCOVERY_RADIUS,
+  ArtifactFindEvent,
+  ArtifactKind,
+  ArtifactReward,
+  ArtifactSnapshot,
   CAMPFIRE_RANGE,
   CampfireSnapshot,
   EncounterEvent,
@@ -20,6 +25,7 @@ import {
 } from "../shared/protocol";
 import { Language, languageForSlot, pickFirstName } from "../shared/names";
 import {
+  artifactsFromSeed,
   Biome,
   biomeAt,
   bushBerriesAt,
@@ -160,6 +166,15 @@ export interface SimCampfire {
   fuelTimer: number;
 }
 
+export interface SimArtifact {
+  id: string;
+  kind: ArtifactKind;
+  gx: number;
+  gy: number;
+  reward: ArtifactReward;
+  foundBy: PlayerId | null;
+}
+
 export interface SimAnimal {
   id: string;
   kind: AnimalKind;
@@ -233,12 +248,109 @@ export class Sim {
   campfireIgniteCy: number[] = new Array(MAX_PLAYERS).fill(0);
   removedCampfireIds: string[] = [];
   followChiefEnabled: boolean[] = new Array(MAX_PLAYERS).fill(false);
+  artifacts: Map<string, SimArtifact> = new Map();
+  artifactFinds: ArtifactFindEvent[] = [];
   tick = 0;
 
   constructor(seed: number) {
     this.seed = seed;
     this.spawns = spawnsFromSeed(seed);
     this.spawnAnimals();
+    this.spawnArtifacts();
+  }
+
+  private spawnArtifacts(): void {
+    const KINDS: ArtifactKind[] = ["stonehenge", "stoneCircle", "monolith"];
+    const REWARDS: ArtifactReward[] = [
+      { kind: "newMember", amount: 1 },
+      { kind: "fleisch", amount: 50 },
+      { kind: "fisch", amount: 50 },
+      { kind: "beeren", amount: 100 },
+      { kind: "pilze", amount: 200 },
+    ];
+    const specs = artifactsFromSeed(this.seed);
+    for (let idx = 0; idx < specs.length; idx++) {
+      const s = specs[idx];
+      const id = `art_${idx}`;
+      this.artifacts.set(id, {
+        id,
+        kind: KINDS[s.kindIdx % KINDS.length],
+        gx: s.i + 0.5,
+        gy: s.j + 0.5,
+        reward: REWARDS[idx % REWARDS.length],
+        foundBy: null,
+      });
+    }
+  }
+
+  artifactsSnapshot(): ArtifactSnapshot[] {
+    const out: ArtifactSnapshot[] = [];
+    for (const a of this.artifacts.values()) {
+      out.push({
+        id: a.id,
+        kind: a.kind,
+        gx: a.gx,
+        gy: a.gy,
+        reward: { ...a.reward },
+        foundBy: a.foundBy,
+      });
+    }
+    return out;
+  }
+
+  consumeArtifactFinds(): ArtifactFindEvent[] {
+    const out = this.artifactFinds;
+    this.artifactFinds = [];
+    return out;
+  }
+
+  private checkArtifactDiscovery(): void {
+    let anyUnfound = false;
+    for (const a of this.artifacts.values()) {
+      if (a.foundBy === null) { anyUnfound = true; break; }
+    }
+    if (!anyUnfound) return;
+    const r2 = ARTIFACT_DISCOVERY_RADIUS * ARTIFACT_DISCOVERY_RADIUS;
+    for (const a of this.artifacts.values()) {
+      if (a.foundBy !== null) continue;
+      let finder: PlayerId | null = null;
+      for (const u of this.units.values()) {
+        if (u.hp <= 0) continue;
+        const dx = u.gx - a.gx;
+        const dy = u.gy - a.gy;
+        if (dx * dx + dy * dy <= r2) {
+          finder = u.owner;
+          break;
+        }
+      }
+      if (finder === null) continue;
+      a.foundBy = finder;
+      this.applyArtifactReward(finder, a.reward, a.gx, a.gy);
+      this.artifactFinds.push({
+        id: a.id,
+        finder,
+        reward: { ...a.reward },
+      });
+    }
+  }
+
+  private applyArtifactReward(
+    p: PlayerId,
+    reward: ArtifactReward,
+    gx: number,
+    gy: number,
+  ): void {
+    if (reward.kind === "newMember") {
+      let count = 0;
+      for (const u of this.units.values()) if (u.owner === p) count++;
+      if (count < MAX_TRIBE_SIZE) {
+        this.spawnNewTribeMember(p, gx, gy);
+      } else {
+        this.resources[p].fleisch += 50;
+      }
+      return;
+    }
+    this.resources[p][reward.kind] += reward.amount;
   }
 
   private spawnAnimals(): void {
@@ -1348,6 +1460,7 @@ export class Sim {
     this.updateChiefs();
     this.followChief(dt);
     this.campfireStep(dt);
+    this.checkArtifactDiscovery();
   }
 
   private unitAtOwnFire(u: SimUnit): boolean {

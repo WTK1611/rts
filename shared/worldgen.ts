@@ -378,3 +378,61 @@ export function parseStoneId(id: string): { i: number; j: number } | null {
 export function stoneAmountAt(seed: number, i: number, j: number): number {
   return 4 + (hash3(seed ^ 0x57e, i, j) % 4);
 }
+
+export const ARTIFACT_COUNT = 10;
+const ARTIFACT_AREA_RADIUS = 180;
+const ARTIFACT_MIN_SEPARATION = 36;
+const ARTIFACT_MIN_SPAWN_DISTANCE = 18;
+
+export interface ArtifactSpec {
+  i: number;
+  j: number;
+  kindIdx: number;
+}
+
+const artifactCache = new Map<number, ArtifactSpec[]>();
+
+export function artifactsFromSeed(seed: number): ArtifactSpec[] {
+  const cached = artifactCache.get(seed);
+  if (cached) return cached;
+  const rng = mulberry32(seed ^ 0xa1f4c7d1);
+  const sp = spawnsFromSeed(seed);
+  const result: ArtifactSpec[] = [];
+  let attempts = 0;
+  while (result.length < ARTIFACT_COUNT && attempts < 8000) {
+    attempts++;
+    const i = Math.floor((rng() - 0.5) * 2 * ARTIFACT_AREA_RADIUS);
+    const j = Math.floor((rng() - 0.5) * 2 * ARTIFACT_AREA_RADIUS);
+    if (!isLandTile(seed, i, j)) continue;
+    const b = biomeAt(seed, i, j);
+    if (b === "lake" || b === "river" || b === "gebirge") continue;
+    if (hasTreeAt(seed, i, j)) continue;
+    if (hasBushAt(seed, i, j)) continue;
+    if (hasMushroomAt(seed, i, j)) continue;
+    if (hasStoneAt(seed, i, j)) continue;
+    let tooNearSpawn = false;
+    for (const s of sp) {
+      const di = i - s.cx;
+      const dj = j - s.cy;
+      if (di * di + dj * dj < ARTIFACT_MIN_SPAWN_DISTANCE * ARTIFACT_MIN_SPAWN_DISTANCE) {
+        tooNearSpawn = true;
+        break;
+      }
+    }
+    if (tooNearSpawn) continue;
+    let tooNearOther = false;
+    for (const a of result) {
+      const di = i - a.i;
+      const dj = j - a.j;
+      if (di * di + dj * dj < ARTIFACT_MIN_SEPARATION * ARTIFACT_MIN_SEPARATION) {
+        tooNearOther = true;
+        break;
+      }
+    }
+    if (tooNearOther) continue;
+    const kindIdx = Math.floor(rng() * 3);
+    result.push({ i, j, kindIdx });
+  }
+  artifactCache.set(seed, result);
+  return result;
+}

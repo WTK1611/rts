@@ -179,6 +179,30 @@ TTL `FOOTPRINT_LIFETIME_TICKS = 25 s × Tickrate`. Footprints sind autoritativ
 vom Server (`Sim.footprints`) und für alle Spieler sichtbar — gut um
 Konkurrenten zu spuren, aber sie verblassen schnell.
 
+## Mythische Artefakte
+
+Auf der Karte sind ca. 10 mythische Artefakte verteilt (Stonehenge, Steinkreis,
+Monolith) — deterministisch aus dem Seed (`artifactsFromSeed` in
+`shared/worldgen.ts`). Sie liegen abseits der Spawns (≥ 18 Tiles) und mindestens
+36 Tiles voneinander entfernt. Solange ein Artefakt noch nicht entdeckt ist,
+pulsiert ein goldener Glow um es herum.
+
+Sobald sich eine Einheit innerhalb von `ARTIFACT_DISCOVERY_RADIUS = 4` Tiles
+nähert, gilt das Artefakt als „entdeckt" — der Stamm dieser Einheit erhält eine
+Belohnung. Pro Artefakt wird die Belohnung zyklisch aus dieser Liste gezogen:
+
+| Belohnung           | Effekt                                                            |
+|---------------------|-------------------------------------------------------------------|
+| `newMember`         | Spawnt ein neues Stammesmitglied am Artefakt (fällt auf 50 Fleisch zurück, wenn der Stamm voll ist) |
+| `fleisch` (50)      | +50 Fleisch                                                       |
+| `fisch` (50)        | +50 Fisch                                                         |
+| `beeren` (100)      | +100 Beeren                                                       |
+| `pilze` (200)       | +200 Pilze                                                        |
+
+Der Fund wird allen Spielern als Toast (`.toast.artifact`, gold) angezeigt —
+mit Nennung des findenden Stammes und der konkreten Belohnung. Jedes Artefakt
+kann nur einmal entdeckt werden.
+
 ## Game-Over
 
 Wenn der eigene Stamm vollständig ausgelöscht ist, blendet der Client

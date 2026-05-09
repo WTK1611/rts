@@ -89,6 +89,37 @@ export interface CampfireSnapshot {
 
 export const CAMPFIRE_RANGE = 2.5;
 
+export type ArtifactKind = "stonehenge" | "stoneCircle" | "monolith";
+
+export type ArtifactRewardKind =
+  | "newMember"
+  | "fleisch"
+  | "fisch"
+  | "beeren"
+  | "pilze";
+
+export interface ArtifactReward {
+  kind: ArtifactRewardKind;
+  amount: number;
+}
+
+export interface ArtifactSnapshot {
+  id: string;
+  kind: ArtifactKind;
+  gx: number;
+  gy: number;
+  reward: ArtifactReward;
+  foundBy: PlayerId | null;
+}
+
+export interface ArtifactFindEvent {
+  id: string;
+  finder: PlayerId;
+  reward: ArtifactReward;
+}
+
+export const ARTIFACT_DISCOVERY_RADIUS = 4;
+
 export interface Footprint {
   o: PlayerId;
   i: number;
@@ -114,6 +145,7 @@ export interface InitMessage {
   animals: AnimalSnapshot[];
   campfires: CampfireSnapshot[];
   tribeCounts: number[];
+  artifacts: ArtifactSnapshot[];
 }
 
 export interface EncounterEvent {
@@ -144,6 +176,7 @@ export interface StateMessage {
   campfires: CampfireSnapshot[];
   removedCampfireIds: string[];
   tribeCounts: number[];
+  artifactFinds: ArtifactFindEvent[];
 }
 
 export interface OpponentJoinedMessage {

@@ -295,6 +295,7 @@ function joinPlayer(ws: WebSocket, name: string): void {
     animals: visibleAnimals,
     campfires: visibleCampfires,
     tribeCounts: world.sim.tribeCounts(),
+    artifacts: world.sim.artifactsSnapshot(),
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -357,6 +358,7 @@ function tick(): void {
   // already handles deaths (dead ids land in known\visible).
   world.sim.consumeRemovedAnimalIds();
   const tribeCounts = world.sim.tribeCounts();
+  const artifactFinds = world.sim.consumeArtifactFinds();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -432,6 +434,7 @@ function tick(): void {
       campfires: visibleCampfires,
       removedCampfireIds,
       tribeCounts,
+      artifactFinds,
     });
   }
 }

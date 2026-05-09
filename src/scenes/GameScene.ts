@@ -8,9 +8,13 @@ import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
 import { Animal } from "../Animal";
 import { Campfire } from "../Campfire";
+import { Artifact } from "../Artifact";
 import { Net } from "../net";
 import {
   AnimalSnapshot,
+  ArtifactFindEvent,
+  ArtifactReward,
+  ArtifactSnapshot,
   CampfireSnapshot,
   emptyResources,
   Footprint,
@@ -109,6 +113,8 @@ export class GameScene extends Phaser.Scene {
   private stones: Map<string, Stone> = new Map();
   private animals: Map<string, Animal> = new Map();
   private campfires: Map<string, Campfire> = new Map();
+  private artifacts: Map<string, Artifact> = new Map();
+  private pendingArtifacts: ArtifactSnapshot[] = [];
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -212,6 +218,7 @@ export class GameScene extends Phaser.Scene {
     this.footprints = [...data.init.footprints];
     this.pendingAnimals = data.init.animals;
     this.pendingCampfires = data.init.campfires ?? [];
+    this.pendingArtifacts = data.init.artifacts ?? [];
     this.tribeCounts = data.init.tribeCounts ?? [];
   }
 
@@ -237,6 +244,10 @@ export class GameScene extends Phaser.Scene {
       this.applyCampfireSnap(snap);
     }
     this.pendingCampfires = [];
+    for (const snap of this.pendingArtifacts) {
+      this.spawnArtifactLocal(snap);
+    }
+    this.pendingArtifacts = [];
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
@@ -343,6 +354,7 @@ export class GameScene extends Phaser.Scene {
     for (const u of this.units.values()) u.update(dt);
     for (const a of this.animals.values()) a.update(dt);
     for (const f of this.campfires.values()) f.update(dt);
+    for (const ar of this.artifacts.values()) ar.update(dt);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -1123,6 +1135,17 @@ export class GameScene extends Phaser.Scene {
       s.container.setVisible(v);
       s.shadow.setVisible(v);
     }
+    for (const a of this.artifacts.values()) {
+      const key = `ar:${a.id}`;
+      const i = Math.floor(a.gx);
+      const j = Math.floor(a.gy);
+      const v = this.visible.has(`${i},${j}`) || this.explored.has(`${i},${j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      a.container.setVisible(v);
+      a.shadow.setVisible(v);
+      a.glow.setVisible(v && !a.found);
+    }
   }
 
   private applyDynamicVisibility(): void {
@@ -1357,7 +1380,7 @@ export class GameScene extends Phaser.Scene {
 
   private showToast(
     text: string,
-    kind: "join" | "leave" | "grow" | "death" | "extinct",
+    kind: "join" | "leave" | "grow" | "death" | "extinct" | "artifact",
   ): void {
     const root = document.getElementById("toasts");
     if (!root) return;
@@ -1367,7 +1390,7 @@ export class GameScene extends Phaser.Scene {
     el.textContent = text;
     root.appendChild(el);
     requestAnimationFrame(() => el.classList.add("show"));
-    const lifetime = kind === "extinct" ? 6000 : 4000;
+    const lifetime = kind === "extinct" || kind === "artifact" ? 6000 : 4000;
     setTimeout(() => {
       el.classList.remove("show");
       setTimeout(() => el.remove(), 250);
@@ -1536,6 +1559,9 @@ export class GameScene extends Phaser.Scene {
         this.visObjectCache.delete(`cf:${id}`);
       }
     }
+    if (msg.artifactFinds && msg.artifactFinds.length > 0) {
+      this.handleArtifactFinds(msg.artifactFinds);
+    }
     let resChanged = msg.resources.length !== this.resources.length;
     if (!resChanged) {
       outer: for (let i = 0; i < msg.resources.length; i++) {
@@ -1612,6 +1638,49 @@ export class GameScene extends Phaser.Scene {
     }
     const f = new Campfire(this, snap.id, snap.gx, snap.gy, snap.fuel, this.seed);
     this.campfires.set(snap.id, f);
+  }
+
+  private spawnArtifactLocal(snap: ArtifactSnapshot): void {
+    if (this.artifacts.has(snap.id)) return;
+    const a = new Artifact(
+      this,
+      snap.id,
+      snap.gx,
+      snap.gy,
+      snap.kind,
+      snap.foundBy,
+      this.seed,
+    );
+    this.artifacts.set(snap.id, a);
+  }
+
+  private describeReward(reward: ArtifactReward): string {
+    if (reward.kind === "newMember") return "ein neues Stammesmitglied";
+    if (reward.kind === "fleisch") return `${reward.amount} Fleisch`;
+    if (reward.kind === "fisch") return `${reward.amount} Fisch`;
+    if (reward.kind === "beeren") return `${reward.amount} Beeren`;
+    if (reward.kind === "pilze") return `${reward.amount} Pilze`;
+    return `${reward.amount}`;
+  }
+
+  private handleArtifactFinds(events: ArtifactFindEvent[]): void {
+    for (const ev of events) {
+      const art = this.artifacts.get(ev.id);
+      if (art) art.markFound();
+      const rewardText = this.describeReward(ev.reward);
+      if (ev.finder === this.playerId) {
+        this.showToast(
+          `Mythisches Artefakt entdeckt! Belohnung: ${rewardText}`,
+          "artifact",
+        );
+      } else {
+        const name = this.names[ev.finder] || `Stamm ${ev.finder}`;
+        this.showToast(
+          `Stamm von ${name} hat ein mythisches Artefakt entdeckt (${rewardText})`,
+          "artifact",
+        );
+      }
+    }
   }
 
   private animalAt(i: number, j: number): string | null {
