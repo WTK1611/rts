@@ -18,6 +18,7 @@ export interface UnitSnapshot {
   ageSec: number;
   gender: UnitGender;
   firstName: string;
+  isChief: boolean;
 }
 
 export interface SpawnInfo {

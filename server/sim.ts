@@ -83,6 +83,7 @@ export interface SimUnit {
   ageSec: number;
   gender: UnitGender;
   firstName: string;
+  isChief: boolean;
 }
 
 const MAX_AGE_SEC = 420;
@@ -723,10 +724,12 @@ export class Sim {
         ageSec: CHILD_AGE_SEC + ageJitter,
         gender,
         firstName: pickFirstName(this.seed, lang, gender, p, k),
+        isChief: false,
       };
       this.units.set(u.id, u);
       created.push(u);
     }
+    this.updateChiefs();
     return created.map(this.snap);
   }
 
@@ -772,6 +775,7 @@ export class Sim {
     ageSec: u.ageSec,
     gender: u.gender,
     firstName: u.firstName,
+    isChief: u.isChief,
   });
 
   consumeNewRemovedObjects(): RemovedObject[] {
@@ -1184,6 +1188,7 @@ export class Sim {
     this.growthCheck(dt);
     this.encounterCheck();
     this.spreadIdleUnits();
+    this.updateChiefs();
   }
 
   private encounterCheck(): void {
@@ -1291,6 +1296,7 @@ export class Sim {
       if (u.gender !== "f") continue;
       u.owner = targetOwner;
       u.color = newColor;
+      u.isChief = false;
       u.path = [];
       u.harvestTarget = null;
       u.huntTarget = null;
@@ -1412,9 +1418,38 @@ export class Sim {
       ageSec: 0,
       gender,
       firstName: pickFirstName(this.seed, lang, gender, p, k),
+      isChief: false,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));
+  }
+
+  private updateChiefs(): void {
+    const byOwner: SimUnit[][] = Array.from(
+      { length: MAX_PLAYERS },
+      () => [],
+    );
+    for (const u of this.units.values()) byOwner[u.owner].push(u);
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      const list = byOwner[p];
+      let chief: SimUnit | null = null;
+      for (const u of list) {
+        if (!u.isChief) continue;
+        if (chief == null) chief = u;
+        else u.isChief = false;
+      }
+      if (!chief && list.length > 0) {
+        let best: SimUnit | null = null;
+        for (const u of list) {
+          if (!best) { best = u; continue; }
+          const bestMale = best.gender === "m";
+          const uMale = u.gender === "m";
+          if (uMale && !bestMale) best = u;
+          else if (uMale === bestMale && u.ageSec > best.ageSec) best = u;
+        }
+        if (best) best.isChief = true;
+      }
+    }
   }
 
   private reapDeadUnits(): void {

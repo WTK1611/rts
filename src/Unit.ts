@@ -25,6 +25,7 @@ export class Unit {
   hair: Phaser.GameObjects.Arc;
   hairBack: Phaser.GameObjects.Ellipse | null = null;
   beard: Phaser.GameObjects.Ellipse | null = null;
+  crown: Phaser.GameObjects.Graphics;
   bodyShadow: Phaser.GameObjects.Ellipse;
   bodyHighlight: Phaser.GameObjects.Ellipse;
   shadow: Phaser.GameObjects.Ellipse;
@@ -42,6 +43,7 @@ export class Unit {
   ageSec: number;
   gender: UnitGender;
   firstName: string;
+  isChief: boolean;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
@@ -64,6 +66,7 @@ export class Unit {
     this.ageSec = snap.ageSec;
     this.gender = snap.gender;
     this.firstName = snap.firstName;
+    this.isChief = snap.isChief;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -97,6 +100,10 @@ export class Unit {
       this.beard = scene.add.ellipse(0, -22, 7, 3, 0x3a2410);
     }
 
+    this.crown = scene.add.graphics({ x: 0, y: 0 });
+    this.drawCrown();
+    this.crown.setVisible(snap.isChief);
+
     this.hpBarBg = scene.add.rectangle(0, -38, 18, 3, 0x000000, 0.7)
       .setStrokeStyle(0.5, 0x000000, 0.9);
     this.hpBarFill = scene.add.rectangle(-9, -38, 18, 3, 0x4ed44e)
@@ -124,6 +131,7 @@ export class Unit {
     if (this.hairBack) layers.push(this.hairBack);
     layers.push(this.head, this.hair);
     if (this.beard) layers.push(this.beard);
+    layers.push(this.crown);
     layers.push(this.hpBarBg, this.hpBarFill, this.nameLabel);
     this.container = scene.add.container(x, y - h, layers);
     this.refreshHpBar();
@@ -181,6 +189,32 @@ export class Unit {
       this.ageSec = snap.ageSec;
       this.applyLifeCycleVisuals();
     }
+    if (this.isChief !== snap.isChief) {
+      this.isChief = snap.isChief;
+      this.crown.setVisible(snap.isChief);
+    }
+  }
+
+  private drawCrown(): void {
+    const g = this.crown;
+    g.clear();
+    g.fillStyle(0xf4c430, 1);
+    g.lineStyle(1, 0x141414, 1);
+    g.beginPath();
+    g.moveTo(-5, -30);
+    g.lineTo(-5, -32);
+    g.lineTo(-3.5, -36);
+    g.lineTo(-1.5, -32);
+    g.lineTo(0, -37);
+    g.lineTo(1.5, -32);
+    g.lineTo(3.5, -36);
+    g.lineTo(5, -32);
+    g.lineTo(5, -30);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    g.fillStyle(0xff5050, 1);
+    g.fillCircle(0, -33.5, 0.9);
   }
 
   private refreshOwnerVisuals(isLocal: boolean): void {
