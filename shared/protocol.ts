@@ -1,7 +1,7 @@
-export const MAP_SIZE = 20;
 export const TICK_RATE = 20;
+export const MAX_PLAYERS = 10;
 
-export type PlayerId = 0 | 1;
+export type PlayerId = number;
 
 export interface UnitSnapshot {
   id: string;
@@ -12,37 +12,41 @@ export interface UnitSnapshot {
   color: number;
 }
 
-export interface TreeSnapshot {
-  id: string;
-  i: number;
-  j: number;
-  alive: boolean;
+export interface SpawnInfo {
+  cx: number;
+  cy: number;
 }
 
 export interface InitMessage {
   type: "init";
   playerId: PlayerId;
-  mapSize: number;
-  trees: TreeSnapshot[];
+  seed: number;
   units: UnitSnapshot[];
-  wood: [number, number];
-  names: [string, string];
+  destroyedTrees: string[];
+  spawn: SpawnInfo;
+  wood: number[];
+  names: string[];
 }
 
 export interface StateMessage {
   type: "state";
   tick: number;
   units: UnitSnapshot[];
-  wood: [number, number];
+  wood: number[];
   removedTrees: string[];
 }
 
-export interface QueuedMessage {
-  type: "queued";
+export interface OpponentJoinedMessage {
+  type: "opponentJoined";
+  playerId: PlayerId;
+  name: string;
+  units: UnitSnapshot[];
 }
 
 export interface OpponentLeftMessage {
   type: "opponentLeft";
+  playerId: PlayerId;
+  removedUnitIds: string[];
 }
 
 export interface ErrorMessage {
@@ -53,7 +57,7 @@ export interface ErrorMessage {
 export type ServerMessage =
   | InitMessage
   | StateMessage
-  | QueuedMessage
+  | OpponentJoinedMessage
   | OpponentLeftMessage
   | ErrorMessage;
 

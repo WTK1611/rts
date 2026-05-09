@@ -8,7 +8,6 @@ const SERVER_URL =
   `ws://${window.location.hostname}:8787`;
 
 const lobby = document.getElementById("lobby") as HTMLDivElement;
-const lobbyTitle = document.getElementById("lobby-title") as HTMLDivElement;
 const lobbyStatus = document.getElementById("lobby-status") as HTMLDivElement;
 const nameInput = document.getElementById("name-input") as HTMLInputElement;
 const playBtn = document.getElementById("play-btn") as HTMLButtonElement;
@@ -36,10 +35,7 @@ function play(): void {
   let started = false;
 
   net.onMessage((msg: ServerMessage) => {
-    if (msg.type === "queued") {
-      lobbyTitle.textContent = `Hi ${name}!`;
-      setStatus("Suche Mitspieler …");
-    } else if (msg.type === "init") {
+    if (msg.type === "init") {
       started = true;
       lobby.style.display = "none";
       const game = new Phaser.Game({
@@ -55,9 +51,6 @@ function play(): void {
         disableContextMenu: true,
       });
       game.scene.start("GameScene", { net, init: msg });
-    } else if (msg.type === "opponentLeft") {
-      alert("Mitspieler hat das Spiel verlassen.");
-      window.location.reload();
     } else if (msg.type === "error") {
       setStatus(`Fehler: ${msg.message}`);
       playBtn.disabled = false;

@@ -1,5 +1,3 @@
-import { GameMap } from "./GameMap";
-
 interface Node {
   i: number;
   j: number;
@@ -30,20 +28,35 @@ export interface Cell {
   j: number;
 }
 
+export interface PathOptions {
+  margin?: number;
+  maxNodes?: number;
+}
+
 export function findPath(
-  map: GameMap,
+  isWalkable: (i: number, j: number) => boolean,
   startI: number,
   startJ: number,
   goalI: number,
   goalJ: number,
   extraBlocked?: Set<string>,
+  opts: PathOptions = {},
 ): Cell[] | null {
+  const margin = opts.margin ?? 30;
+  const maxNodes = opts.maxNodes ?? 4000;
+  const minI = Math.min(startI, goalI) - margin;
+  const maxI = Math.max(startI, goalI) + margin;
+  const minJ = Math.min(startJ, goalJ) - margin;
+  const maxJ = Math.max(startJ, goalJ) + margin;
+  const inBox = (i: number, j: number) =>
+    i >= minI && j >= minJ && i <= maxI && j <= maxJ;
   const isBlocked = (i: number, j: number) =>
-    !map.isWalkable(i, j) || (extraBlocked?.has(`${i},${j}`) ?? false);
-  if (!map.inBounds(startI, startJ) || isBlocked(goalI, goalJ)) return null;
+    !inBox(i, j) || !isWalkable(i, j) || (extraBlocked?.has(`${i},${j}`) ?? false);
+  if (isBlocked(goalI, goalJ)) return null;
   if (startI === goalI && startJ === goalJ) return [{ i: startI, j: startJ }];
 
-  const key = (i: number, j: number) => j * map.width + i;
+  const stride = maxI - minI + 1;
+  const key = (i: number, j: number) => (j - minJ) * stride + (i - minI);
   const open = new Map<number, Node>();
   const closed = new Set<number>();
 
@@ -56,7 +69,9 @@ export function findPath(
   };
   open.set(key(startI, startJ), start);
 
+  let visited = 0;
   while (open.size > 0) {
+    if (++visited > maxNodes) return null;
     let curKey = -1;
     let cur: Node | null = null;
     for (const [k, n] of open) {
@@ -83,6 +98,7 @@ export function findPath(
     for (const [di, dj, cost] of NEIGHBORS) {
       const ni = cur.i + di;
       const nj = cur.j + dj;
+      if (!inBox(ni, nj)) continue;
       const nk = key(ni, nj);
       if (closed.has(nk)) continue;
       if (isBlocked(ni, nj)) continue;

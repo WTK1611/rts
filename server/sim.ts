@@ -1,15 +1,22 @@
-import { GameMap } from "../shared/GameMap";
 import { findPath } from "../shared/pathfinding";
-import { MAP_SIZE, PlayerId, UnitSnapshot, TreeSnapshot } from "../shared/protocol";
+import { MAX_PLAYERS, PlayerId, UnitSnapshot } from "../shared/protocol";
+import {
+  hasTreeAt,
+  isLandTile,
+  parseTreeId,
+  spawnsFromSeed,
+  SpawnArea,
+  treeIdAt,
+  treeWoodAt,
+} from "../shared/worldgen";
 
 const HARVEST_INTERVAL = 1.2;
 const HARVEST_AMOUNT = 5;
-const TREE_COUNT = 28;
+const TRIBE_SIZE = 4;
 
-const PLAYER_COLORS: [number, number] = [0x4ea1ff, 0xff6b6b];
-const SPAWN_POSITIONS: Array<[number, number, number, number]> = [
-  [4, 4, 6, 5],
-  [15, 15, 13, 14],
+export const PLAYER_COLORS: number[] = [
+  0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
+  0xff9933, 0x66e0d0, 0xff66c4, 0xd4b878, 0x9ca0ff,
 ];
 
 interface SimUnit {
@@ -25,92 +32,86 @@ interface SimUnit {
   harvestTimer: number;
 }
 
-interface SimTree {
-  id: string;
-  i: number;
-  j: number;
-  wood: number;
-  alive: boolean;
-}
-
 export class Sim {
-  map: GameMap;
+  seed: number;
+  spawns: SpawnArea[];
   units: SimUnit[] = [];
-  trees: Map<string, SimTree> = new Map();
-  wood: [number, number] = [0, 0];
+  active: boolean[] = new Array(MAX_PLAYERS).fill(false);
+  destroyedTrees = new Set<string>();
+  treeWood = new Map<string, number>();
+  wood: number[] = new Array(MAX_PLAYERS).fill(0);
   removedTreeIds: string[] = [];
   tick = 0;
 
   constructor(seed: number) {
-    this.map = new GameMap(MAP_SIZE, MAP_SIZE);
+    this.seed = seed;
+    this.spawns = spawnsFromSeed(seed);
+  }
 
-    const rng = mulberry32(seed);
+  addPlayer(p: PlayerId): UnitSnapshot[] {
+    if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
+    this.active[p] = true;
+    const a = this.spawns[p];
+    const offsets: Array<[number, number]> = [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ];
+    const created: SimUnit[] = [];
+    for (let k = 0; k < TRIBE_SIZE; k++) {
+      const [di, dj] = offsets[k % offsets.length];
+      const u: SimUnit = {
+        id: `u_p${p}_${k}`,
+        owner: p,
+        gx: a.cx + di + 0.5,
+        gy: a.cy + dj + 0.5,
+        speed: 3.5,
+        color: PLAYER_COLORS[p % PLAYER_COLORS.length],
+        state: "idle",
+        path: [],
+        harvestTreeId: null,
+        harvestTimer: 0,
+      };
+      this.units.push(u);
+      created.push(u);
+    }
+    return created.map(this.snap);
+  }
 
-    for (let p: PlayerId = 0; p < 2; p++) {
-      const [a1, b1, a2, b2] = SPAWN_POSITIONS[p];
-      const positions: Array<[number, number]> = [
-        [a1, b1],
-        [a2, b2],
-      ];
-      for (const [i, j] of positions) {
-        this.units.push({
-          id: `u${this.units.length}`,
-          owner: p as PlayerId,
-          gx: i + 0.5,
-          gy: j + 0.5,
-          speed: 3.5,
-          color: PLAYER_COLORS[p],
-          state: "idle",
-          path: [],
-          harvestTreeId: null,
-          harvestTimer: 0,
-        });
+  removePlayer(p: PlayerId): string[] {
+    if (!this.active[p]) return [];
+    this.active[p] = false;
+    const removed: string[] = [];
+    this.units = this.units.filter((u) => {
+      if (u.owner === p) {
+        removed.push(u.id);
+        return false;
       }
-    }
+      return true;
+    });
+    this.wood[p] = 0;
+    return removed;
+  }
 
-    const reserved = new Set<string>();
-    for (const u of this.units) {
-      const i = Math.floor(u.gx);
-      const j = Math.floor(u.gy);
-      for (let dj = -1; dj <= 1; dj++) {
-        for (let di = -1; di <= 1; di++) reserved.add(`${i + di},${j + dj}`);
-      }
-    }
-    let placed = 0;
-    let tries = 0;
-    while (placed < TREE_COUNT && tries < 500) {
-      tries++;
-      const i = Math.floor(rng() * MAP_SIZE);
-      const j = Math.floor(rng() * MAP_SIZE);
-      const k = `${i},${j}`;
-      if (reserved.has(k)) continue;
-      reserved.add(k);
-      const id = `t${placed}`;
-      this.trees.set(id, { id, i, j, wood: 25, alive: true });
-      this.map.setWalkable(i, j, false);
-      placed++;
-    }
+  isWalkable(i: number, j: number): boolean {
+    if (!isLandTile(this.seed, i, j)) return false;
+    if (!hasTreeAt(this.seed, i, j)) return true;
+    return this.destroyedTrees.has(treeIdAt(i, j));
   }
 
   unitsSnapshot(): UnitSnapshot[] {
-    return this.units.map((u) => ({
-      id: u.id,
-      owner: u.owner,
-      gx: u.gx,
-      gy: u.gy,
-      state: u.state,
-      color: u.color,
-    }));
+    return this.units.map(this.snap);
   }
 
-  treesSnapshot(): TreeSnapshot[] {
-    return [...this.trees.values()].map((t) => ({
-      id: t.id,
-      i: t.i,
-      j: t.j,
-      alive: t.alive,
-    }));
-  }
+  private snap = (u: SimUnit): UnitSnapshot => ({
+    id: u.id,
+    owner: u.owner,
+    gx: u.gx,
+    gy: u.gy,
+    state: u.state,
+    color: u.color,
+  });
 
   consumeRemovedTrees(): string[] {
     const out = this.removedTreeIds;
@@ -119,14 +120,13 @@ export class Sim {
   }
 
   cmdMove(owner: PlayerId, unitIds: string[], i: number, j: number): void {
-    if (!this.map.inBounds(i, j)) return;
     const claimed = new Set<string>();
     for (const id of unitIds) {
       const u = this.units.find((x) => x.id === id && x.owner === owner);
       if (!u) continue;
       const blocked = this.blockedTilesFor(u, claimed);
       let target = { i, j };
-      if (blocked.has(`${i},${j}`) || !this.map.isWalkable(i, j)) {
+      if (blocked.has(`${i},${j}`) || !this.isWalkable(i, j)) {
         const free = this.findFreeTileNear(i, j, blocked);
         if (!free) continue;
         target = free;
@@ -139,14 +139,16 @@ export class Sim {
   }
 
   cmdHarvest(owner: PlayerId, unitIds: string[], treeId: string): void {
-    const tree = this.trees.get(treeId);
-    if (!tree || !tree.alive) return;
+    const coord = parseTreeId(treeId);
+    if (!coord) return;
+    if (!hasTreeAt(this.seed, coord.i, coord.j)) return;
+    if (this.destroyedTrees.has(treeId)) return;
     const claimed = new Set<string>();
     for (const id of unitIds) {
       const u = this.units.find((x) => x.id === id && x.owner === owner);
       if (!u) continue;
       const blocked = this.blockedTilesFor(u, claimed);
-      this.startHarvest(u, tree, blocked);
+      this.startHarvest(u, coord.i, coord.j, treeId, blocked);
       const last = u.path[u.path.length - 1];
       if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
@@ -176,7 +178,7 @@ export class Sim {
           if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
           const ni = ti + di;
           const nj = tj + dj;
-          if (!this.map.isWalkable(ni, nj)) continue;
+          if (!this.isWalkable(ni, nj)) continue;
           if (blocked.has(`${ni},${nj}`)) continue;
           return { i: ni, j: nj };
         }
@@ -187,7 +189,7 @@ export class Sim {
 
   private startMove(u: SimUnit, i: number, j: number, blocked: Set<string>): void {
     const path = findPath(
-      this.map,
+      (a, b) => this.isWalkable(a, b),
       Math.floor(u.gx),
       Math.floor(u.gy),
       i,
@@ -205,18 +207,31 @@ export class Sim {
     u.harvestTreeId = null;
   }
 
-  private startHarvest(u: SimUnit, tree: SimTree, blocked: Set<string>): void {
+  private startHarvest(
+    u: SimUnit,
+    treeI: number,
+    treeJ: number,
+    treeId: string,
+    blocked: Set<string>,
+  ): void {
     let bestPath: ReturnType<typeof findPath> = null;
     const offsets: Array<[number, number]> = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
     ];
     for (const [di, dj] of offsets) {
-      const ni = tree.i + di;
-      const nj = tree.j + dj;
-      if (!this.map.isWalkable(ni, nj)) continue;
+      const ni = treeI + di;
+      const nj = treeJ + dj;
+      if (!this.isWalkable(ni, nj)) continue;
       if (blocked.has(`${ni},${nj}`)) continue;
-      const p = findPath(this.map, Math.floor(u.gx), Math.floor(u.gy), ni, nj, blocked);
+      const p = findPath(
+        (a, b) => this.isWalkable(a, b),
+        Math.floor(u.gx),
+        Math.floor(u.gy),
+        ni,
+        nj,
+        blocked,
+      );
       if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
     }
     if (!bestPath) return;
@@ -224,7 +239,7 @@ export class Sim {
       bestPath.length > 1
         ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
         : [];
-    u.harvestTreeId = tree.id;
+    u.harvestTreeId = treeId;
     u.harvestTimer = 0;
     u.state = u.path.length > 0 ? "moving" : "harvesting";
   }
@@ -234,8 +249,11 @@ export class Sim {
     for (const u of this.units) {
       if (u.state === "moving") {
         if (u.path.length === 0) {
-          const t = u.harvestTreeId ? this.trees.get(u.harvestTreeId) : null;
-          u.state = t && t.alive ? "harvesting" : "idle";
+          u.state =
+            u.harvestTreeId && !this.destroyedTrees.has(u.harvestTreeId)
+              ? "harvesting"
+              : "idle";
+          if (u.state === "idle") u.harvestTreeId = null;
         } else {
           const wp = u.path[0];
           const dx = wp.gx - u.gx;
@@ -252,8 +270,14 @@ export class Sim {
           }
         }
       } else if (u.state === "harvesting") {
-        const t = u.harvestTreeId ? this.trees.get(u.harvestTreeId) : null;
-        if (!t || !t.alive) {
+        const tid = u.harvestTreeId;
+        if (!tid || this.destroyedTrees.has(tid)) {
+          u.harvestTreeId = null;
+          u.state = "idle";
+          continue;
+        }
+        const coord = parseTreeId(tid);
+        if (!coord || !hasTreeAt(this.seed, coord.i, coord.j)) {
           u.harvestTreeId = null;
           u.state = "idle";
           continue;
@@ -261,28 +285,21 @@ export class Sim {
         u.harvestTimer += dt;
         if (u.harvestTimer >= HARVEST_INTERVAL) {
           u.harvestTimer = 0;
-          t.wood -= HARVEST_AMOUNT;
+          const remaining =
+            (this.treeWood.get(tid) ?? treeWoodAt(this.seed, coord.i, coord.j)) -
+            HARVEST_AMOUNT;
           this.wood[u.owner] += HARVEST_AMOUNT;
-          if (t.wood <= 0) {
-            t.alive = false;
-            this.map.setWalkable(t.i, t.j, true);
-            this.removedTreeIds.push(t.id);
+          if (remaining <= 0) {
+            this.destroyedTrees.add(tid);
+            this.treeWood.delete(tid);
+            this.removedTreeIds.push(tid);
             u.harvestTreeId = null;
             u.state = "idle";
+          } else {
+            this.treeWood.set(tid, remaining);
           }
         }
       }
     }
   }
-}
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }

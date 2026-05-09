@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RTS</title>
+    <title>Jäger und Sammler</title>
     <style>
       html, body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
       #game { width: 100vw; height: 100vh; }
@@ -12,6 +12,38 @@
         font-family: system-ui, sans-serif; font-size: 13px;
         background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 4px;
         pointer-events: none;
+      }
+      #toasts {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        display: flex; flex-direction: column; gap: 6px;
+        pointer-events: none; z-index: 8;
+      }
+      .toast {
+        background: rgba(20, 30, 20, 0.92);
+        color: #e8f0e8; font-family: system-ui, sans-serif; font-size: 14px;
+        padding: 8px 14px; border-radius: 6px;
+        border: 1px solid #4d8a4d;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+        opacity: 0; transform: translateY(-8px);
+        transition: opacity 200ms ease, transform 200ms ease;
+      }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      .toast.leave { border-color: #a05050; }
+      #minimap-wrap {
+        position: fixed; bottom: 12px; right: 12px;
+        background: rgba(10, 14, 10, 0.85);
+        border: 1px solid #3a5a3a; border-radius: 6px;
+        padding: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        font-family: system-ui, sans-serif; color: #c8d8c8;
+        z-index: 5;
+      }
+      #minimap-label {
+        font-size: 11px; text-align: center; margin-bottom: 4px;
+        letter-spacing: 0.5px; color: #a8c0a8;
+      }
+      #minimap {
+        display: block; width: 200px; height: 200px;
+        image-rendering: pixelated; cursor: crosshair;
       }
       #lobby {
         position: fixed; inset: 0; display: flex;
@@ -52,7 +84,7 @@
     <div id="game"></div>
     <div id="lobby">
       <div id="lobby-card">
-        <h1>RTS Multiplayer</h1>
+        <h1>Jäger und Sammler</h1>
         <div id="lobby-title">Name eingeben — wir verbinden dich automatisch</div>
         <input id="name-input" maxlength="20" placeholder="Dein Name" autocomplete="off" />
         <div class="btn-row">
@@ -62,6 +94,11 @@
       </div>
     </div>
     <div id="hud"></div>
+    <div id="toasts"></div>
+    <div id="minimap-wrap" style="display:none">
+      <div id="minimap-label">Karte</div>
+      <canvas id="minimap" width="200" height="200"></canvas>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

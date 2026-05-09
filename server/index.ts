@@ -2,98 +2,109 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Sim } from "./sim";
 import {
   ClientMessage,
+  MAX_PLAYERS,
   PlayerId,
   ServerMessage,
   TICK_RATE,
-  MAP_SIZE,
 } from "../shared/protocol";
 
 interface PlayerSlot {
   ws: WebSocket;
   name: string;
   id: PlayerId;
-  match: Match | null;
 }
 
-interface Match {
-  players: [PlayerSlot, PlayerSlot];
-  sim: Sim;
-  loop: NodeJS.Timeout;
-  lastTick: number;
-}
+const world = {
+  sim: new Sim((Date.now() ^ Math.floor(Math.random() * 0xffffff)) >>> 0),
+  players: new Array<PlayerSlot | null>(MAX_PLAYERS).fill(null),
+  lastTick: Date.now(),
+};
 
-let waiting: PlayerSlot | null = null;
-const matches = new Set<Match>();
 const slots = new Map<WebSocket, PlayerSlot>();
 
 function send(ws: WebSocket, msg: ServerMessage): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
 }
 
-function broadcast(match: Match, msg: ServerMessage): void {
+function broadcast(msg: ServerMessage): void {
   const data = JSON.stringify(msg);
-  for (const p of match.players) {
-    if (p.ws.readyState === p.ws.OPEN) p.ws.send(data);
+  for (const p of world.players) {
+    if (p && p.ws.readyState === p.ws.OPEN) p.ws.send(data);
   }
 }
 
-function startMatch(a: PlayerSlot, b: PlayerSlot): void {
-  a.id = 0;
-  b.id = 1;
-  const sim = new Sim(Date.now() & 0xffffffff);
-  const match: Match = {
-    players: [a, b],
-    sim,
-    lastTick: Date.now(),
-    loop: setInterval(() => tickMatch(match), 1000 / TICK_RATE),
-  };
-  a.match = match;
-  b.match = match;
-  matches.add(match);
+function namesOf(): string[] {
+  return world.players.map((p) => p?.name ?? "");
+}
 
-  const names: [string, string] = [a.name, b.name];
-  for (const p of match.players) {
-    send(p.ws, {
-      type: "init",
-      playerId: p.id,
-      mapSize: MAP_SIZE,
-      trees: sim.treesSnapshot(),
-      units: sim.unitsSnapshot(),
-      wood: [...sim.wood] as [number, number],
-      names,
+function joinPlayer(ws: WebSocket, name: string): void {
+  const slotId = world.players.findIndex((p) => p === null);
+  if (slotId === -1) {
+    send(ws, {
+      type: "error",
+      message: `Welt ist voll (max. ${MAX_PLAYERS} Spieler)`,
+    });
+    return;
+  }
+
+  const slot: PlayerSlot = { ws, name, id: slotId };
+  world.players[slotId] = slot;
+  slots.set(ws, slot);
+  world.sim.addPlayer(slotId);
+
+  send(ws, {
+    type: "init",
+    playerId: slotId,
+    seed: world.sim.seed,
+    units: world.sim.unitsSnapshot(),
+    destroyedTrees: [...world.sim.destroyedTrees],
+    spawn: world.sim.spawns[slotId],
+    wood: [...world.sim.wood],
+    names: namesOf(),
+  });
+
+  const newUnits = world.sim.unitsSnapshot().filter((u) => u.owner === slotId);
+  for (const other of world.players) {
+    if (!other || other.id === slotId) continue;
+    send(other.ws, {
+      type: "opponentJoined",
+      playerId: slotId,
+      name,
+      units: newUnits,
     });
   }
 }
 
-function tickMatch(match: Match): void {
+function tick(): void {
   const now = Date.now();
-  const dt = (now - match.lastTick) / 1000;
-  match.lastTick = now;
-  match.sim.step(dt);
-  broadcast(match, {
+  const dt = (now - world.lastTick) / 1000;
+  world.lastTick = now;
+  world.sim.step(dt);
+  broadcast({
     type: "state",
-    tick: match.sim.tick,
-    units: match.sim.unitsSnapshot(),
-    wood: [...match.sim.wood] as [number, number],
-    removedTrees: match.sim.consumeRemovedTrees(),
+    tick: world.sim.tick,
+    units: world.sim.unitsSnapshot(),
+    wood: [...world.sim.wood],
+    removedTrees: world.sim.consumeRemovedTrees(),
   });
 }
 
-function endMatch(match: Match, leaver: PlayerSlot | null): void {
-  clearInterval(match.loop);
-  matches.delete(match);
-  for (const p of match.players) {
-    p.match = null;
-    if (p !== leaver) send(p.ws, { type: "opponentLeft" });
-  }
-}
+setInterval(tick, 1000 / TICK_RATE);
 
 function disconnect(ws: WebSocket): void {
   const slot = slots.get(ws);
   if (!slot) return;
   slots.delete(ws);
-  if (waiting === slot) waiting = null;
-  if (slot.match) endMatch(slot.match, slot);
+  world.players[slot.id] = null;
+  const removedUnitIds = world.sim.removePlayer(slot.id);
+  for (const other of world.players) {
+    if (!other) continue;
+    send(other.ws, {
+      type: "opponentLeft",
+      playerId: slot.id,
+      removedUnitIds,
+    });
+  }
 }
 
 const port = Number(process.env.PORT ?? 8787);
@@ -116,27 +127,17 @@ wss.on("connection", (ws) => {
         return;
       }
       const name = (msg.name || "Spieler").trim().slice(0, 20) || "Spieler";
-      const slot: PlayerSlot = { ws, name, id: 0, match: null };
-      slots.set(ws, slot);
-
-      if (waiting && waiting.ws.readyState === waiting.ws.OPEN) {
-        const opp = waiting;
-        waiting = null;
-        startMatch(opp, slot);
-      } else {
-        waiting = slot;
-        send(ws, { type: "queued" });
-      }
+      joinPlayer(ws, name);
       return;
     }
 
     const slot = slots.get(ws);
-    if (!slot || !slot.match) return;
+    if (!slot) return;
 
     if (msg.type === "move") {
-      slot.match.sim.cmdMove(slot.id, msg.unitIds, msg.i, msg.j);
+      world.sim.cmdMove(slot.id, msg.unitIds, msg.i, msg.j);
     } else if (msg.type === "harvest") {
-      slot.match.sim.cmdHarvest(slot.id, msg.unitIds, msg.treeId);
+      world.sim.cmdHarvest(slot.id, msg.unitIds, msg.treeId);
     }
   });
 
