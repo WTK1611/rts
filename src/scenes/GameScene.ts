@@ -1220,10 +1220,9 @@ export class GameScene extends Phaser.Scene {
       const n = this.names[i];
       if (!n) continue;
       const c = this.playerColorCss(i);
-      const w = this.resources[i]?.holz ?? 0;
       otherRows.push(
         `<div class="row"><span class="swatch" style="background:${c}"></span>` +
-          `${escapeHtml(n)}: ${w} Holz</div>`,
+          `${escapeHtml(n)}</div>`,
       );
     }
     const othersHtml = otherRows.length

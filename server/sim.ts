@@ -12,6 +12,7 @@ import {
   UnitSnapshot,
 } from "../shared/protocol";
 import {
+  biomeAt,
   bushBerriesAt,
   fishMeatAt,
   hasBushAt,
@@ -42,6 +43,7 @@ const TREE_AUTOPICK_GAIN = 1;
 const STONE_AUTOPICK_GAIN = 1;
 const STONE_HARVEST_AMOUNT = 2;
 const FISH_AUTOPICK_GAIN = 1;
+const WATER_AUTOPICK_GAIN = 1;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -388,6 +390,21 @@ export class Sim {
       }
     }
     this.tryAutoPickShallowFish(u, ti, tj);
+    this.tryAutoPickWater(u, ti, tj);
+  }
+
+  private tryAutoPickWater(u: SimUnit, ti: number, tj: number): void {
+    const adj: Array<[number, number]> = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1],
+    ];
+    for (const [di, dj] of adj) {
+      const b = biomeAt(this.seed, ti + di, tj + dj);
+      if (b === "lake" || b === "river") {
+        this.resources[u.owner].wasser += WATER_AUTOPICK_GAIN;
+        return;
+      }
+    }
   }
 
   private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
