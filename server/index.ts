@@ -44,7 +44,7 @@ interface PlayerSlot {
   bot?: AIBot;
 }
 
-const BOT_COUNT = Number(process.env.RTS_BOT_COUNT ?? 1);
+const BOT_COUNT = Number(process.env.RTS_BOT_COUNT ?? 5);
 const BOT_RESPAWN_DELAY_MS = 12000;
 const pendingBotRespawns: Map<PlayerId, number> = new Map();
 
