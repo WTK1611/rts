@@ -390,6 +390,7 @@ function joinPlayer(
     artifacts: world.sim.artifactsSnapshot(),
     gameTimeSec: world.sim.gameTimeSec,
     treeGrowth: world.sim.treeGrowthSnapshot(),
+    tribeOrigin: [...world.sim.tribeOrigin],
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -484,6 +485,8 @@ function tick(): void {
   const artifactFinds = world.sim.consumeArtifactFinds();
   const resourceFlows = world.sim.consumeResourceFlows();
   const treeGrowthEvents = world.sim.consumeTreeGrowthEvents();
+  const tribeOrigin = [...world.sim.tribeOrigin];
+  const winnerOrigin = world.sim.winnerOrigin();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -570,6 +573,8 @@ function tick(): void {
       fishCount: world.sim.fishes.size,
       gameTimeSec: world.sim.gameTimeSec,
       treeGrowthEvents,
+      tribeOrigin,
+      winnerOrigin,
     });
   }
 

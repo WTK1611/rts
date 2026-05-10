@@ -349,6 +349,7 @@ export class Sim {
   pregnancyTimer: Map<string, number> = new Map();
   nextUnitIdx: number[] = new Array(MAX_PLAYERS).fill(TRIBE_SIZE);
   tribeLanguage: NameLanguage[] = new Array(MAX_PLAYERS).fill("de");
+  tribeOrigin: PlayerId[] = Array.from({ length: MAX_PLAYERS }, (_, i) => i);
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
   campfires: Map<string, SimCampfire> = new Map();
@@ -771,6 +772,25 @@ export class Sim {
 
   isNight(): boolean {
     return this.lastPhase === "night";
+  }
+
+  winnerOrigin(): PlayerId | null {
+    const counts = new Array(MAX_PLAYERS).fill(0);
+    for (const u of this.units.values()) {
+      if (u.hp > 0) counts[u.owner]++;
+    }
+    let activeCount = 0;
+    let sharedOrigin: PlayerId | null = null;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!this.active[p]) continue;
+      if (counts[p] === 0) continue;
+      activeCount++;
+      const o = this.tribeOrigin[p];
+      if (sharedOrigin === null) sharedOrigin = o;
+      else if (sharedOrigin !== o) return null;
+    }
+    if (activeCount < 2) return null;
+    return sharedOrigin;
   }
 
   private onNightStart(): void {
@@ -1833,7 +1853,8 @@ export class Sim {
         u.gy = wp.gy;
         u.path.shift();
       } else {
-        const step = Math.min(u.speed * dt, sd);
+        const speedMul = this.isNight() ? 0.2 : 1;
+        const step = Math.min(u.speed * speedMul * dt, sd);
         u.gx += (ddx / sd) * step;
         u.gy += (ddy / sd) * step;
       }
@@ -1845,6 +1866,7 @@ export class Sim {
   addPlayer(p: PlayerId, language?: NameLanguage): UnitSnapshot[] {
     if (this.active[p]) return this.unitsSnapshot().filter((u) => u.owner === p);
     this.active[p] = true;
+    this.tribeOrigin[p] = p;
     this.clearPregnanciesFor(p);
     this.nextUnitIdx[p] = TRIBE_SIZE;
     this.tribeLanguage[p] = language ?? languageForSlot(this.seed, p);
@@ -1902,6 +1924,7 @@ export class Sim {
 
   respawnTribe(p: PlayerId, language?: NameLanguage): UnitSnapshot[] {
     this.active[p] = true;
+    this.tribeOrigin[p] = p;
     this.clearPregnanciesFor(p);
     this.resources[p] = emptyResources();
     const fid = this.campfireIdFor(p);
@@ -1969,6 +1992,7 @@ export class Sim {
   removePlayer(p: PlayerId): string[] {
     if (!this.active[p]) return [];
     this.active[p] = false;
+    this.tribeOrigin[p] = p;
     this.followChiefEnabled[p] = false;
     const removed: string[] = [];
     for (const u of this.units.values()) {
@@ -2607,7 +2631,8 @@ export class Sim {
             u.gy = wp.gy;
             u.path.shift();
           } else {
-            const step = Math.min(u.speed * dt, dist);
+            const speedMul = this.isNight() ? 0.2 : 1;
+            const step = Math.min(u.speed * speedMul * dt, dist);
             u.gx += (dx / dist) * step;
             u.gy += (dy / dist) * step;
           }
@@ -3051,6 +3076,7 @@ export class Sim {
 
     this.active[target] = true;
     this.tribeLanguage[target] = this.tribeLanguage[parent];
+    this.tribeOrigin[target] = this.tribeOrigin[parent];
     this.followChiefEnabled[target] = this.followChiefEnabled[parent];
     this.resources[target] = emptyResources();
     this.spawns[target] = { cx: Math.floor(ax), cy: Math.floor(ay) };

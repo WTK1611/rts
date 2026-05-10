@@ -89,6 +89,11 @@ export interface Strings {
   goResources: string;
   goLeaderboard: string;
   goRestart: string;
+  victoryTitle: string;
+  victorySubtitle: string;
+  victoryStatTribes: string;
+  victoryOtherTitle: (name: string) => string;
+  victoryOtherSubtitle: (name: string) => string;
   lbHeaderRank: string;
   lbHeaderTribe: string;
   lbHeaderTime: string;
@@ -194,6 +199,12 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Ressourcen",
     goLeaderboard: "Bestenliste",
     goRestart: "Neu starten",
+    victoryTitle: "Sieg! Alle Stämme stammen von dir ab",
+    victorySubtitle: "Dein Ursprungsstamm hat sich durch Teilung über alle Plätze ausgebreitet.",
+    victoryStatTribes: "Stämme deines Ursprungs",
+    victoryOtherTitle: (n) => `Sieg für ${n}`,
+    victoryOtherSubtitle: (n) =>
+      `Alle aktiven Stämme stammen vom Ursprung von ${n} ab.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Stamm",
     lbHeaderTime: "Zeit",
@@ -295,6 +306,11 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Resources",
     goLeaderboard: "Leaderboard",
     goRestart: "Restart",
+    victoryTitle: "Victory! Every tribe descends from yours",
+    victorySubtitle: "Your origin tribe has spread to every slot through splits.",
+    victoryStatTribes: "Tribes of your origin",
+    victoryOtherTitle: (n) => `Victory for ${n}`,
+    victoryOtherSubtitle: (n) => `All active tribes descend from ${n}'s origin.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Tribe",
     lbHeaderTime: "Time",
@@ -397,6 +413,11 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Risorse",
     goLeaderboard: "Classifica",
     goRestart: "Ricomincia",
+    victoryTitle: "Vittoria! Tutte le tribù discendono dalla tua",
+    victorySubtitle: "La tua tribù d'origine si è diffusa in tutti gli slot tramite le scissioni.",
+    victoryStatTribes: "Tribù della tua origine",
+    victoryOtherTitle: (n) => `Vittoria di ${n}`,
+    victoryOtherSubtitle: (n) => `Tutte le tribù attive discendono dall'origine di ${n}.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Tribù",
     lbHeaderTime: "Tempo",
@@ -499,6 +520,11 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Recursos",
     goLeaderboard: "Clasificación",
     goRestart: "Reiniciar",
+    victoryTitle: "¡Victoria! Todas las tribus descienden de la tuya",
+    victorySubtitle: "Tu tribu de origen se ha extendido a todos los espacios mediante divisiones.",
+    victoryStatTribes: "Tribus de tu origen",
+    victoryOtherTitle: (n) => `Victoria de ${n}`,
+    victoryOtherSubtitle: (n) => `Todas las tribus activas descienden del origen de ${n}.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Tribu",
     lbHeaderTime: "Tiempo",
@@ -601,6 +627,11 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Recursos",
     goLeaderboard: "Classificação",
     goRestart: "Recomeçar",
+    victoryTitle: "Vitória! Todas as tribos descendem da tua",
+    victorySubtitle: "A tua tribo de origem espalhou-se por todos os lugares através de divisões.",
+    victoryStatTribes: "Tribos da tua origem",
+    victoryOtherTitle: (n) => `Vitória de ${n}`,
+    victoryOtherSubtitle: (n) => `Todas as tribos ativas descendem da origem de ${n}.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Tribo",
     lbHeaderTime: "Tempo",
@@ -703,6 +734,11 @@ const STRINGS: Record<Language, Strings> = {
     goResources: "Ressources",
     goLeaderboard: "Classement",
     goRestart: "Recommencer",
+    victoryTitle: "Victoire ! Toutes les tribus descendent de la tienne",
+    victorySubtitle: "Ta tribu d'origine s'est répandue dans tous les emplacements par scission.",
+    victoryStatTribes: "Tribus de ton origine",
+    victoryOtherTitle: (n) => `Victoire pour ${n}`,
+    victoryOtherSubtitle: (n) => `Toutes les tribus actives descendent de l'origine de ${n}.`,
     lbHeaderRank: "#",
     lbHeaderTribe: "Tribu",
     lbHeaderTime: "Temps",

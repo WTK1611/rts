@@ -209,6 +209,8 @@ export class GameScene extends Phaser.Scene {
   private initialTribeSize = 0;
   private maxTribeSize = 0;
   private isGameOver = false;
+  private isGameWon = false;
+  private tribeOrigin: PlayerId[] = [];
 
   private growthProgress: number[] = [];
   private growthActive: boolean[] = [];
@@ -288,6 +290,7 @@ export class GameScene extends Phaser.Scene {
     this.tribeCounts = data.init.tribeCounts ?? [];
     this.gameTimeSec = data.init.gameTimeSec ?? 0;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    this.tribeOrigin = data.init.tribeOrigin ?? [];
     if (data.init.treeGrowth) {
       for (const ev of data.init.treeGrowth) {
         if (ev.stage >= 1 && ev.stage <= 3) {
@@ -2296,6 +2299,17 @@ export class GameScene extends Phaser.Scene {
         this.applyTreeGrowthEvent(ev);
       }
     }
+    if (msg.tribeOrigin) {
+      this.tribeOrigin = msg.tribeOrigin;
+    }
+    if (
+      typeof msg.winnerOrigin === "number" &&
+      msg.winnerOrigin >= 0 &&
+      !this.isGameWon &&
+      !this.isGameOver
+    ) {
+      this.handleVictory(msg.winnerOrigin);
+    }
     for (const fp of msg.newFootprints) {
       this.footprints.push(fp);
     }
@@ -3256,12 +3270,78 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkGameOver(): void {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.isGameWon) return;
     if (this.initialTribeSize === 0) return;
     const alive = [...this.units.values()].some((u) => u.owner === this.playerId);
     if (alive) return;
     this.isGameOver = true;
     this.time.delayedCall(2400, () => this.showGameOver());
+  }
+
+  private handleVictory(winnerOrigin: PlayerId): void {
+    this.isGameWon = true;
+    const wonByMe = winnerOrigin === this.playerId;
+    this.time.delayedCall(800, () => this.showVictory(winnerOrigin, wonByMe));
+  }
+
+  private showVictory(winnerOrigin: PlayerId, wonByMe: boolean): void {
+    const elapsedMs = Date.now() - this.gameStartMs;
+    const totalSec = Math.floor(elapsedMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    const timeStr = `${m}:${sec.toString().padStart(2, "0")}`;
+    const tr = t();
+
+    const collected = this.collectedTotals;
+    const labels: Record<keyof Resources, string> = {
+      holz: tr.resHolz,
+      wasser: tr.resWasser,
+      beeren: tr.resBeeren,
+      pilze: tr.resPilze,
+      fleisch: tr.resFleisch,
+      fisch: tr.resFisch,
+      stein: tr.resStein,
+    };
+    const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
+    const resHtml = RESOURCE_KEYS.map(
+      (k) =>
+        `<div class="go-item"><span class="go-ico ${k}"></span>` +
+        `<span class="go-label">${labels[k]}</span><b>${collected[k]}</b></div>`,
+    ).join("");
+
+    let tribesShare = 0;
+    let tribesTotal = 0;
+    for (let i = 0; i < this.tribeCounts.length; i++) {
+      if ((this.tribeCounts[i] ?? 0) <= 0) continue;
+      tribesTotal++;
+      if (this.tribeOrigin[i] === winnerOrigin) tribesShare++;
+    }
+
+    const winnerName =
+      this.names[winnerOrigin] || tr.hudTribeFallback(winnerOrigin);
+    const title = wonByMe ? tr.victoryTitle : tr.victoryOtherTitle(winnerName);
+    const subtitle = wonByMe ? tr.victorySubtitle : tr.victoryOtherSubtitle(winnerName);
+
+    const overlay = document.createElement("div");
+    overlay.id = "gameover";
+    overlay.classList.add(wonByMe ? "victory" : "defeat");
+    overlay.innerHTML =
+      `<div id="gameover-card">` +
+      `<h1>${escapeHtml(title)}</h1>` +
+      `<div class="go-sub">${escapeHtml(subtitle)}</div>` +
+      `<div class="go-stats">` +
+      `<div class="go-row"><span>${escapeHtml(tr.victoryStatTribes)}</span><b>${tribesShare} / ${tribesTotal}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goSurvival)}</span><b>${timeStr}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goMaxTribe)}</span><b>${this.maxTribeSize}</b></div>` +
+      `<div class="go-row"><span>${escapeHtml(tr.goCollectedTotal)}</span><b>${totalCollected}</b></div>` +
+      `</div>` +
+      `<div class="go-sub">${escapeHtml(tr.goResources)}</div>` +
+      `<div class="go-res">${resHtml}</div>` +
+      `<div class="btn-row"><button id="gameover-btn" class="btn">${escapeHtml(tr.goRestart)}</button></div>` +
+      `</div>`;
+    document.body.appendChild(overlay);
+    const btn = document.getElementById("gameover-btn");
+    btn?.addEventListener("click", () => window.location.reload());
   }
 
   private showGameOver(): void {

@@ -185,6 +185,7 @@ export interface InitMessage {
   artifacts: ArtifactSnapshot[];
   gameTimeSec: number;
   treeGrowth: TreeGrowthEvent[];
+  tribeOrigin: PlayerId[];
 }
 
 export interface EncounterEvent {
@@ -239,6 +240,8 @@ export interface StateMessage {
   fishCount?: number;
   gameTimeSec: number;
   treeGrowthEvents: TreeGrowthEvent[];
+  tribeOrigin: PlayerId[];
+  winnerOrigin: PlayerId | null;
 }
 
 export interface OpponentJoinedMessage {
