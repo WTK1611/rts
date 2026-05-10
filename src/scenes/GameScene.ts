@@ -1818,7 +1818,6 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const er = this.nightEraser;
     for (const vol of this.volcanoes.values()) {
-      if (!this.visible.has(`${vol.i},${vol.j}`)) continue;
       const wx = vol.container.x;
       const wy = vol.container.y - 30;
       const sx = (wx - cam.scrollX) * cam.zoom + (cam.width * (1 - cam.zoom)) / 2;
