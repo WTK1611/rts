@@ -66,6 +66,15 @@ interface SurfSeg {
   phase: number;
 }
 
+interface WaterfallSeg {
+  topX: number;
+  topY: number;
+  botX: number;
+  botY: number;
+  width: number;
+  phase: number;
+}
+
 interface Chunk {
   cx: number;
   cy: number;
@@ -77,6 +86,7 @@ interface Chunk {
   stones: Map<string, Stone>;
   sequoias: Map<string, Sequoia>;
   surfSegments: SurfSeg[];
+  waterfalls: WaterfallSeg[];
   bbox: { x: number; y: number; w: number; h: number };
 }
 
@@ -198,6 +208,8 @@ export class GameScene extends Phaser.Scene {
   private moveTargetGfx!: Phaser.GameObjects.Graphics;
   private surfGfx!: Phaser.GameObjects.Graphics;
   private lastSurfMs = -1000;
+  private waterfallGfx!: Phaser.GameObjects.Graphics;
+  private lastWaterfallMs = -1000;
   private moveTarget: {
     i: number;
     j: number;
@@ -303,6 +315,9 @@ export class GameScene extends Phaser.Scene {
     this.surfGfx = this.add.graphics();
     this.surfGfx.setDepth(-50000);
 
+    this.waterfallGfx = this.add.graphics();
+    this.waterfallGfx.setDepth(-45000);
+
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x6aaad6);
     const spawn = initData.init.spawn;
@@ -387,6 +402,7 @@ export class GameScene extends Phaser.Scene {
     for (const f of this.campfires.values()) f.update(dt);
     for (const ar of this.artifacts.values()) ar.update(dt);
     this.updateSurf(time);
+    this.updateWaterfalls(time);
 
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
@@ -848,15 +864,18 @@ export class GameScene extends Phaser.Scene {
     rt.draw(g, -ofx, -ofy);
     g.destroy();
     const surfSegments: SurfSeg[] = [];
+    const waterfalls: WaterfallSeg[] = [];
     for (let dj = 0; dj < CHUNK_SIZE; dj++) {
       for (let di = 0; di < CHUNK_SIZE; di++) {
         this.collectSurfSegmentsForTile(i0 + di, j0 + dj, surfSegments);
+        this.collectWaterfallsForTile(i0 + di, j0 + dj, waterfalls);
       }
     }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
       trees, bushes, mushrooms, fishes, stones, sequoias,
       surfSegments,
+      waterfalls,
       bbox: { x: ofx, y: ofy, w, h },
     });
   }
@@ -899,6 +918,56 @@ export class GameScene extends Phaser.Scene {
       const pts = [{ x: a.x, y: a.y }, ...wave, { x: b.x, y: b.y }];
       const phase = (i * 0.37 + j * 0.71 + e * 1.13) % (Math.PI * 2);
       out.push({ pts, phase });
+    }
+  }
+
+  private collectWaterfallsForTile(i: number, j: number, out: WaterfallSeg[]): void {
+    const b = biomeAt(this.seed, i, j);
+    if (b !== "felsen" && b !== "gebirge") return;
+    const NB_DELTA: Array<[number, number]> = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ];
+    const riverEdges: number[] = [];
+    for (let e = 0; e < 4; e++) {
+      const [di, dj] = NB_DELTA[e];
+      if (biomeAt(this.seed, i + di, j + dj) === "river") riverEdges.push(e);
+    }
+    if (!riverEdges.length) return;
+    const cornerTouchesWater = (ci: number, cj: number): boolean =>
+      this.isWaterAt(ci - 1, cj - 1) ||
+      this.isWaterAt(ci, cj - 1) ||
+      this.isWaterAt(ci - 1, cj) ||
+      this.isWaterAt(ci, cj);
+    const hN = cornerTouchesWater(i, j) ? 0 : heightAt(this.seed, i, j);
+    const hE = cornerTouchesWater(i + 1, j) ? 0 : heightAt(this.seed, i + 1, j);
+    const hS = cornerTouchesWater(i + 1, j + 1) ? 0 : heightAt(this.seed, i + 1, j + 1);
+    const hW = cornerTouchesWater(i, j + 1) ? 0 : heightAt(this.seed, i, j + 1);
+    const drawnH = [hN, hE, hS, hW];
+    const { x, y } = gridToScreen(i, j);
+    const corners = [
+      { x: x, y: y - hN },
+      { x: x + TILE_W / 2, y: y + TILE_H / 2 - hE },
+      { x: x, y: y + TILE_H - hS },
+      { x: x - TILE_W / 2, y: y + TILE_H / 2 - hW },
+    ];
+    for (const e of riverEdges) {
+      const fa = corners[e];
+      const fb = corners[(e + 1) % 4];
+      const ba = corners[(e + 2) % 4];
+      const bb = corners[(e + 3) % 4];
+      const backH = (drawnH[(e + 2) % 4] + drawnH[(e + 3) % 4]) * 0.5;
+      if (backH < 12) continue;
+      const botX = (fa.x + fb.x) * 0.5;
+      const botY = (fa.y + fb.y) * 0.5;
+      const topX = (ba.x + bb.x) * 0.5;
+      const topY = (ba.y + bb.y) * 0.5;
+      const edgeLen = Math.hypot(fb.x - fa.x, fb.y - fa.y);
+      const width = edgeLen * 0.55;
+      const phase = (i * 0.51 + j * 0.83 + e * 1.7) % (Math.PI * 2);
+      out.push({ topX, topY, botX, botY, width, phase });
     }
   }
 
@@ -1212,6 +1281,88 @@ export class GameScene extends Phaser.Scene {
         g.strokePath();
       }
     }
+  }
+
+  private updateWaterfalls(timeMs: number): void {
+    if (timeMs - this.lastWaterfallMs < 50) return;
+    this.lastWaterfallMs = timeMs;
+    const g = this.waterfallGfx;
+    g.clear();
+    const view = this.cameras.main.worldView;
+    const t = timeMs * 0.001;
+    for (const ch of this.chunks.values()) {
+      const bb = ch.bbox;
+      if (bb.x + bb.w < view.x || bb.x > view.right) continue;
+      if (bb.y + bb.h < view.y || bb.y > view.bottom) continue;
+      for (const wf of ch.waterfalls) this.drawWaterfall(g, wf, t);
+    }
+  }
+
+  private drawWaterfall(
+    g: Phaser.GameObjects.Graphics,
+    wf: WaterfallSeg,
+    t: number,
+  ): void {
+    const dx = wf.botX - wf.topX;
+    const dy = wf.botY - wf.topY;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const dirX = dx / len;
+    const dirY = dy / len;
+    const perpX = -dirY;
+    const perpY = dirX;
+    const halfW = wf.width * 0.5;
+
+    g.fillStyle(0xc4dcef, 0.5);
+    g.beginPath();
+    g.moveTo(wf.topX - perpX * halfW, wf.topY - perpY * halfW);
+    g.lineTo(wf.topX + perpX * halfW, wf.topY + perpY * halfW);
+    g.lineTo(wf.botX + perpX * halfW * 1.05, wf.botY + perpY * halfW * 1.05);
+    g.lineTo(wf.botX - perpX * halfW * 1.05, wf.botY - perpY * halfW * 1.05);
+    g.closePath();
+    g.fillPath();
+
+    const innerW = halfW * 0.65;
+    g.fillStyle(0xeaf2fa, 0.55);
+    g.beginPath();
+    g.moveTo(wf.topX - perpX * innerW, wf.topY - perpY * innerW);
+    g.lineTo(wf.topX + perpX * innerW, wf.topY + perpY * innerW);
+    g.lineTo(wf.botX + perpX * innerW, wf.botY + perpY * innerW);
+    g.lineTo(wf.botX - perpX * innerW, wf.botY - perpY * innerW);
+    g.closePath();
+    g.fillPath();
+
+    const streakCount = Math.max(3, Math.floor(wf.width / 2.4));
+    g.lineStyle(1.4, 0xffffff, 0.85);
+    for (let s = 0; s < streakCount; s++) {
+      const sFrac = (s + 0.5) / streakCount - 0.5;
+      const offsetW = sFrac * wf.width;
+      const sBaseX = wf.topX + perpX * offsetW;
+      const sBaseY = wf.topY + perpY * offsetW;
+      const eBaseX = wf.botX + perpX * offsetW;
+      const eBaseY = wf.botY + perpY * offsetW;
+      const cycle = 0.6 + ((s * 7) % 5) * 0.07;
+      const speed = 0.55 + ((s * 13) % 30) * 0.012;
+      const offFrac = ((t * speed + s * 0.13 + wf.phase * 0.16) % cycle) / cycle;
+      const segFracLen = 0.18 + (s % 3) * 0.05;
+      const c1 = offFrac;
+      const c2 = Math.min(1, offFrac + segFracLen);
+      if (c2 <= c1) continue;
+      const x1 = sBaseX + (eBaseX - sBaseX) * c1;
+      const y1 = sBaseY + (eBaseY - sBaseY) * c1;
+      const x2 = sBaseX + (eBaseX - sBaseX) * c2;
+      const y2 = sBaseY + (eBaseY - sBaseY) * c2;
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.strokePath();
+    }
+
+    const foamPhase = 0.5 + 0.5 * Math.sin(t * 4 + wf.phase);
+    g.fillStyle(0xc4dcef, 0.55);
+    g.fillEllipse(wf.botX, wf.botY + 2, wf.width * 1.25, 4);
+    g.fillStyle(0xffffff, 0.45 + foamPhase * 0.35);
+    g.fillEllipse(wf.botX, wf.botY + 1, wf.width * 0.95, 3);
   }
 
   private waterShadeAt(i: number, j: number): number {
