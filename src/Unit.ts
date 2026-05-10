@@ -45,7 +45,6 @@ export class Unit {
   bodyShadow: Phaser.GameObjects.Ellipse;
   bodyHighlight: Phaser.GameObjects.Ellipse;
   shadow: Phaser.GameObjects.Ellipse;
-  selectionRing: Phaser.GameObjects.Ellipse;
   ownerRing: Phaser.GameObjects.Ellipse;
   gx: number;
   gy: number;
@@ -55,7 +54,6 @@ export class Unit {
   private srcGy: number;
   private snapElapsed = 0;
   private static readonly SNAP_DURATION = 0.07;
-  selected = false;
   state: UnitSnapshot["state"] = "idle";
   worldSeed: number;
   hp: number;
@@ -104,11 +102,6 @@ export class Unit {
       .ellipse(0, 0, 30, 14, isLocal ? 0xffffff : 0xff3333, 0)
       .setStrokeStyle(1.5, isLocal ? 0xffffff : 0xff3333, 0.7);
 
-    this.selectionRing = scene.add
-      .ellipse(0, 0, 36, 18, 0x00ff66, 0)
-      .setStrokeStyle(2, 0x00ff66);
-    this.selectionRing.setVisible(false);
-
     const dark = shade(snap.color, 0.7);
     const light = shade(snap.color, 1.25);
 
@@ -150,7 +143,6 @@ export class Unit {
     const layers: Phaser.GameObjects.GameObject[] = [
       this.shadow,
       this.ownerRing,
-      this.selectionRing,
       this.bodyShadow,
       this.body,
       this.bodyHighlight,
@@ -169,29 +161,6 @@ export class Unit {
       Phaser.Geom.Rectangle.Contains,
     );
     this.updateDepth();
-  }
-
-  setSelected(v: boolean): void {
-    this.selected = v;
-    this.selectionRing.setVisible(v);
-    if (v) {
-      this.scene.tweens.killTweensOf(this.selectionRing);
-      this.selectionRing.setScale(1);
-      this.scene.tweens.add({
-        targets: this.selectionRing,
-        scaleX: 1.15,
-        scaleY: 1.15,
-        alpha: 0.6,
-        duration: 700,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
-    } else {
-      this.scene.tweens.killTweensOf(this.selectionRing);
-      this.selectionRing.setScale(1);
-      this.selectionRing.setAlpha(1);
-    }
   }
 
   applySnapshot(snap: UnitSnapshot, isLocal: boolean): void {
@@ -345,8 +314,6 @@ export class Unit {
     this.huntSwingTween = null;
     this.huntStrikeEvent?.remove(false);
     this.huntStrikeEvent = null;
-    this.scene.tweens.killTweensOf(this.selectionRing);
-    this.selectionRing.setVisible(false);
     this.hpBarBg.setVisible(false);
     this.hpBarFill.setVisible(false);
     this.scene.tweens.add({

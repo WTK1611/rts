@@ -57,10 +57,10 @@ import { LANGUAGE_FLAG, LANGUAGE_LABEL, NameLanguage } from "../../shared/names"
 import { BIOME_MINI_COLOR } from "../biomeColors";
 import { t } from "../i18n";
 
-interface DragState {
+interface ClickState {
   startX: number;
   startY: number;
-  isBox: boolean;
+  moved: boolean;
 }
 
 interface SurfSeg {
@@ -146,14 +146,13 @@ export class GameScene extends Phaser.Scene {
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
-  private selectionBox!: Phaser.GameObjects.Graphics;
   private fog!: Phaser.GameObjects.Graphics;
   private footprintsGfx!: Phaser.GameObjects.Graphics;
 
   private visible = new Set<string>();
   private explored = new Set<string>();
 
-  private drag: DragState | null = null;
+  private click: ClickState | null = null;
   private resources: Resources[] = [];
   private collectedTotals: Resources = emptyResources();
   private pendingScoreEntry: ScoreEntry | null = null;
@@ -308,10 +307,6 @@ export class GameScene extends Phaser.Scene {
 
     this.fog = this.add.graphics();
     this.fog.setDepth(1_500_000);
-
-    this.selectionBox = this.add.graphics();
-    this.selectionBox.setScrollFactor(0);
-    this.selectionBox.setDepth(2_000_000);
 
     this.growthBeacon = this.add.graphics();
     this.growthBeacon.setDepth(1_700_000);
@@ -2016,9 +2011,6 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       const isLocal = snap.owner === this.playerId;
-      if (u.owner === this.playerId && !isLocal && u.selected) {
-        u.setSelected(false);
-      }
       u.applySnapshot(snap, isLocal);
     }
     for (const ro of msg.newRemovedObjects) {
@@ -2367,21 +2359,8 @@ export class GameScene extends Phaser.Scene {
       this.onTouchDown(p);
       return;
     }
-    if (p.rightButtonDown()) {
-      this.commandSelected(p);
-      return;
-    }
-    if (!p.leftButtonDown()) return;
-
-    const hits = this.input.hitTestPointer(p);
-    const myUnits = [...this.units.values()].filter((u) => u.owner === this.playerId);
-    const clicked = myUnits.find((u) => hits.includes(u.container));
-    if (clicked) {
-      myUnits.forEach((u) => u.setSelected(u === clicked));
-      this.drag = null;
-      return;
-    }
-    this.drag = { startX: p.x, startY: p.y, isBox: false };
+    if (!p.leftButtonDown() && !p.rightButtonDown()) return;
+    this.click = { startX: p.x, startY: p.y, moved: false };
   }
 
   private onTouchDown(p: Phaser.Input.Pointer): void {
@@ -2415,11 +2394,10 @@ export class GameScene extends Phaser.Scene {
       this.drawHover(i, j);
     }
 
-    if (!this.drag) return;
-    const dx = p.x - this.drag.startX;
-    const dy = p.y - this.drag.startY;
-    if (Math.hypot(dx, dy) > 8) this.drag.isBox = true;
-    if (this.drag.isBox) this.drawSelectionBox(p);
+    if (!this.click) return;
+    const dx = p.x - this.click.startX;
+    const dy = p.y - this.click.startY;
+    if (Math.hypot(dx, dy) > 8) this.click.moved = true;
   }
 
   private onTouchMove(p: Phaser.Input.Pointer): void {
@@ -2459,23 +2437,18 @@ export class GameScene extends Phaser.Scene {
       this.onTouchUp(p);
       return;
     }
-    if (!this.drag) return;
-    if (this.drag.isBox) {
-      this.commitBoxSelection(p);
+    if (!this.click) return;
+    const moved = this.click.moved;
+    this.click = null;
+    if (moved) return;
+    const { gx, gy } = screenToGrid(p.worldX, p.worldY);
+    const i = Math.floor(gx);
+    const j = Math.floor(gy);
+    if (this.checkDoubleClick(i, j)) {
+      this.tryIgniteCampfireAt(i, j);
     } else {
-      const { gx, gy } = screenToGrid(p.worldX, p.worldY);
-      const i = Math.floor(gx);
-      const j = Math.floor(gy);
-      if (this.checkDoubleClick(i, j)) {
-        this.tryIgniteCampfireAt(i, j);
-      } else {
-        for (const u of this.units.values()) {
-          if (u.owner === this.playerId) u.setSelected(false);
-        }
-      }
+      this.commandAllUnits(p);
     }
-    this.drag = null;
-    this.selectionBox.clear();
   }
 
   private onTouchUp(p: Phaser.Input.Pointer): void {
@@ -2561,14 +2534,6 @@ export class GameScene extends Phaser.Scene {
     this.dispatchUnitCommand(p, ids);
   }
 
-  private commandSelected(p: Phaser.Input.Pointer): void {
-    const selected = [...this.units.values()].filter(
-      (u) => u.owner === this.playerId && u.selected,
-    );
-    if (selected.length === 0) return;
-    this.dispatchUnitCommand(p, selected.map((u) => u.id));
-  }
-
   private dispatchUnitCommand(p: Phaser.Input.Pointer, ids: string[]): void {
     const { gx, gy } = screenToGrid(p.worldX, p.worldY);
     const i = Math.floor(gx);
@@ -2633,38 +2598,6 @@ export class GameScene extends Phaser.Scene {
       !this.removedKeys.has(objKey("stone", i, j))
     ) return true;
     return false;
-  }
-
-  private drawSelectionBox(p: Phaser.Input.Pointer): void {
-    if (!this.drag) return;
-    const x = Math.min(this.drag.startX, p.x);
-    const y = Math.min(this.drag.startY, p.y);
-    const w = Math.abs(p.x - this.drag.startX);
-    const h = Math.abs(p.y - this.drag.startY);
-    this.selectionBox.clear();
-    this.selectionBox.fillStyle(0x00ff66, 0.15);
-    this.selectionBox.fillRect(x, y, w, h);
-    this.selectionBox.lineStyle(1, 0x00ff66, 1);
-    this.selectionBox.strokeRect(x, y, w, h);
-  }
-
-  private commitBoxSelection(p: Phaser.Input.Pointer): void {
-    if (!this.drag) return;
-    const cam = this.cameras.main;
-    const a = cam.getWorldPoint(
-      Math.min(this.drag.startX, p.x),
-      Math.min(this.drag.startY, p.y),
-    );
-    const b = cam.getWorldPoint(
-      Math.max(this.drag.startX, p.x),
-      Math.max(this.drag.startY, p.y),
-    );
-    for (const u of this.units.values()) {
-      if (u.owner !== this.playerId) continue;
-      const x = u.container.x;
-      const y = u.container.y;
-      u.setSelected(x >= a.x && x <= b.x && y >= a.y && y <= b.y);
-    }
   }
 
   private drawHover(i: number, j: number): void {
