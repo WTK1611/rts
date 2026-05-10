@@ -18,6 +18,9 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CampfireSnapshot,
+  CAMPFIRE_RANGE,
+  DAY_LENGTH_SEC,
+  DayPhase,
   emptyResources,
   FishSnapshot,
   Footprint,
@@ -26,7 +29,9 @@ import {
   LeaderboardMessage,
   MAX_TRIBE_SIZE,
   ObjectKind,
+  PHASE_LENGTH_SEC,
   PlayerId,
+  phaseAt,
   RemovedObject,
   RESOURCE_KEYS,
   Resources,
@@ -99,6 +104,8 @@ export interface GameSceneInit {
 }
 
 const SIGHT_RADIUS = 5.5;
+const NIGHT_SIGHT_RADIUS = 2.5;
+const CAMPFIRE_SIGHT_BONUS = 4.5;
 const CHUNK_SIZE = 16;
 const VIEW_PAD_TILES = 8;
 
@@ -244,6 +251,16 @@ export class GameScene extends Phaser.Scene {
   private perfFishCount = 0;
   private perfVisible = true;
 
+  private gameTimeSec = 0;
+  private nightOverlay!: Phaser.GameObjects.RenderTexture;
+  private nightEraser!: Phaser.GameObjects.Graphics;
+  private celestialGfx!: Phaser.GameObjects.Graphics;
+  private lastPhase: DayPhase = "morning";
+  private nightDeathOwn = 0;
+  private nightDeathOther: Record<number, number> = {};
+  private nightExtinctOthers: number[] = [];
+  private clockEl: HTMLElement | null = null;
+
   constructor() {
     super("GameScene");
   }
@@ -267,6 +284,8 @@ export class GameScene extends Phaser.Scene {
     this.pendingCampfires = data.init.campfires ?? [];
     this.pendingArtifacts = data.init.artifacts ?? [];
     this.tribeCounts = data.init.tribeCounts ?? [];
+    this.gameTimeSec = data.init.gameTimeSec ?? 0;
+    this.lastPhase = phaseAt(this.gameTimeSec);
   }
 
   create(): void {
@@ -325,6 +344,20 @@ export class GameScene extends Phaser.Scene {
 
     this.waterfallGfx = this.add.graphics();
     this.waterfallGfx.setDepth(-45000);
+
+    const screenW = this.scale.width;
+    const screenH = this.scale.height;
+    this.nightOverlay = this.add.renderTexture(0, 0, screenW, screenH)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1_810_000);
+    this.nightEraser = this.make.graphics({ x: 0, y: 0 }, false);
+    this.celestialGfx = this.add.graphics()
+      .setScrollFactor(0)
+      .setDepth(1_820_000);
+    this.scale.on("resize", (size: Phaser.Structs.Size) => {
+      this.nightOverlay.setSize(size.width, size.height);
+    });
 
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x6aaad6);
@@ -439,12 +472,18 @@ export class GameScene extends Phaser.Scene {
       cam.scrollY += (this.camTargetY - cam.scrollY) * lerp;
     }
 
+    const prevPhase = this.lastPhase;
+    this.gameTimeSec += dt;
+    this.lastPhase = phaseAt(this.gameTimeSec);
+    if (prevPhase !== this.lastPhase) this.onPhaseChange(prevPhase);
+
     this.updateChunks();
     this.updateFog();
     this.drawFootprints();
     this.updateGrowthBeacon(dt);
     this.updateTribeRally(dt);
     this.updateMoveTarget(dt);
+    this.updateDayNight();
   }
 
   private updateTribeRally(dt: number): void {
@@ -1425,6 +1464,18 @@ export class GameScene extends Phaser.Scene {
       srcHash = (Math.imul(srcHash, 31) + fi) | 0;
       srcHash = (Math.imul(srcHash, 31) + fj) | 0;
     }
+    const isNight = this.lastPhase === "night";
+    srcHash = (Math.imul(srcHash, 31) + (isNight ? 1 : 0)) | 0;
+    if (isNight) {
+      const ownerCam = this.cameraFollowOwner();
+      for (const f of this.campfires.values()) {
+        if (f.owner !== ownerCam) continue;
+        const fi = Math.floor(f.gx);
+        const fj = Math.floor(f.gy);
+        srcHash = (Math.imul(srcHash, 31) + 7919 + fi) | 0;
+        srcHash = (Math.imul(srcHash, 31) + 6761 + fj) | 0;
+      }
+    }
 
     const { i0, i1, j0, j1 } = this.viewTileBounds();
     const boundsKey = `${i0},${i1},${j0},${j1}`;
@@ -1438,9 +1489,11 @@ export class GameScene extends Phaser.Scene {
 
     if (sourceChanged) {
       this.visible.clear();
+      const isNight = this.lastPhase === "night";
+      const unitR = isNight ? NIGHT_SIGHT_RADIUS : SIGHT_RADIUS;
       for (const u of this.units.values()) {
         if (!this.isSightSource(u.owner)) continue;
-        const r = SIGHT_RADIUS;
+        const r = unitR;
         const r2 = r * r;
         const cx = u.gx;
         const cy = u.gy;
@@ -1457,6 +1510,32 @@ export class GameScene extends Phaser.Scene {
               if (!this.visible.has(k)) {
                 this.visible.add(k);
                 this.explored.add(k);
+              }
+            }
+          }
+        }
+      }
+      if (isNight) {
+        for (const f of this.campfires.values()) {
+          if (f.owner !== this.cameraFollowOwner()) continue;
+          const r = CAMPFIRE_RANGE + CAMPFIRE_SIGHT_BONUS;
+          const r2 = r * r;
+          const cx = f.gx;
+          const cy = f.gy;
+          const ii0 = Math.floor(cx - r);
+          const ii1 = Math.floor(cx + r);
+          const jj0 = Math.floor(cy - r);
+          const jj1 = Math.floor(cy + r);
+          for (let j = jj0; j <= jj1; j++) {
+            for (let i = ii0; i <= ii1; i++) {
+              const dx = i + 0.5 - cx;
+              const dy = j + 0.5 - cy;
+              if (dx * dx + dy * dy <= r2) {
+                const k = `${i},${j}`;
+                if (!this.visible.has(k)) {
+                  this.visible.add(k);
+                  this.explored.add(k);
+                }
               }
             }
           }
@@ -1618,6 +1697,170 @@ export class GameScene extends Phaser.Scene {
       f.rangeRing.setVisible(tileVis && f.owner === this.playerId);
       if (cache.get(key) === tileVis) continue;
       cache.set(key, tileVis);
+    }
+  }
+
+  private timeOfDay(): number {
+    const t = this.gameTimeSec % DAY_LENGTH_SEC;
+    return t < 0 ? t + DAY_LENGTH_SEC : t;
+  }
+
+  private clockString(): string {
+    const tt = this.timeOfDay();
+    let hour: number;
+    if (tt < PHASE_LENGTH_SEC) hour = 6 + (tt / PHASE_LENGTH_SEC) * 6;
+    else if (tt < 2 * PHASE_LENGTH_SEC) hour = 12 + ((tt - PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 3;
+    else if (tt < 3 * PHASE_LENGTH_SEC) hour = 15 + ((tt - 2 * PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 4;
+    else hour = 19 + ((tt - 3 * PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 11;
+    if (hour >= 24) hour -= 24;
+    const h = Math.floor(hour);
+    const m = Math.floor((hour - h) * 60);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  private overlayTintFor(t: number): { color: number; alpha: number } {
+    const PL = PHASE_LENGTH_SEC;
+    if (t < PL) {
+      const k = t / PL;
+      const startA = 0.45;
+      const endA = 0.0;
+      return {
+        color: lerpColor(0x2a3a5a, 0xffd0a0, Math.min(1, k * 1.5)),
+        alpha: startA * (1 - k) + endA * k,
+      };
+    }
+    if (t < 2 * PL) {
+      return { color: 0xffffff, alpha: 0 };
+    }
+    if (t < 3 * PL) {
+      const k = (t - 2 * PL) / PL;
+      const startA = 0.0;
+      const endA = 0.4;
+      return {
+        color: lerpColor(0xffffff, 0xff7a3a, k),
+        alpha: startA * (1 - k) + endA * k,
+      };
+    }
+    const k = (t - 3 * PL) / PL;
+    if (k < 0.25) {
+      return {
+        color: lerpColor(0xff7a3a, 0x0a1a30, k / 0.25),
+        alpha: 0.4 + 0.3 * (k / 0.25),
+      };
+    }
+    if (k > 0.75) {
+      return {
+        color: lerpColor(0x0a1a30, 0x2a3a5a, (k - 0.75) / 0.25),
+        alpha: 0.7 - 0.25 * ((k - 0.75) / 0.25),
+      };
+    }
+    return { color: 0x0a1a30, alpha: 0.7 };
+  }
+
+  private updateDayNight(): void {
+    const t = this.timeOfDay();
+    const { color, alpha } = this.overlayTintFor(t);
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const rt = this.nightOverlay;
+    rt.clear();
+    if (alpha > 0.01) {
+      rt.fill(color, alpha, 0, 0, w, h);
+    }
+
+    if (this.lastPhase === "night" || this.lastPhase === "afternoon") {
+      this.eraseFireGlows(t);
+    }
+
+    this.drawCelestial(t, w, h);
+  }
+
+  private eraseFireGlows(t: number): void {
+    const cam = this.cameras.main;
+    const er = this.nightEraser;
+    const PL = PHASE_LENGTH_SEC;
+    const isNight = this.lastPhase === "night";
+    const nightK = isNight ? Math.min(1, (t - 3 * PL) / (PL * 0.25)) : 0;
+    for (const f of this.campfires.values()) {
+      const wx = f.container.x;
+      const wy = f.container.y;
+      const sx = (wx - cam.scrollX) * cam.zoom + (cam.width * (1 - cam.zoom)) / 2;
+      const sy = (wy - cam.scrollY) * cam.zoom + (cam.height * (1 - cam.zoom)) / 2;
+      const flicker = 0.85 + 0.15 * Math.sin(t * 9 + (wx + wy) * 0.013);
+      const baseR = (40 + f.size * 12) * cam.zoom * flicker;
+      const innerR = baseR * 0.5;
+      er.clear();
+      er.fillStyle(0xffffff, 1);
+      er.fillCircle(sx, sy, innerR);
+      this.nightOverlay.erase(er);
+      er.clear();
+      er.fillStyle(0xffffff, 0.55);
+      er.fillCircle(sx, sy, baseR);
+      this.nightOverlay.erase(er);
+      er.clear();
+      er.fillStyle(0xffffff, 0.25);
+      er.fillCircle(sx, sy, baseR * 1.6);
+      this.nightOverlay.erase(er);
+    }
+    if (isNight) {
+      const moonAlpha = 0.18 + 0.12 * nightK;
+      const moonPos = this.celestialScreenPos(t, this.scale.width, this.scale.height);
+      if (moonPos) {
+        er.clear();
+        er.fillStyle(0xffffff, moonAlpha);
+        er.fillCircle(moonPos.x, moonPos.y, 90);
+        this.nightOverlay.erase(er);
+      }
+    }
+  }
+
+  private celestialScreenPos(t: number, w: number, h: number):
+    | { x: number; y: number; isNight: boolean }
+    | null {
+    const PL = PHASE_LENGTH_SEC;
+    const margin = 60;
+    const arcTop = 60;
+    if (t >= 3 * PL) {
+      const k = (t - 3 * PL) / PL;
+      const x = margin + (w - margin * 2) * k;
+      const y = arcTop + 40 + (1 - Math.sin(k * Math.PI)) * 80;
+      return { x, y, isNight: true };
+    }
+    const dayK = t / (3 * PL);
+    const x = margin + (w - margin * 2) * dayK;
+    const y = arcTop + (1 - Math.sin(dayK * Math.PI)) * 90;
+    return { x, y, isNight: false };
+  }
+
+  private drawCelestial(t: number, w: number, h: number): void {
+    const g = this.celestialGfx;
+    g.clear();
+    const pos = this.celestialScreenPos(t, w, h);
+    if (!pos) return;
+    if (pos.isNight) {
+      g.fillStyle(0xfff4d6, 0.35);
+      g.fillCircle(pos.x, pos.y, 26);
+      g.fillStyle(0xfff4d6, 0.55);
+      g.fillCircle(pos.x, pos.y, 18);
+      g.fillStyle(0xfffae8, 1);
+      g.fillCircle(pos.x, pos.y, 14);
+      g.fillStyle(0xc8c0a0, 0.8);
+      g.fillCircle(pos.x - 4, pos.y - 3, 3);
+      g.fillCircle(pos.x + 3, pos.y + 4, 2);
+      g.fillCircle(pos.x + 5, pos.y - 4, 1.5);
+    } else {
+      const PL = PHASE_LENGTH_SEC;
+      let sunColor = 0xffe27a;
+      if (t < PL * 0.5) sunColor = lerpColor(0xff7a3a, 0xffe27a, t / (PL * 0.5));
+      else if (t > 2.5 * PL) sunColor = lerpColor(0xffe27a, 0xff5a1a, (t - 2.5 * PL) / (PL * 0.5));
+      g.fillStyle(sunColor, 0.18);
+      g.fillCircle(pos.x, pos.y, 50);
+      g.fillStyle(sunColor, 0.4);
+      g.fillCircle(pos.x, pos.y, 32);
+      g.fillStyle(sunColor, 1);
+      g.fillCircle(pos.x, pos.y, 20);
+      g.fillStyle(0xfff8d0, 1);
+      g.fillCircle(pos.x, pos.y, 13);
     }
   }
 
@@ -1909,6 +2152,12 @@ export class GameScene extends Phaser.Scene {
 
   private applyState(msg: StateMessage): void {
     this.serverTick = msg.tick;
+    if (typeof msg.gameTimeSec === "number") {
+      const drift = msg.gameTimeSec - this.gameTimeSec;
+      if (Math.abs(drift) > 0.5) this.gameTimeSec = msg.gameTimeSec;
+      else this.gameTimeSec += drift * 0.2;
+      this.lastPhase = phaseAt(this.gameTimeSec);
+    }
     if (typeof msg.serverTickMs === "number") this.perfServerTickMs = msg.serverTickMs;
     if (typeof msg.animalCount === "number") this.perfAnimalCount = msg.animalCount;
     if (typeof msg.unitCount === "number") this.perfUnitCount = msg.unitCount;
@@ -2045,16 +2294,25 @@ export class GameScene extends Phaser.Scene {
       u.die(() => {});
     }
     const extinctSet = new Set<number>(msg.extinctTribes ?? []);
+    const isNight = this.lastPhase === "night";
     if (ownDied > 0 && !extinctSet.has(this.playerId)) {
-      const s = t();
-      const txt =
-        ownDied === 1 ? s.toastOwnDiedSing : s.toastOwnDied(ownDied);
-      this.showToast(txt, "death");
+      if (isNight) {
+        this.nightDeathOwn += ownDied;
+      } else {
+        const s = t();
+        const txt =
+          ownDied === 1 ? s.toastOwnDiedSing : s.toastOwnDied(ownDied);
+        this.showToast(txt, "death");
+      }
     }
     for (const ownerStr of Object.keys(otherDied)) {
       const owner = Number(ownerStr);
       if (extinctSet.has(owner)) continue;
       const n = otherDied[owner];
+      if (isNight) {
+        this.nightDeathOther[owner] = (this.nightDeathOther[owner] ?? 0) + n;
+        continue;
+      }
       const s = t();
       const name = this.names[owner] || s.hudTribeFallback(owner);
       const txt =
@@ -2065,6 +2323,10 @@ export class GameScene extends Phaser.Scene {
       const s = t();
       for (const owner of msg.extinctTribes) {
         if (owner === this.playerId) continue;
+        if (isNight) {
+          this.nightExtinctOthers.push(owner);
+          continue;
+        }
         const name = this.names[owner] || s.hudTribeFallback(owner);
         this.showToast(s.toastExtinct(name), "extinct");
       }
@@ -2742,6 +3004,44 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private onPhaseChange(prev: DayPhase): void {
+    if (prev === "night" && this.lastPhase === "morning") this.onSunrise();
+    if (prev !== "night" && this.lastPhase === "night") this.onNightfall();
+    this.visSourceHash = -1;
+    this.updateHud();
+  }
+
+  private onNightfall(): void {
+    this.showToast(t().toastNightfall, "death");
+  }
+
+  private onSunrise(): void {
+    const s = t();
+    if (this.nightDeathOwn > 0) {
+      const txt =
+        this.nightDeathOwn === 1
+          ? s.toastOwnDiedSing
+          : s.toastOwnDied(this.nightDeathOwn);
+      this.showToast(s.toastSunriseLost(txt), "death");
+    } else {
+      this.showToast(s.toastSunriseSafe, "grow");
+    }
+    for (const ownerStr of Object.keys(this.nightDeathOther)) {
+      const owner = Number(ownerStr);
+      const n = this.nightDeathOther[owner];
+      const name = this.names[owner] || s.hudTribeFallback(owner);
+      const txt = n === 1 ? s.toastOtherDiedSing(name) : s.toastOtherDied(name, n);
+      this.showToast(txt, "death");
+    }
+    for (const owner of this.nightExtinctOthers) {
+      const name = this.names[owner] || s.hudTribeFallback(owner);
+      this.showToast(s.toastExtinct(name), "extinct");
+    }
+    this.nightDeathOwn = 0;
+    this.nightDeathOther = {};
+    this.nightExtinctOthers = [];
+  }
+
   private updateHud(): void {
     if (!this.hud) return;
     const s = t();
@@ -2767,8 +3067,14 @@ export class GameScene extends Phaser.Scene {
     ).join("");
 
     const tribeCounts = this.tribeCounts;
+    const isNight = this.lastPhase === "night";
     const countChip = (n: number) =>
       `<span class="count" title="${s.hudTribeMembers}">👥 ${n}</span>`;
+    const ownCountChip = isNight
+      ? `<span class="count" title="${s.hudTribeMembers}">👥 ?</span>`
+      : countChip(tribeCounts[this.playerId] ?? 0);
+    const phaseLabel = s.phaseLabel(this.lastPhase);
+    const clockHtml = `<span class="clock" title="${phaseLabel}">${this.clockString()} ${s.phaseIcon(this.lastPhase)}</span>`;
 
     const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
@@ -2802,7 +3108,7 @@ export class GameScene extends Phaser.Scene {
       `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
       `<span class="swatch" style="background:${myColor}"></span>` +
       `${escapeHtml(s.hudTribeOf(myName))}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
-      `${countChip(tribeCounts[this.playerId] ?? 0)}</div>` +
+      `${ownCountChip} ${clockHtml}</div>` +
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
       othersHtml;

@@ -9,7 +9,11 @@ import {
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
   CampfireSnapshot,
+  DayPhase,
   EncounterEvent,
+  NIGHT_CAMPFIRE_HOLZ_PER_NIGHT,
+  PHASE_LENGTH_SEC,
+  phaseAt,
   emptyResources,
   FishSnapshot,
   Footprint,
@@ -72,11 +76,15 @@ const CAMPFIRE_IGNITE_MIN_UNITS = 2;
 const CAMPFIRE_IGNITE_HOLZ_COST = 5;
 const CAMPFIRE_IGNITE_STEIN_COST = 1;
 const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
-const CAMPFIRE_BURN_PER_FUEL_SEC = 2;
+const CAMPFIRE_BURN_PER_FUEL_SEC =
+  PHASE_LENGTH_SEC / NIGHT_CAMPFIRE_HOLZ_PER_NIGHT;
 const CAMPFIRE_GROW_RADIUS = 1.5;
 const CAMPFIRE_MAX_SIZE = 6;
 const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
 const CAMPFIRE_REPEL_RADIUS = CAMPFIRE_RANGE + 2.5;
+const NIGHT_PREDATOR_DETECT_MULT = 1.6;
+const NIGHT_PREDATOR_AGGRO_DURATION_MULT = 1.4;
+const NIGHT_PREDATOR_DAMAGE_MULT = 1.25;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -334,6 +342,8 @@ export class Sim {
   nextFishIdx = 0;
   fishCap = 0;
   tick = 0;
+  gameTimeSec = 40;
+  private lastPhase: DayPhase = "morning";
 
   private animalGrid: Map<number, SimAnimal[]> = new Map();
   private predatorGrid: Map<number, SimAnimal[]> = new Map();
@@ -738,6 +748,40 @@ export class Sim {
     return out;
   }
 
+  isNight(): boolean {
+    return this.lastPhase === "night";
+  }
+
+  private onNightStart(): void {
+    for (const u of this.units.values()) {
+      u.huntTarget = null;
+      u.huntWeapon = null;
+      u.harvestTarget = null;
+      u.path = [];
+      u.state = "idle";
+      u.autoFollowing = false;
+    }
+  }
+
+  private animalDetectRange(spec: AnimalSpec): number {
+    if (!this.isNight()) return spec.detectRange;
+    if (!spec.aggressive && !spec.predator) return spec.detectRange;
+    return spec.detectRange * NIGHT_PREDATOR_DETECT_MULT;
+  }
+
+  private animalDamage(spec: AnimalSpec): number {
+    if (!this.isNight()) return spec.damage;
+    if (!spec.aggressive && !spec.predator) return spec.damage;
+    return Math.ceil(spec.damage * NIGHT_PREDATOR_DAMAGE_MULT);
+  }
+
+  private animalAggroDurationTicks(spec: AnimalSpec): number {
+    const base = spec.aggroDurationSec;
+    if (!this.isNight()) return Math.floor(base * TICK_RATE);
+    if (!spec.aggressive && !spec.predator) return Math.floor(base * TICK_RATE);
+    return Math.floor(base * NIGHT_PREDATOR_AGGRO_DURATION_MULT * TICK_RATE);
+  }
+
   private animalSnap = (a: SimAnimal): AnimalSnapshot => {
     const spec = ANIMAL_SPECS[a.kind];
     return {
@@ -753,6 +797,7 @@ export class Sim {
   };
 
   cmdHunt(owner: PlayerId, unitIds: string[], animalId: string): void {
+    if (this.isNight()) return;
     const a = this.animals.get(animalId);
     if (!a) return;
     const claimed = new Set<string>();
@@ -1023,9 +1068,10 @@ export class Sim {
         } else {
           const tdx = t.gx - a.gx;
           const tdy = t.gy - a.gy;
-          const escapeR = spec.detectRange * ANIMAL_ESCAPE_RANGE_MULT;
+          const detect = this.animalDetectRange(spec);
+          const escapeR = detect * ANIMAL_ESCAPE_RANGE_MULT;
           if (
-            spec.detectRange > 0 &&
+            detect > 0 &&
             tdx * tdx + tdy * tdy > escapeR * escapeR
           ) {
             a.attackTargetUnitId = null;
@@ -1045,7 +1091,7 @@ export class Sim {
 
       if (!a.attackTargetUnitId && spec.aggressive && spec.detectRange > 0) {
         let nearest: SimUnit | null = null;
-        const r = spec.detectRange;
+        const r = this.animalDetectRange(spec);
         let nearestD2 = r * r;
         const cs = SPATIAL_CELL;
         const ax = Math.floor(a.gx / cs);
@@ -1072,7 +1118,7 @@ export class Sim {
           a.path = [];
           a.repathTimer = 0;
           a.aggroExpireTick =
-            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
+            this.tick + this.animalAggroDurationTicks(spec);
         }
       }
 
@@ -1102,7 +1148,7 @@ export class Sim {
         }
         if (!a.attackTargetAnimalId) {
           let nearest: SimAnimal | null = null;
-          const r = spec.detectRange;
+          const r = this.animalDetectRange(spec);
           let nearestD2 = r * r;
           const cs = SPATIAL_CELL;
           const ax = Math.floor(a.gx / cs);
@@ -1465,10 +1511,11 @@ export class Sim {
       a.attackTimer += dt;
       if (a.attackTimer >= ANIMAL_ATTACK_INTERVAL) {
         a.attackTimer = 0;
-        if (spec.damage > 0) {
-          t.hp = Math.max(0, t.hp - spec.damage);
+        const dmg = this.animalDamage(spec);
+        if (dmg > 0) {
+          t.hp = Math.max(0, t.hp - dmg);
           a.aggroExpireTick =
-            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
+            this.tick + this.animalAggroDurationTicks(spec);
           this.callForHelp(t, a.id);
         }
       }
@@ -1506,7 +1553,7 @@ export class Sim {
       const ddx = wp.gx - a.gx;
       const ddy = wp.gy - a.gy;
       const sd = Math.hypot(ddx, ddy);
-      const moveSpeed = spec.speed * 0.7;
+      const moveSpeed = spec.speed * (this.isNight() && (spec.aggressive || spec.predator) ? 0.85 : 0.7);
       if (sd < 0.04) {
         a.gx = wp.gx;
         a.gy = wp.gy;
@@ -1593,6 +1640,7 @@ export class Sim {
   }
 
   private maybeAutoEngage(u: SimUnit): void {
+    if (this.isNight()) return;
     let allyTarget: string | null = null;
     let allyD2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const ally of this.units.values()) {
@@ -1720,7 +1768,7 @@ export class Sim {
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
           a.aggroExpireTick =
-            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
+            this.tick + this.animalAggroDurationTicks(spec);
         } else {
           a.state = "flee";
         }
@@ -2043,6 +2091,10 @@ export class Sim {
   }
 
   cmdHarvest(owner: PlayerId, unitIds: string[], i: number, j: number): void {
+    if (this.isNight()) {
+      this.cmdMove(owner, unitIds, i, j);
+      return;
+    }
     const kind = this.objectKindAt(i, j);
     if (!kind) {
       this.cmdMove(owner, unitIds, i, j);
@@ -2247,6 +2299,7 @@ export class Sim {
   }
 
   private tryEngageAnimalOnTile(u: SimUnit, ti: number, tj: number): void {
+    if (this.isNight()) return;
     if (u.huntTarget) return;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
@@ -2258,6 +2311,7 @@ export class Sim {
   }
 
   private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
+    if (this.isNight()) return;
     if (hasTreeAt(this.seed, ti, tj)) {
       const k = objKey("tree", ti, tj);
       if (!this.removedKeys.has(k)) {
@@ -2420,6 +2474,12 @@ export class Sim {
 
   step(dt: number): void {
     this.tick++;
+    const prevPhase = this.lastPhase;
+    this.gameTimeSec += dt;
+    this.lastPhase = phaseAt(this.gameTimeSec);
+    if (prevPhase !== "night" && this.lastPhase === "night") {
+      this.onNightStart();
+    }
     this.rebuildSpatialIndex();
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
@@ -2515,10 +2575,25 @@ export class Sim {
   }
 
   private campfireStep(dt: number): void {
-    for (let p = 0; p < MAX_PLAYERS; p++) {
-      if (!this.active[p]) continue;
-      this.tickIgniteFor(p, dt);
+    const phase = this.lastPhase;
+    const isNight = phase === "night";
+
+    if (isNight || phase === "afternoon") {
+      for (let p = 0; p < MAX_PLAYERS; p++) {
+        if (!this.active[p]) continue;
+        this.tickIgniteFor(p, dt);
+      }
     }
+
+    if (phase === "morning" && this.campfires.size > 0) {
+      for (const f of [...this.campfires.values()]) {
+        this.campfires.delete(f.id);
+        this.removedCampfireIds.push(f.id);
+      }
+      return;
+    }
+
+    if (!isNight) return;
 
     for (const f of [...this.campfires.values()]) {
       f.fuelTimer -= dt;
@@ -3102,6 +3177,7 @@ export class Sim {
   }
 
   private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
+    if (this.isNight()) return false;
     const seed = this.seed;
     const ti0 = Math.floor(u.gx);
     const tj0 = Math.floor(u.gy);

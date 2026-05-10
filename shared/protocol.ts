@@ -2,6 +2,20 @@ export const TICK_RATE = 20;
 export const MAX_PLAYERS = 10;
 export const MAX_TRIBE_SIZE = 12;
 
+export const DAY_LENGTH_SEC = 240;
+export const PHASE_LENGTH_SEC = DAY_LENGTH_SEC / 4;
+export const NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = 40;
+
+export type DayPhase = "morning" | "noon" | "afternoon" | "night";
+
+export function phaseAt(timeSec: number): DayPhase {
+  const t = ((timeSec % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC;
+  if (t < PHASE_LENGTH_SEC) return "morning";
+  if (t < 2 * PHASE_LENGTH_SEC) return "noon";
+  if (t < 3 * PHASE_LENGTH_SEC) return "afternoon";
+  return "night";
+}
+
 export type PlayerId = number;
 
 export type UnitGender = "m" | "f";
@@ -161,6 +175,7 @@ export interface InitMessage {
   campfires: CampfireSnapshot[];
   tribeCounts: number[];
   artifacts: ArtifactSnapshot[];
+  gameTimeSec: number;
 }
 
 export interface EncounterEvent {
@@ -213,6 +228,7 @@ export interface StateMessage {
   animalCount?: number;
   unitCount?: number;
   fishCount?: number;
+  gameTimeSec: number;
 }
 
 export interface OpponentJoinedMessage {

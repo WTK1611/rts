@@ -378,6 +378,7 @@ function joinPlayer(
     campfires: allCampfires,
     tribeCounts: world.sim.tribeCounts(),
     artifacts: world.sim.artifactsSnapshot(),
+    gameTimeSec: world.sim.gameTimeSec,
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -555,6 +556,7 @@ function tick(): void {
       animalCount: world.sim.animals.size,
       unitCount: world.sim.units.size,
       fishCount: world.sim.fishes.size,
+      gameTimeSec: world.sim.gameTimeSec,
     });
   }
 

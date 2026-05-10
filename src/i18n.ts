@@ -1,4 +1,5 @@
 import { Language, LANGUAGES } from "../shared/names";
+import { DayPhase } from "../shared/protocol";
 
 export interface Strings {
   // lobby
@@ -68,6 +69,11 @@ export interface Strings {
   toastCampfireTooFar: string;
   toastArtifactOwn: (reward: string) => string;
   toastArtifactOther: (name: string, reward: string) => string;
+  toastNightfall: string;
+  toastSunriseSafe: string;
+  toastSunriseLost: (deathSummary: string) => string;
+  phaseLabel: (p: DayPhase) => string;
+  phaseIcon: (p: DayPhase) => string;
 
   // rewards
   rewardNewMember: string;
@@ -164,6 +170,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `Mythisches Artefakt entdeckt! Belohnung: ${r}`,
     toastArtifactOther: (n, r) =>
       `Stamm von ${n} hat ein mythisches Artefakt entdeckt (${r})`,
+    toastNightfall: "Die Nacht bricht herein – sammelt euch ums Lagerfeuer!",
+    toastSunriseSafe: "Sonnenaufgang – euer Stamm hat die Nacht überstanden",
+    toastSunriseLost: (s) => `Sonnenaufgang – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Vormittag" :
+      p === "noon" ? "Mittag" :
+      p === "afternoon" ? "Nachmittag" : "Nacht",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "ein neues Stammesmitglied",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -254,6 +271,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `Mythic artifact discovered! Reward: ${r}`,
     toastArtifactOther: (n, r) =>
       `${n}'s tribe discovered a mythic artifact (${r})`,
+    toastNightfall: "Night falls – gather around the campfire!",
+    toastSunriseSafe: "Sunrise – your tribe survived the night",
+    toastSunriseLost: (s) => `Sunrise – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Morning" :
+      p === "noon" ? "Noon" :
+      p === "afternoon" ? "Afternoon" : "Night",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "a new tribe member",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -345,6 +373,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `Artefatto mitico scoperto! Ricompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribù di ${n} ha scoperto un artefatto mitico (${r})`,
+    toastNightfall: "Cala la notte – radunatevi attorno al falò!",
+    toastSunriseSafe: "Alba – la tua tribù è sopravvissuta alla notte",
+    toastSunriseLost: (s) => `Alba – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Mattino" :
+      p === "noon" ? "Mezzogiorno" :
+      p === "afternoon" ? "Pomeriggio" : "Notte",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "un nuovo membro della tribù",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -436,6 +475,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `¡Artefacto mítico descubierto! Recompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribu de ${n} ha descubierto un artefacto mítico (${r})`,
+    toastNightfall: "Cae la noche – ¡reuníos en torno a la hoguera!",
+    toastSunriseSafe: "Amanecer – tu tribu sobrevivió la noche",
+    toastSunriseLost: (s) => `Amanecer – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Mañana" :
+      p === "noon" ? "Mediodía" :
+      p === "afternoon" ? "Tarde" : "Noche",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "un nuevo miembro de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -527,6 +577,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `Artefacto mítico descoberto! Recompensa: ${r}`,
     toastArtifactOther: (n, r) =>
       `A tribo de ${n} descobriu um artefacto mítico (${r})`,
+    toastNightfall: "Cai a noite – juntem-se em torno da fogueira!",
+    toastSunriseSafe: "Nascer do sol – a tua tribo sobreviveu à noite",
+    toastSunriseLost: (s) => `Nascer do sol – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Manhã" :
+      p === "noon" ? "Meio-dia" :
+      p === "afternoon" ? "Tarde" : "Noite",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "um novo membro da tribo",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -618,6 +679,17 @@ const STRINGS: Record<Language, Strings> = {
     toastArtifactOwn: (r) => `Artefact mythique découvert ! Récompense : ${r}`,
     toastArtifactOther: (n, r) =>
       `La tribu de ${n} a découvert un artefact mythique (${r})`,
+    toastNightfall: "La nuit tombe – rassemblez-vous autour du feu !",
+    toastSunriseSafe: "Lever du soleil – ta tribu a survécu à la nuit",
+    toastSunriseLost: (s) => `Lever du soleil – ${s}`,
+    phaseLabel: (p) =>
+      p === "morning" ? "Matin" :
+      p === "noon" ? "Midi" :
+      p === "afternoon" ? "Après-midi" : "Nuit",
+    phaseIcon: (p) =>
+      p === "morning" ? "🌅" :
+      p === "noon" ? "☀️" :
+      p === "afternoon" ? "🌇" : "🌙",
 
     rewardNewMember: "un nouveau membre de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,
