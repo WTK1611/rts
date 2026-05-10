@@ -68,8 +68,9 @@ const STONE_HARVEST_AMOUNT = 2;
 const FISH_AUTOPICK_GAIN = 1;
 const WATER_AUTOPICK_GAIN = 1;
 
-const CAMPFIRE_IGNITE_DELAY_SEC = 8;
 const CAMPFIRE_IGNITE_MIN_UNITS = 2;
+const CAMPFIRE_IGNITE_HOLZ_COST = 5;
+const CAMPFIRE_IGNITE_STEIN_COST = 1;
 const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
 const CAMPFIRE_BURN_PER_FUEL_SEC = 2;
 const CAMPFIRE_GROW_RADIUS = 1.5;
@@ -183,7 +184,6 @@ const ANIMAL_RESPAWN_INTERVAL = 0.5;
 const ANIMAL_RESPAWN_PER_TICK = 140;
 const ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ = 12 * 12;
 const ANIMAL_RESPAWN_TILE_ATTEMPTS = 60;
-const TRIBE_COHESION_RADIUS = 6;
 const TRIBE_COHESION_IDLE_SEC = 2.0;
 const FOLLOW_CHIEF_NEAR = 5;
 const FOLLOW_CHIEF_SCAN_INTERVAL = 0.5;
@@ -323,9 +323,6 @@ export class Sim {
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
   campfires: Map<string, SimCampfire> = new Map();
-  campfireIgniteSec: number[] = new Array(MAX_PLAYERS).fill(0);
-  campfireIgniteCx: number[] = new Array(MAX_PLAYERS).fill(0);
-  campfireIgniteCy: number[] = new Array(MAX_PLAYERS).fill(0);
   removedCampfireIds: string[] = [];
   followChiefEnabled: boolean[] = new Array(MAX_PLAYERS).fill(false);
   artifacts: Map<string, SimArtifact> = new Map();
@@ -1472,6 +1469,7 @@ export class Sim {
           t.hp = Math.max(0, t.hp - spec.damage);
           a.aggroExpireTick =
             this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
+          this.callForHelp(t, a.id);
         }
       }
       return;
@@ -1648,21 +1646,17 @@ export class Sim {
   }
 
   private callForHelp(victim: SimUnit, animalId: string): void {
-    const r2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const u of this.units.values()) {
       if (u.owner !== victim.owner) continue;
-      if (u.id === victim.id) continue;
-      if (u.huntTarget) continue;
       if (u.hp <= 0) continue;
-      const dx = u.gx - victim.gx;
-      const dy = u.gy - victim.gy;
-      if (dx * dx + dy * dy > r2) continue;
+      if (u.huntTarget === animalId) continue;
       u.huntTarget = animalId;
       u.harvestTarget = null;
       u.huntTimer = 0;
       u.huntWeapon = null;
       u.path = [];
       u.state = "hunting";
+      u.autoFollowing = false;
     }
   }
 
@@ -1835,7 +1829,6 @@ export class Sim {
     this.active[p] = true;
     this.clearPregnanciesFor(p);
     this.resources[p] = emptyResources();
-    this.campfireIgniteSec[p] = 0;
     const fid = this.campfireIdFor(p);
     if (this.campfires.has(fid)) {
       this.campfires.delete(fid);
@@ -1910,7 +1903,6 @@ export class Sim {
     }
     this.resources[p] = emptyResources();
     this.clearPregnanciesFor(p);
-    this.campfireIgniteSec[p] = 0;
     const fid = this.campfireIdFor(p);
     if (this.campfires.has(fid)) {
       this.campfires.delete(fid);
@@ -2102,7 +2094,6 @@ export class Sim {
         this.pushFlow(owner, "stein", -1, existing.gx, existing.gy);
         existing.size += 1;
         existing.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
-        this.campfireIgniteSec[owner] = 0;
         return;
       }
       this.campfires.delete(id);
@@ -2120,7 +2111,6 @@ export class Sim {
       fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
       size: 1,
     });
-    this.campfireIgniteSec[owner] = 0;
   }
 
   private objectKindAt(i: number, j: number): ObjectKind | null {
@@ -2526,10 +2516,7 @@ export class Sim {
 
   private campfireStep(dt: number): void {
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      if (!this.active[p]) {
-        this.campfireIgniteSec[p] = 0;
-        continue;
-      }
+      if (!this.active[p]) continue;
       this.tickIgniteFor(p, dt);
     }
 
@@ -2549,11 +2536,11 @@ export class Sim {
     }
   }
 
-  private tickIgniteFor(p: PlayerId, dt: number): void {
-    if (this.campfires.has(this.campfireIdFor(p))) {
-      this.campfireIgniteSec[p] = 0;
-      return;
-    }
+  private tickIgniteFor(p: PlayerId, _dt: number): void {
+    if (this.campfires.has(this.campfireIdFor(p))) return;
+    const r = this.resources[p];
+    if (r.holz < CAMPFIRE_IGNITE_HOLZ_COST) return;
+    if (r.stein < CAMPFIRE_IGNITE_STEIN_COST) return;
     let cx = 0;
     let cy = 0;
     let stationary = 0;
@@ -2566,10 +2553,7 @@ export class Sim {
       cy += u.gy;
       stationary++;
     }
-    if (stationary < CAMPFIRE_IGNITE_MIN_UNITS) {
-      this.campfireIgniteSec[p] = 0;
-      return;
-    }
+    if (stationary < CAMPFIRE_IGNITE_MIN_UNITS) return;
     cx /= stationary;
     cy /= stationary;
     let cluster = 0;
@@ -2583,44 +2567,20 @@ export class Sim {
       const dy = u.gy - cy;
       if (dx * dx + dy * dy <= r2) cluster++;
     }
-    if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) {
-      this.campfireIgniteSec[p] = 0;
-      return;
-    }
-    if (this.campfireIgniteSec[p] <= 0) {
-      this.campfireIgniteCx[p] = cx;
-      this.campfireIgniteCy[p] = cy;
-    } else {
-      const ax = this.campfireIgniteCx[p];
-      const ay = this.campfireIgniteCy[p];
-      const dx = cx - ax;
-      const dy = cy - ay;
-      if (dx * dx + dy * dy > r2) {
-        this.campfireIgniteCx[p] = cx;
-        this.campfireIgniteCy[p] = cy;
-        this.campfireIgniteSec[p] = 0;
-      }
-    }
-    this.campfireIgniteSec[p] += dt;
-    if (this.campfireIgniteSec[p] < CAMPFIRE_IGNITE_DELAY_SEC) return;
-    const r = this.resources[p];
-    if (r.holz < 1 || r.stein < 1) return;
-    r.holz -= 1;
-    r.stein -= 1;
-    const igniteCx = this.campfireIgniteCx[p];
-    const igniteCy = this.campfireIgniteCy[p];
-    this.pushFlow(p, "holz", -1, igniteCx, igniteCy);
-    this.pushFlow(p, "stein", -1, igniteCx, igniteCy);
+    if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) return;
+    r.holz -= CAMPFIRE_IGNITE_HOLZ_COST;
+    r.stein -= CAMPFIRE_IGNITE_STEIN_COST;
+    this.pushFlow(p, "holz", -CAMPFIRE_IGNITE_HOLZ_COST, cx, cy);
+    this.pushFlow(p, "stein", -CAMPFIRE_IGNITE_STEIN_COST, cx, cy);
     const id = this.campfireIdFor(p);
     this.campfires.set(id, {
       id,
       owner: p,
-      gx: igniteCx,
-      gy: igniteCy,
+      gx: cx,
+      gy: cy,
       fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
       size: 1,
     });
-    this.campfireIgniteSec[p] = 0;
   }
 
   private encounterCheck(): void {
@@ -2842,7 +2802,6 @@ export class Sim {
     this.tribeLanguage[target] = this.tribeLanguage[parent];
     this.followChiefEnabled[target] = this.followChiefEnabled[parent];
     this.resources[target] = emptyResources();
-    this.campfireIgniteSec[target] = 0;
     this.spawns[target] = { cx: Math.floor(ax), cy: Math.floor(ay) };
 
     const newColor = PLAYER_COLORS[target % PLAYER_COLORS.length];
@@ -3054,43 +3013,35 @@ export class Sim {
   }
 
   private cohereTribes(): void {
-    const byOwner: SimUnit[][] = Array.from(
-      { length: MAX_PLAYERS },
-      () => [] as SimUnit[],
-    );
-    for (const u of this.units.values()) byOwner[u.owner].push(u);
-    for (let p = 0; p < MAX_PLAYERS; p++) {
-      const list = byOwner[p];
-      if (list.length < 2) continue;
-      let cx = 0, cy = 0;
-      for (const u of list) { cx += u.gx; cy += u.gy; }
-      cx /= list.length;
-      cy /= list.length;
-      const r2 = TRIBE_COHESION_RADIUS * TRIBE_COHESION_RADIUS;
-      const claimed = new Set<string>();
-      for (const u of list) {
-        if (u.path.length > 0) continue;
-        if (u.harvestTarget || u.huntTarget) continue;
-        if (u.state !== "idle") continue;
-        if (u.idleSec < TRIBE_COHESION_IDLE_SEC) continue;
-        const dx = u.gx - cx;
-        const dy = u.gy - cy;
-        if (dx * dx + dy * dy <= r2) continue;
-        const ti = Math.floor(cx);
-        const tj = Math.floor(cy);
-        const blocked = this.blockedTilesFor(u, claimed);
-        let target: { i: number; j: number } | null = null;
-        if (this.isWalkable(ti, tj) && !blocked.has(`${ti},${tj}`)) {
-          target = { i: ti, j: tj };
-        } else {
-          target = this.findFreeTileNear(ti, tj, blocked);
-        }
-        if (!target) continue;
-        this.startMove(u, target.i, target.j, blocked);
-        u.idleSec = 0;
-        const last = u.path[u.path.length - 1];
-        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+    const chiefByOwner: Array<SimUnit | null> = new Array(MAX_PLAYERS).fill(null);
+    for (const u of this.units.values()) {
+      if (u.isChief) chiefByOwner[u.owner] = u;
+    }
+    const r2 = FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR;
+    const claimed = new Set<string>();
+    for (const u of this.units.values()) {
+      if (u.isChief) continue;
+      if (u.path.length > 0) continue;
+      if (u.harvestTarget || u.huntTarget) continue;
+      if (u.state !== "idle") continue;
+      const c = chiefByOwner[u.owner];
+      if (!c) continue;
+      const dx = u.gx - c.gx;
+      const dy = u.gy - c.gy;
+      if (dx * dx + dy * dy <= r2) continue;
+      const ti = Math.floor(c.gx);
+      const tj = Math.floor(c.gy);
+      const blocked = this.blockedTilesFor(u, claimed);
+      let target: { i: number; j: number } | null = null;
+      if (this.isWalkable(ti, tj) && !blocked.has(`${ti},${tj}`)) {
+        target = { i: ti, j: tj };
+      } else {
+        target = this.findFreeTileNear(ti, tj, blocked);
       }
+      if (!target) continue;
+      this.startMove(u, target.i, target.j, blocked);
+      const last = u.path[u.path.length - 1];
+      if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
     }
   }
 
@@ -3099,7 +3050,6 @@ export class Sim {
     for (const u of this.units.values()) {
       if (u.isChief) chiefByOwner[u.owner] = u;
     }
-    const claimed = new Set<string>();
     for (const u of this.units.values()) {
       if (u.isChief) continue;
       if (!this.active[u.owner]) continue;
@@ -3110,44 +3060,43 @@ export class Sim {
       u.autoFollowScanTimer -= dt;
 
       const c = chiefByOwner[u.owner];
+      if (!c) {
+        u.autoFollowing = false;
+        continue;
+      }
+
+      const tribeSettled =
+        c.path.length === 0 &&
+        !c.harvestTarget &&
+        !c.huntTarget &&
+        c.idleSec >= TRIBE_COHESION_IDLE_SEC;
 
       if (u.path.length > 0) {
         if (!u.autoFollowing) continue;
         if (u.autoFollowScanTimer > 0) continue;
         u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
-        if (c) this.tryAutoForage(u, c);
+        this.tryAutoForage(u, c);
         continue;
       }
 
-      if (!c) continue;
+      if (!tribeSettled) {
+        u.autoFollowing = false;
+        continue;
+      }
+
+      const dx = u.gx - c.gx;
+      const dy = u.gy - c.gy;
+      if (dx * dx + dy * dy > FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) {
+        // Still rallying back to chief; cohereTribes will path us.
+        u.autoFollowing = false;
+        continue;
+      }
 
       if (this.tryAutoForage(u, c)) {
         u.autoFollowing = true;
-        const last = u.path[u.path.length - 1];
-        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
-        continue;
-      }
-
-      const dx = c.gx - u.gx;
-      const dy = c.gy - u.gy;
-      if (dx * dx + dy * dy <= FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) continue;
-
-      const ci = Math.floor(c.gx);
-      const cj = Math.floor(c.gy);
-      const blocked = this.blockedTilesFor(u, claimed);
-      let target: { i: number; j: number } | null = null;
-      if (this.isWalkable(ci, cj) && !blocked.has(`${ci},${cj}`)) {
-        target = { i: ci, j: cj };
-      } else {
-        target = this.findFreeTileNear(ci, cj, blocked);
-      }
-      if (!target) continue;
-      this.startMove(u, target.i, target.j, blocked);
-      if (u.path.length > 0) {
-        u.autoFollowing = true;
         u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
-        const last = u.path[u.path.length - 1];
-        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      } else {
+        u.autoFollowing = false;
       }
     }
   }
