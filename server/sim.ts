@@ -57,9 +57,9 @@ const GROWTH_REQUIRED_SEC = 120;
 const PREGNANCY_HEALTH_MIN_FRAC = 0.33;
 const ENCOUNTER_RANGE = 5;
 const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
-const MUSHROOM_REGROW_TICKS = TICK_RATE * 90;
+const MUSHROOM_REGROW_TICKS = TICK_RATE * 60;
 const MUSHROOM_AUTOPICK_GAIN = 1;
-const BUSH_REGROW_TICKS = TICK_RATE * 90;
+const BUSH_REGROW_TICKS = TICK_RATE * 120;
 const BUSH_AUTOPICK_GAIN = 1;
 const TREE_REGROW_TICKS = TICK_RATE * 120;
 const TREE_AUTOPICK_GAIN = 1;
@@ -147,12 +147,12 @@ interface AnimalSpec {
 }
 
 const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0150, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, aquatic: false },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, aquatic: false },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0220, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, aquatic: false },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 3,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 6,  predator: false, preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, aquatic: false },
   megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300, aquatic: false },
   bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, aquatic: false },
   caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, aquatic: false },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: false, detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 10, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
   alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
   bear:        { hp: 22, speed: 3.0, meat: 14, biomes: ["wald", "felsen"],                     density: 0.0016, wanderRadius: 10, damage: 8,  aggressive: true,  detectRange: 6, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, predator: true,  preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, aquatic: false },
 };
@@ -263,6 +263,19 @@ function kindHash(kind: AnimalKind): number {
   return h;
 }
 
+const SPATIAL_CELL = 8;
+const SPATIAL_BIAS = 32768;
+
+function gridKey(cx: number, cy: number): number {
+  return (cx + SPATIAL_BIAS) * 65536 + (cy + SPATIAL_BIAS);
+}
+
+function pushBucket<T>(m: Map<number, T[]>, key: number, value: T): void {
+  const arr = m.get(key);
+  if (arr) arr.push(value);
+  else m.set(key, [value]);
+}
+
 function objKey(kind: ObjectKind, i: number, j: number): string {
   const p =
     kind === "tree"
@@ -299,6 +312,7 @@ export class Sim {
   animalKindCap: Map<AnimalKind, number> = new Map();
   animalKindFloor: Map<AnimalKind, number> = new Map();
   animalRespawnTimer = 0;
+  animalReproTimer = 0;
   deadUnitIds: string[] = [];
   extinctTribes: PlayerId[] = [];
   respawnedTribes: PlayerId[] = [];
@@ -324,12 +338,19 @@ export class Sim {
   fishCap = 0;
   tick = 0;
 
+  private animalGrid: Map<number, SimAnimal[]> = new Map();
+  private predatorGrid: Map<number, SimAnimal[]> = new Map();
+  private preyGrid: Map<number, SimAnimal[]> = new Map();
+  private unitGrid: Map<number, SimUnit[]> = new Map();
+  private fishGrid: Map<number, SimFish[]> = new Map();
+
   constructor(seed: number) {
     this.seed = seed;
     this.spawns = spawnsFromSeed(seed);
     this.spawnAnimals();
     this.spawnFishes();
     this.spawnArtifacts();
+    this.rebuildSpatialIndex();
   }
 
   private spawnArtifacts(): void {
@@ -811,6 +832,88 @@ export class Sim {
     return bestPath;
   }
 
+  private rebuildSpatialIndex(): void {
+    this.animalGrid.clear();
+    this.predatorGrid.clear();
+    this.preyGrid.clear();
+    this.unitGrid.clear();
+    this.fishGrid.clear();
+    const cs = SPATIAL_CELL;
+    for (const a of this.animals.values()) {
+      if (a.hp <= 0) continue;
+      const k = gridKey(Math.floor(a.gx / cs), Math.floor(a.gy / cs));
+      pushBucket(this.animalGrid, k, a);
+      const spec = ANIMAL_SPECS[a.kind];
+      if (spec.predator) pushBucket(this.predatorGrid, k, a);
+      else if (!spec.aggressive) pushBucket(this.preyGrid, k, a);
+    }
+    for (const u of this.units.values()) {
+      if (u.hp <= 0) continue;
+      const k = gridKey(Math.floor(u.gx / cs), Math.floor(u.gy / cs));
+      pushBucket(this.unitGrid, k, u);
+    }
+    for (const f of this.fishes.values()) {
+      const k = gridKey(Math.floor(f.gx / cs), Math.floor(f.gy / cs));
+      pushBucket(this.fishGrid, k, f);
+    }
+  }
+
+  visibleAnimalIds(
+    viewers: Array<{ gx: number; gy: number }>,
+    radius: number,
+  ): Set<string> {
+    const out = new Set<string>();
+    if (viewers.length === 0) return out;
+    const r2 = radius * radius;
+    const cs = SPATIAL_CELL;
+    const rr = Math.ceil(radius / cs);
+    for (const u of viewers) {
+      const ux = Math.floor(u.gx / cs);
+      const uy = Math.floor(u.gy / cs);
+      for (let cy = uy - rr; cy <= uy + rr; cy++) {
+        for (let cx = ux - rr; cx <= ux + rr; cx++) {
+          const arr = this.animalGrid.get(gridKey(cx, cy));
+          if (!arr) continue;
+          for (const a of arr) {
+            if (out.has(a.id)) continue;
+            const dx = a.gx - u.gx;
+            const dy = a.gy - u.gy;
+            if (dx * dx + dy * dy <= r2) out.add(a.id);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  visibleFishIds(
+    viewers: Array<{ gx: number; gy: number }>,
+    radius: number,
+  ): Set<string> {
+    const out = new Set<string>();
+    if (viewers.length === 0) return out;
+    const r2 = radius * radius;
+    const cs = SPATIAL_CELL;
+    const rr = Math.ceil(radius / cs);
+    for (const u of viewers) {
+      const ux = Math.floor(u.gx / cs);
+      const uy = Math.floor(u.gy / cs);
+      for (let cy = uy - rr; cy <= uy + rr; cy++) {
+        for (let cx = ux - rr; cx <= ux + rr; cx++) {
+          const arr = this.fishGrid.get(gridKey(cx, cy));
+          if (!arr) continue;
+          for (const f of arr) {
+            if (out.has(f.id)) continue;
+            const dx = f.gx - u.gx;
+            const dy = f.gy - u.gy;
+            if (dx * dx + dy * dy <= r2) out.add(f.id);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
   private stepAnimals(dt: number): void {
     const dead: string[] = [];
     for (const a of this.animals.values()) {
@@ -828,12 +931,14 @@ export class Sim {
 
       if (spec.aggressive || spec.predator) {
         let nearestFire: SimCampfire | null = null;
-        let nearestFireDist = CAMPFIRE_REPEL_RADIUS;
+        let nearestFireD2 = CAMPFIRE_REPEL_RADIUS * CAMPFIRE_REPEL_RADIUS;
         for (const f of this.campfires.values()) {
-          const d = Math.hypot(f.gx - a.gx, f.gy - a.gy);
-          if (d < nearestFireDist) {
+          const dx = f.gx - a.gx;
+          const dy = f.gy - a.gy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < nearestFireD2) {
             nearestFire = f;
-            nearestFireDist = d;
+            nearestFireD2 = d2;
           }
         }
         if (nearestFire) {
@@ -893,35 +998,51 @@ export class Sim {
           a.attackTargetUnitId = null;
           a.path = [];
           a.state = "idle";
-        } else if (
-          spec.detectRange > 0 &&
-          Math.hypot(t.gx - a.gx, t.gy - a.gy) >
-            spec.detectRange * ANIMAL_ESCAPE_RANGE_MULT
-        ) {
-          a.attackTargetUnitId = null;
-          a.path = [];
-          a.state = "idle";
         } else {
-          const homeDist = Math.hypot(
-            a.gx - (a.homeI + 0.5),
-            a.gy - (a.homeJ + 0.5),
-          );
-          if (homeDist > spec.wanderRadius * 3) {
+          const tdx = t.gx - a.gx;
+          const tdy = t.gy - a.gy;
+          const escapeR = spec.detectRange * ANIMAL_ESCAPE_RANGE_MULT;
+          if (
+            spec.detectRange > 0 &&
+            tdx * tdx + tdy * tdy > escapeR * escapeR
+          ) {
             a.attackTargetUnitId = null;
             a.path = [];
+            a.state = "idle";
+          } else {
+            const hdx = a.gx - (a.homeI + 0.5);
+            const hdy = a.gy - (a.homeJ + 0.5);
+            const wr3 = spec.wanderRadius * 3;
+            if (hdx * hdx + hdy * hdy > wr3 * wr3) {
+              a.attackTargetUnitId = null;
+              a.path = [];
+            }
           }
         }
       }
 
       if (!a.attackTargetUnitId && spec.aggressive && spec.detectRange > 0) {
         let nearest: SimUnit | null = null;
-        let nearestDist = spec.detectRange;
-        for (const u of this.units.values()) {
-          if (u.hp <= 0) continue;
-          const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
-          if (d < nearestDist) {
-            nearest = u;
-            nearestDist = d;
+        const r = spec.detectRange;
+        let nearestD2 = r * r;
+        const cs = SPATIAL_CELL;
+        const ax = Math.floor(a.gx / cs);
+        const ay = Math.floor(a.gy / cs);
+        const rr = Math.ceil(r / cs);
+        for (let cy = ay - rr; cy <= ay + rr; cy++) {
+          for (let cx = ax - rr; cx <= ax + rr; cx++) {
+            const arr = this.unitGrid.get(gridKey(cx, cy));
+            if (!arr) continue;
+            for (const u of arr) {
+              if (u.hp <= 0) continue;
+              const dx = u.gx - a.gx;
+              const dy = u.gy - a.gy;
+              const d2 = dx * dx + dy * dy;
+              if (d2 < nearestD2) {
+                nearest = u;
+                nearestD2 = d2;
+              }
+            }
           }
         }
         if (nearest) {
@@ -948,11 +1069,10 @@ export class Sim {
           if (!t || t.hp <= 0) {
             a.attackTargetAnimalId = null;
           } else {
-            const homeDist = Math.hypot(
-              a.gx - (a.homeI + 0.5),
-              a.gy - (a.homeJ + 0.5),
-            );
-            if (homeDist > spec.wanderRadius * 3) {
+            const hdx = a.gx - (a.homeI + 0.5);
+            const hdy = a.gy - (a.homeJ + 0.5);
+            const wr3 = spec.wanderRadius * 3;
+            if (hdx * hdx + hdy * hdy > wr3 * wr3) {
               a.attackTargetAnimalId = null;
               a.path = [];
             }
@@ -960,16 +1080,27 @@ export class Sim {
         }
         if (!a.attackTargetAnimalId) {
           let nearest: SimAnimal | null = null;
-          let nearestDist = spec.detectRange;
-          for (const other of this.animals.values()) {
-            if (other === a) continue;
-            if (other.hp <= 0) continue;
-            const otherSpec = ANIMAL_SPECS[other.kind];
-            if (otherSpec.predator || otherSpec.aggressive) continue;
-            const d = Math.hypot(other.gx - a.gx, other.gy - a.gy);
-            if (d < nearestDist) {
-              nearest = other;
-              nearestDist = d;
+          const r = spec.detectRange;
+          let nearestD2 = r * r;
+          const cs = SPATIAL_CELL;
+          const ax = Math.floor(a.gx / cs);
+          const ay = Math.floor(a.gy / cs);
+          const rr = Math.ceil(r / cs);
+          for (let cy = ay - rr; cy <= ay + rr; cy++) {
+            for (let cx = ax - rr; cx <= ax + rr; cx++) {
+              const arr = this.preyGrid.get(gridKey(cx, cy));
+              if (!arr) continue;
+              for (const other of arr) {
+                if (other === a) continue;
+                if (other.hp <= 0) continue;
+                const dx = other.gx - a.gx;
+                const dy = other.gy - a.gy;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < nearestD2) {
+                  nearest = other;
+                  nearestD2 = d2;
+                }
+              }
             }
           }
           if (nearest) {
@@ -989,15 +1120,26 @@ export class Sim {
 
       if (!spec.aggressive && !spec.predator) {
         let predator: SimAnimal | null = null;
-        let pdist = PREY_FLEE_RANGE;
-        for (const other of this.animals.values()) {
-          if (other === a) continue;
-          if (other.hp <= 0) continue;
-          if (!ANIMAL_SPECS[other.kind].predator) continue;
-          const d = Math.hypot(other.gx - a.gx, other.gy - a.gy);
-          if (d < pdist) {
-            predator = other;
-            pdist = d;
+        let pdist2 = PREY_FLEE_RANGE * PREY_FLEE_RANGE;
+        const cs = SPATIAL_CELL;
+        const ax = Math.floor(a.gx / cs);
+        const ay = Math.floor(a.gy / cs);
+        const rr = Math.ceil(PREY_FLEE_RANGE / cs);
+        for (let cy = ay - rr; cy <= ay + rr; cy++) {
+          for (let cx = ax - rr; cx <= ax + rr; cx++) {
+            const arr = this.predatorGrid.get(gridKey(cx, cy));
+            if (!arr) continue;
+            for (const other of arr) {
+              if (other === a) continue;
+              if (other.hp <= 0) continue;
+              const dx = other.gx - a.gx;
+              const dy = other.gy - a.gy;
+              const d2 = dx * dx + dy * dy;
+              if (d2 < pdist2) {
+                predator = other;
+                pdist2 = d2;
+              }
+            }
           }
         }
         if (predator) {
@@ -1097,37 +1239,57 @@ export class Sim {
   }
 
   private stepAnimalReproduction(dt: number): void {
+    this.animalReproTimer -= dt;
+    if (this.animalReproTimer > 0) return;
+    const stepDt = 1.0;
+    this.animalReproTimer = stepDt;
+
     const kindCounts: Map<AnimalKind, number> = new Map();
+    const buckets: Map<string, SimAnimal[]> = new Map();
+    const cellSize = 2;
     for (const a of this.animals.values()) {
       kindCounts.set(a.kind, (kindCounts.get(a.kind) ?? 0) + 1);
+      if (a.hp <= 0) continue;
+      const spec = ANIMAL_SPECS[a.kind];
+      if (a.ageSec < spec.matureAgeSec) continue;
+      if (a.attackTargetUnitId || a.attackTargetAnimalId) continue;
+      if (a.state === "flee" || a.state === "hunt") continue;
+      const ci = Math.floor(a.gx / cellSize);
+      const cj = Math.floor(a.gy / cellSize);
+      const key = `${a.kind}|${ci}|${cj}`;
+      const arr = buckets.get(key);
+      if (arr) arr.push(a);
+      else buckets.set(key, [a]);
     }
     const newborns: SimAnimal[] = [];
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
       const spec = ANIMAL_SPECS[a.kind];
       if (a.ageSec < spec.matureAgeSec) continue;
-      if (a.attackTargetUnitId) continue;
-      if (a.attackTargetAnimalId) continue;
+      if (a.attackTargetUnitId || a.attackTargetAnimalId) continue;
       if (a.state === "flee" || a.state === "hunt") continue;
 
+      const ci = Math.floor(a.gx / cellSize);
+      const cj = Math.floor(a.gy / cellSize);
       let mate: SimAnimal | null = null;
-      for (const b of this.animals.values()) {
-        if (b === a) continue;
-        if (b.kind !== a.kind) continue;
-        if (b.id <= a.id) continue;
-        if (b.hp <= 0) continue;
-        if (b.ageSec < spec.matureAgeSec) continue;
-        if (b.attackTargetUnitId || b.attackTargetAnimalId) continue;
-        if (b.state === "flee" || b.state === "hunt") continue;
-        const dx = b.gx - a.gx;
-        const dy = b.gy - a.gy;
-        if (dx * dx + dy * dy < ANIMAL_BREED_RANGE_SQ) {
-          mate = b;
-          break;
+      outer: for (let dj = -1; dj <= 1 && !mate; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const arr = buckets.get(`${a.kind}|${ci + di}|${cj + dj}`);
+          if (!arr) continue;
+          for (const b of arr) {
+            if (b === a) continue;
+            if (b.id <= a.id) continue;
+            const dx = b.gx - a.gx;
+            const dy = b.gy - a.gy;
+            if (dx * dx + dy * dy < ANIMAL_BREED_RANGE_SQ) {
+              mate = b;
+              break outer;
+            }
+          }
         }
       }
       if (mate) {
-        a.breedTimer += dt;
+        a.breedTimer += stepDt;
         if (a.breedTimer >= spec.gestationSec) {
           a.breedTimer = -spec.gestationSec * 0.6;
           const cap = this.animalKindCap.get(a.kind) ?? 0;
@@ -1138,7 +1300,7 @@ export class Sim {
           }
         }
       } else if (a.breedTimer > 0) {
-        a.breedTimer = Math.max(0, a.breedTimer - dt * 0.5);
+        a.breedTimer = Math.max(0, a.breedTimer - stepDt * 0.5);
       }
     }
     for (const n of newborns) this.animals.set(n.id, n);
@@ -1194,11 +1356,20 @@ export class Sim {
 
     const r = ANIMAL_SPAWN_RADIUS;
     let spawnedTotal = 0;
-    for (const { kind } of deficits) {
+    const totalMissing = deficits.reduce((s, d) => s + d.missing, 0);
+    for (const { kind, missing } of deficits) {
       if (spawnedTotal >= ANIMAL_RESPAWN_PER_TICK) break;
+      const share = Math.max(
+        1,
+        Math.ceil((missing / totalMissing) * ANIMAL_RESPAWN_PER_TICK),
+      );
+      const budget = Math.min(share, missing, ANIMAL_RESPAWN_PER_TICK - spawnedTotal);
       const spec = ANIMAL_SPECS[kind];
-      let spawned = false;
-      for (let attempt = 0; attempt < ANIMAL_RESPAWN_TILE_ATTEMPTS && !spawned; attempt++) {
+      let spawnedHere = 0;
+      let attempts = 0;
+      const maxAttempts = ANIMAL_RESPAWN_TILE_ATTEMPTS * budget;
+      while (spawnedHere < budget && attempts < maxAttempts) {
+        attempts++;
         const i = Math.floor((Math.random() * 2 - 1) * r);
         const j = Math.floor((Math.random() * 2 - 1) * r);
         const b = biomeAt(this.seed, i, j);
@@ -1207,13 +1378,23 @@ export class Sim {
         const cx = i + 0.5;
         const cy = j + 0.5;
         let nearUnit = false;
-        for (const u of this.units.values()) {
-          if (u.hp <= 0) continue;
-          const dx = cx - u.gx;
-          const dy = cy - u.gy;
-          if (dx * dx + dy * dy < ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) {
-            nearUnit = true;
-            break;
+        const cs = SPATIAL_CELL;
+        const gx = Math.floor(cx / cs);
+        const gy = Math.floor(cy / cs);
+        const rr = Math.ceil(Math.sqrt(ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) / cs);
+        outer: for (let dgy = -rr; dgy <= rr; dgy++) {
+          for (let dgx = -rr; dgx <= rr; dgx++) {
+            const arr = this.unitGrid.get(gridKey(gx + dgx, gy + dgy));
+            if (!arr) continue;
+            for (const u of arr) {
+              if (u.hp <= 0) continue;
+              const dx = cx - u.gx;
+              const dy = cy - u.gy;
+              if (dx * dx + dy * dy < ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) {
+                nearUnit = true;
+                break outer;
+              }
+            }
           }
         }
         if (nearUnit) continue;
@@ -1241,7 +1422,7 @@ export class Sim {
           maxAgeSec: spec.maxAgeSec * (0.85 + Math.random() * 0.3),
           breedTimer: -spec.gestationSec * Math.random(),
         });
-        spawned = true;
+        spawnedHere++;
         spawnedTotal++;
       }
     }
@@ -1390,16 +1571,17 @@ export class Sim {
 
   private maybeAutoEngage(u: SimUnit): void {
     let allyTarget: string | null = null;
-    let allyDist = Infinity;
+    let allyD2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const ally of this.units.values()) {
       if (ally.owner !== u.owner) continue;
       if (ally.id === u.id) continue;
       if (!ally.huntTarget) continue;
       if (ally.hp <= 0) continue;
-      const d = Math.hypot(ally.gx - u.gx, ally.gy - u.gy);
-      if (d > GROUP_FIGHT_RANGE) continue;
-      if (d < allyDist) {
-        allyDist = d;
+      const dx = ally.gx - u.gx;
+      const dy = ally.gy - u.gy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < allyD2) {
+        allyD2 = d2;
         allyTarget = ally.huntTarget;
       }
     }
@@ -1410,16 +1592,29 @@ export class Sim {
     }
 
     let bestAnimal: SimAnimal | null = null;
-    let bestDist = Infinity;
-    for (const a of this.animals.values()) {
-      const spec = ANIMAL_SPECS[a.kind];
-      if (!spec.autoHuntable) continue;
-      if (a.hp <= 0) continue;
-      const d = Math.hypot(a.gx - u.gx, a.gy - u.gy);
-      if (d > spec.autoHuntRange) continue;
-      if (d < bestDist) {
-        bestDist = d;
-        bestAnimal = a;
+    let bestD2 = Infinity;
+    const cs = SPATIAL_CELL;
+    const ux = Math.floor(u.gx / cs);
+    const uy = Math.floor(u.gy / cs);
+    // Max autoHuntRange across kinds is small (≤6); 1 cell radius suffices.
+    const rr = 1;
+    for (let cy = uy - rr; cy <= uy + rr; cy++) {
+      for (let cx = ux - rr; cx <= ux + rr; cx++) {
+        const arr = this.animalGrid.get(gridKey(cx, cy));
+        if (!arr) continue;
+        for (const a of arr) {
+          const spec = ANIMAL_SPECS[a.kind];
+          if (!spec.autoHuntable) continue;
+          if (a.hp <= 0) continue;
+          const dx = a.gx - u.gx;
+          const dy = a.gy - u.gy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > spec.autoHuntRange * spec.autoHuntRange) continue;
+          if (d2 < bestD2) {
+            bestD2 = d2;
+            bestAnimal = a;
+          }
+        }
       }
     }
     if (bestAnimal) {
@@ -1428,13 +1623,15 @@ export class Sim {
   }
 
   private callForHelp(victim: SimUnit, animalId: string): void {
+    const r2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const u of this.units.values()) {
       if (u.owner !== victim.owner) continue;
       if (u.id === victim.id) continue;
       if (u.huntTarget) continue;
       if (u.hp <= 0) continue;
-      const d = Math.hypot(u.gx - victim.gx, u.gy - victim.gy);
-      if (d > GROUP_FIGHT_RANGE) continue;
+      const dx = u.gx - victim.gx;
+      const dy = u.gy - victim.gy;
+      if (dx * dx + dy * dy > r2) continue;
       u.huntTarget = animalId;
       u.harvestTarget = null;
       u.huntTimer = 0;
@@ -1446,14 +1643,16 @@ export class Sim {
 
   private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
     const claimed = new Set<string>();
+    const r2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const u of this.units.values()) {
       if (u.owner !== hunter.owner) continue;
       if (u.id === hunter.id) continue;
       if (u.huntTarget) continue;
       if (u.harvestTarget) continue;
       if (u.hp <= 0) continue;
-      const d = Math.hypot(u.gx - a.gx, u.gy - a.gy);
-      if (d > GROUP_FIGHT_RANGE) continue;
+      const dx = u.gx - a.gx;
+      const dy = u.gy - a.gy;
+      if (dx * dx + dy * dy > r2) continue;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHunt(u, a, blocked);
       const last = u.path[u.path.length - 1];
@@ -1501,6 +1700,8 @@ export class Sim {
         const spec = ANIMAL_SPECS[a.kind];
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
+          a.aggroExpireTick =
+            this.tick + Math.floor(spec.aggroDurationSec * TICK_RATE);
         } else {
           a.state = "flee";
         }
@@ -2204,6 +2405,7 @@ export class Sim {
 
   step(dt: number): void {
     this.tick++;
+    this.rebuildSpatialIndex();
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
     this.stepAnimalRespawn(dt);
