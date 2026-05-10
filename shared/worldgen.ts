@@ -239,6 +239,58 @@ export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean 
   return false;
 }
 
+const VOLCANO_CELL = 22;
+
+interface VolcanoSpec { i: number; j: number; }
+const volcanoCellCache = new Map<string, VolcanoSpec | null>();
+
+function volcanoForCell(seed: number, ci: number, cj: number): VolcanoSpec | null {
+  const key = `${seed}:${ci}:${cj}`;
+  const cached = volcanoCellCache.get(key);
+  if (cached !== undefined) return cached;
+  if (rand01(seed ^ 0x0c4b, ci, cj) >= 0.45) {
+    volcanoCellCache.set(key, null);
+    return null;
+  }
+  let bestI = 0;
+  let bestJ = 0;
+  let bestScore = -1;
+  for (let dj = 0; dj < VOLCANO_CELL; dj++) {
+    for (let di = 0; di < VOLCANO_CELL; di++) {
+      const ti = ci * VOLCANO_CELL + di;
+      const tj = cj * VOLCANO_CELL + dj;
+      if (isInsideSpawnGuard(seed, ti, tj)) continue;
+      if (biomeRaw(seed, ti, tj) !== "felsen") continue;
+      const s = hash3(seed ^ 0x0c4d, ti, tj);
+      if (s > bestScore) {
+        bestScore = s;
+        bestI = ti;
+        bestJ = tj;
+      }
+    }
+  }
+  const result: VolcanoSpec | null = bestScore >= 0 ? { i: bestI, j: bestJ } : null;
+  volcanoCellCache.set(key, result);
+  return result;
+}
+
+export function hasVolcanoAt(seed: number, i: number, j: number): boolean {
+  const ci = Math.floor(i / VOLCANO_CELL);
+  const cj = Math.floor(j / VOLCANO_CELL);
+  const v = volcanoForCell(seed, ci, cj);
+  return v !== null && v.i === i && v.j === j;
+}
+
+export function volcanoIdAt(i: number, j: number): string {
+  return `v_${i}_${j}`;
+}
+
+export function parseVolcanoId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^v_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
 const SEQUOIA_CELL = 5;
 
 export function hasSequoiaAt(seed: number, i: number, j: number): boolean {
@@ -382,6 +434,7 @@ export function fishMeatAt(seed: number, i: number, j: number): number {
 
 export function hasStoneAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasVolcanoAt(seed, i, j)) return false;
   if (hasSequoiaAt(seed, i, j)) return false;
   if (hasTreeAt(seed, i, j)) return false;
   if (hasBushAt(seed, i, j)) return false;
@@ -437,6 +490,7 @@ export function artifactsFromSeed(seed: number): ArtifactSpec[] {
     if (!isLandTile(seed, i, j)) continue;
     const b = biomeAt(seed, i, j);
     if (b === "lake" || b === "river" || b === "gebirge") continue;
+    if (hasVolcanoAt(seed, i, j)) continue;
     if (hasSequoiaAt(seed, i, j)) continue;
     if (hasTreeAt(seed, i, j)) continue;
     if (hasBushAt(seed, i, j)) continue;

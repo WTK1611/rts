@@ -7,6 +7,7 @@ import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
 import { Sequoia } from "../Sequoia";
+import { Volcano } from "../Volcano";
 import { Animal } from "../Animal";
 import { Campfire } from "../Campfire";
 import { Artifact } from "../Artifact";
@@ -43,6 +44,7 @@ import {
   hasMushroomAt,
   hasSequoiaAt,
   hasStoneAt,
+  hasVolcanoAt,
   hasTreeAt,
   heightAt,
   isLandTile,
@@ -85,6 +87,7 @@ interface Chunk {
   fishes: Map<string, Fish>;
   stones: Map<string, Stone>;
   sequoias: Map<string, Sequoia>;
+  volcanoes: Map<string, Volcano>;
   surfSegments: SurfSeg[];
   waterfalls: WaterfallSeg[];
   bbox: { x: number; y: number; w: number; h: number };
@@ -135,6 +138,7 @@ export class GameScene extends Phaser.Scene {
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
   private sequoias: Map<string, Sequoia> = new Map();
+  private volcanoes: Map<string, Volcano> = new Map();
   private animals: Map<string, Animal> = new Map();
   private campfires: Map<string, Campfire> = new Map();
   private artifacts: Map<string, Artifact> = new Map();
@@ -401,6 +405,7 @@ export class GameScene extends Phaser.Scene {
     for (const a of this.animals.values()) a.update(dt);
     for (const f of this.campfires.values()) f.update(dt);
     for (const ar of this.artifacts.values()) ar.update(dt);
+    for (const v of this.volcanoes.values()) v.update(dt);
     this.updateSurf(time);
     this.updateWaterfalls(time);
 
@@ -807,6 +812,7 @@ export class GameScene extends Phaser.Scene {
     const fishes = new Map<string, Fish>();
     const stones = new Map<string, Stone>();
     const sequoias = new Map<string, Sequoia>();
+    const volcanoes = new Map<string, Volcano>();
     const i0 = cx * CHUNK_SIZE;
     const j0 = cy * CHUNK_SIZE;
     // Pass 1: draw water tiles first so land tiles can carve a jagged shoreline over them.
@@ -823,7 +829,14 @@ export class GameScene extends Phaser.Scene {
         const i = i0 + di;
         const j = j0 + dj;
         if (!this.isWaterAt(i, j)) this.drawTile(g, g, i, j);
-        if (hasSequoiaAt(this.seed, i, j)) {
+        if (hasVolcanoAt(this.seed, i, j)) {
+          const vid = `v_${i}_${j}`;
+          if (!this.volcanoes.has(vid)) {
+            const v = new Volcano(this, i, j, this.seed);
+            volcanoes.set(vid, v);
+            this.volcanoes.set(vid, v);
+          }
+        } else if (hasSequoiaAt(this.seed, i, j)) {
           const sid = `q_${i}_${j}`;
           if (!this.sequoias.has(sid)) {
             const s = new Sequoia(this, i, j, this.seed);
@@ -873,7 +886,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
-      trees, bushes, mushrooms, fishes, stones, sequoias,
+      trees, bushes, mushrooms, fishes, stones, sequoias, volcanoes,
       surfSegments,
       waterfalls,
       bbox: { x: ofx, y: ofy, w, h },
@@ -1001,6 +1014,10 @@ export class GameScene extends Phaser.Scene {
     for (const [qid, q] of chunk.sequoias) {
       q.destroy();
       this.sequoias.delete(qid);
+    }
+    for (const [vid, v] of chunk.volcanoes) {
+      v.destroy();
+      this.volcanoes.delete(vid);
     }
     this.chunks.delete(key);
   }
@@ -1541,6 +1558,14 @@ export class GameScene extends Phaser.Scene {
       q.container.setVisible(v);
       q.shadow.setVisible(v);
     }
+    for (const vol of this.volcanoes.values()) {
+      const key = `v:${vol.i},${vol.j}`;
+      const v = this.explored.has(`${vol.i},${vol.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      vol.container.setVisible(v);
+      vol.shadow.setVisible(v);
+    }
   }
 
   private applyDynamicVisibility(): void {
@@ -1700,6 +1725,20 @@ export class GameScene extends Phaser.Scene {
       ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
       ctx.fillStyle = "#5fa860";
       ctx.fillRect(x - 0.5, y - 1.5, 1, 1);
+    }
+    for (const vol of this.volcanoes.values()) {
+      const k = `${vol.i},${vol.j}`;
+      if (!this.explored.has(k)) continue;
+      const { x, y } = toMini(vol.i + 0.5, vol.j + 0.5);
+      ctx.fillStyle = "#3a2418";
+      ctx.beginPath();
+      ctx.moveTo(x, y - 2.4);
+      ctx.lineTo(x + 2.4, y + 1.6);
+      ctx.lineTo(x - 2.4, y + 1.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#ff6a1f";
+      ctx.fillRect(x - 0.8, y - 1.4, 1.6, 1.2);
     }
     for (const a of this.artifacts.values()) {
       const i = Math.floor(a.gx);
