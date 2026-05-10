@@ -214,17 +214,9 @@ function visibleAnimalsFor(
   const myUnits: UnitSnapshot[] = [];
   for (const u of units) if (u.owner === ownerId) myUnits.push(u);
   if (myUnits.length === 0) return [];
+  const ids = world.sim.visibleAnimalIds(myUnits, ANIMAL_VIEW_RADIUS);
   const out: AnimalSnapshot[] = [];
-  for (const a of allAnimals) {
-    for (const u of myUnits) {
-      const dx = a.gx - u.gx;
-      const dy = a.gy - u.gy;
-      if (dx * dx + dy * dy <= ANIMAL_VIEW_RADIUS_SQ) {
-        out.push(a);
-        break;
-      }
-    }
-  }
+  for (const a of allAnimals) if (ids.has(a.id)) out.push(a);
   return out;
 }
 
@@ -236,17 +228,9 @@ function visibleFishesFor(
   const myUnits: UnitSnapshot[] = [];
   for (const u of units) if (u.owner === ownerId) myUnits.push(u);
   if (myUnits.length === 0) return [];
+  const ids = world.sim.visibleFishIds(myUnits, ANIMAL_VIEW_RADIUS);
   const out: FishSnapshot[] = [];
-  for (const f of allFishes) {
-    for (const u of myUnits) {
-      const dx = f.gx - u.gx;
-      const dy = f.gy - u.gy;
-      if (dx * dx + dy * dy <= ANIMAL_VIEW_RADIUS_SQ) {
-        out.push(f);
-        break;
-      }
-    }
-  }
+  for (const f of allFishes) if (ids.has(f.id)) out.push(f);
   return out;
 }
 
