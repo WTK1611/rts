@@ -133,6 +133,7 @@ const HP_GAIN_FISCH = 12;
 const HP_GAIN_BEEREN = 3;
 const HP_GAIN_PILZE = 2;
 const HP_GAIN_WASSER = 1;
+const AUTOEAT_HP_THRESHOLD = 0.51;
 
 interface AnimalSpec {
   hp: number;
@@ -2450,7 +2451,7 @@ export class Sim {
   }
 
   private autoEat(u: SimUnit): void {
-    if (u.hp >= u.hpMax) return;
+    if (u.hp >= u.hpMax * AUTOEAT_HP_THRESHOLD) return;
     const r = this.resources[u.owner];
     const order: Array<keyof Resources> = [
       "fleisch", "fisch", "pilze", "beeren", "wasser",
