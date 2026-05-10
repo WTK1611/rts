@@ -10,9 +10,25 @@ function shade(color: number, factor: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+
 const CHILD_AGE_SEC = 60;
 const OLD_THRESHOLD_SEC = 360;
 const MAX_AGE_SEC = 420;
+const HAIR_BASE_COLOR = 0x3a2410;
+const HAIR_GRAY_COLOR = 0x888888;
+const HAIR_WHITE_COLOR = 0xf2f2f2;
 
 export class Unit {
   scene: Phaser.Scene;
@@ -101,14 +117,14 @@ export class Unit {
     this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
 
     if (snap.gender === "f") {
-      this.hairBack = scene.add.ellipse(0, -20, 14, 18, 0x3a2410);
+      this.hairBack = scene.add.ellipse(0, -20, 14, 18, HAIR_BASE_COLOR);
     }
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
     if (snap.gender === "f") {
-      this.hair = scene.add.arc(0, -27, 7, 180, 360, false, 0x3a2410);
+      this.hair = scene.add.arc(0, -27, 7, 180, 360, false, HAIR_BASE_COLOR);
     } else {
-      this.hair = scene.add.arc(0, -28, 6, 200, 340, false, 0x3a2410);
-      this.beard = scene.add.ellipse(0, -22, 7, 3, 0x3a2410);
+      this.hair = scene.add.arc(0, -28, 6, 200, 340, false, HAIR_BASE_COLOR);
+      this.beard = scene.add.ellipse(0, -22, 7, 3, HAIR_BASE_COLOR);
     }
 
     this.crown = scene.add.graphics({ x: 0, y: 0 });
@@ -277,10 +293,18 @@ export class Unit {
       this.hairBack?.setAngle(lean);
       this.beard?.setAngle(lean);
     }
-    const hairAlpha = age > OLD_THRESHOLD_SEC
-      ? 0.4 + 0.6 * (1 - Math.min(1, (age - OLD_THRESHOLD_SEC) / (MAX_AGE_SEC - OLD_THRESHOLD_SEC)))
-      : 1;
-    this.hair.setAlpha(hairAlpha);
+    let hairColor = HAIR_BASE_COLOR;
+    if (age > OLD_THRESHOLD_SEC) {
+      const t = Math.min(1, (age - OLD_THRESHOLD_SEC) / (MAX_AGE_SEC - OLD_THRESHOLD_SEC));
+      if (t < 0.5) {
+        hairColor = lerpColor(HAIR_BASE_COLOR, HAIR_GRAY_COLOR, t / 0.5);
+      } else {
+        hairColor = lerpColor(HAIR_GRAY_COLOR, HAIR_WHITE_COLOR, (t - 0.5) / 0.5);
+      }
+    }
+    this.hair.setFillStyle(hairColor);
+    this.hairBack?.setFillStyle(hairColor);
+    this.beard?.setFillStyle(hairColor);
   }
 
   private refreshHpBar(): void {
