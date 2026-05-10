@@ -23,9 +23,9 @@ function lerpColor(a: number, b: number, t: number): number {
   return (r << 16) | (g << 8) | bl;
 }
 
-const CHILD_AGE_SEC = 60;
-const OLD_THRESHOLD_SEC = 360;
-const MAX_AGE_SEC = 420;
+const CHILD_AGE_SEC = 240;
+const OLD_THRESHOLD_SEC = 720;
+const MAX_AGE_SEC = 960;
 const HAIR_BASE_COLOR = 0x3a2410;
 const HAIR_GRAY_COLOR = 0x888888;
 const HAIR_WHITE_COLOR = 0xf2f2f2;

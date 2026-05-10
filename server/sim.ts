@@ -60,8 +60,8 @@ const BUSH_HARVEST_AMOUNT = 3;
 const MUSH_HARVEST_AMOUNT = 1;
 const STARTING_GENDERS: UnitGender[] = ["m", "f", "m", "f"];
 const TRIBE_SIZE = STARTING_GENDERS.length;
-const GROWTH_REQUIRED_SEC = 120;
-const PREGNANCY_HEALTH_MIN_FRAC = 0.33;
+const GROWTH_REQUIRED_SEC = DAY_LENGTH_SEC * 2;
+const PREGNANCY_HEALTH_MIN_FRAC = 0.30;
 const ENCOUNTER_RANGE = 5;
 const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
 const MUSHROOM_REGROW_TICKS = TICK_RATE * 60;
@@ -125,8 +125,9 @@ export interface SimUnit {
   autoFollowScanTimer: number;
 }
 
-const MAX_AGE_SEC = 420;
-const CHILD_AGE_SEC = 60;
+const MAX_AGE_SEC = DAY_LENGTH_SEC * 4;
+const CHILD_AGE_SEC = DAY_LENGTH_SEC;
+const OLD_THRESHOLD_SEC = DAY_LENGTH_SEC * 3;
 
 const UNIT_HP_MAX = 100;
 const UNIT_HP_LOSS_PER_TILE = 0.4;
@@ -1882,7 +1883,7 @@ export class Sim {
     const usedNames = new Set<string>();
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
-      const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 180;
+      const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 240;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
       usedNames.add(firstName);
@@ -1947,7 +1948,7 @@ export class Sim {
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const idx = base + k;
-      const ageJitter = rand01(this.seed ^ 0xa6e, idx, p) * 180;
+      const ageJitter = rand01(this.seed ^ 0xa6e, idx, p) * 240;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, idx, usedNames);
       usedNames.add(firstName);
@@ -2993,15 +2994,15 @@ export class Sim {
       const list = tribeUnits[p];
       if (!this.active[p] || list.length === 0) continue;
 
-      let males = 0;
+      let matureMales = 0;
       let cx = 0;
       let cy = 0;
       for (const u of list) {
-        if (u.gender === "m") males++;
+        if (u.gender === "m" && u.ageSec >= CHILD_AGE_SEC) matureMales++;
         cx += u.gx;
         cy += u.gy;
       }
-      const canConceive = males >= 1 && list.length >= 2;
+      const canConceive = matureMales >= 1 && list.length >= 2;
       const centerX = cx / list.length;
       const centerY = cy / list.length;
 
@@ -3011,6 +3012,10 @@ export class Sim {
 
       for (const u of list) {
         if (u.gender !== "f") continue;
+        if (u.ageSec < CHILD_AGE_SEC) {
+          this.pregnancyTimer.delete(u.id);
+          continue;
+        }
         const frac = u.hpMax > 0 ? u.hp / u.hpMax : 0;
         if (!canConceive || frac < PREGNANCY_HEALTH_MIN_FRAC) {
           this.pregnancyTimer.delete(u.id);
