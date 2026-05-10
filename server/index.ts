@@ -243,6 +243,42 @@ function botSlotIds(): PlayerId[] {
   return out;
 }
 
+function evictBotSlot(): PlayerId {
+  let victim: PlayerId = -1;
+  let smallest = Infinity;
+  for (const p of world.players) {
+    if (!p || !p.bot) continue;
+    let count = 0;
+    for (const u of world.sim.units.values()) if (u.owner === p.id) count++;
+    if (count < smallest) {
+      smallest = count;
+      victim = p.id;
+    }
+  }
+  if (victim === -1) return -1;
+
+  const removedUnitIds = world.sim.removePlayer(victim);
+  const idx = world.bots.findIndex((b) => b.id === victim);
+  if (idx >= 0) world.bots.splice(idx, 1);
+  pendingBotRespawns.delete(victim);
+  world.players[victim] = null;
+  world.knownAnimals[victim] = new Set();
+  world.knownUnits[victim] = new Set();
+  world.knownCampfires[victim] = new Set();
+  world.knownFishes[victim] = new Set();
+
+  for (const other of world.players) {
+    if (!other || !other.ws) continue;
+    send(other.ws, {
+      type: "opponentLeft",
+      playerId: victim,
+      removedUnitIds,
+    });
+  }
+  console.log(`[rts-server] evicted bot slot ${victim} to make room for human`);
+  return victim;
+}
+
 
 function visibleUnitsFor(
   ownerId: PlayerId,
@@ -281,7 +317,8 @@ function joinPlayer(
   name: string,
   requestedLanguage?: string,
 ): void {
-  const slotId = world.players.findIndex((p) => p === null);
+  let slotId = world.players.findIndex((p) => p === null);
+  if (slotId === -1) slotId = evictBotSlot();
   if (slotId === -1) {
     send(ws, {
       type: "error",
