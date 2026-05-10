@@ -1352,8 +1352,10 @@ export class GameScene extends Phaser.Scene {
       m.shadow.setVisible(v);
     }
     for (const f of this.fishes.values()) {
-      const key = `f:${f.i},${f.j}`;
-      const v = this.visible.has(`${f.i},${f.j}`);
+      const fi = Math.floor(f.gx);
+      const fj = Math.floor(f.gy);
+      const key = `f:${f.id}:${fi},${fj}`;
+      const v = this.visible.has(`${fi},${fj}`);
       if (cache.get(key) === v) continue;
       cache.set(key, v);
       f.container.setVisible(v);
@@ -1536,6 +1538,34 @@ export class GameScene extends Phaser.Scene {
           MINIMAP_PX_PER_TILE,
           MINIMAP_PX_PER_TILE,
         );
+      }
+    }
+
+    for (const q of this.sequoias.values()) {
+      const k = `${q.i},${q.j}`;
+      if (!this.explored.has(k)) continue;
+      const { x, y } = toMini(q.i + 0.5, q.j + 0.5);
+      ctx.fillStyle = "#1f5022";
+      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      ctx.fillStyle = "#5fa860";
+      ctx.fillRect(x - 0.5, y - 1.5, 1, 1);
+    }
+    for (const a of this.artifacts.values()) {
+      const i = Math.floor(a.gx);
+      const j = Math.floor(a.gy);
+      const k = `${i},${j}`;
+      if (!this.explored.has(k)) continue;
+      const { x, y } = toMini(a.gx, a.gy);
+      ctx.fillStyle = a.found ? "#9a8a4a" : "#ffd84d";
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      if (!a.found) {
+        ctx.strokeStyle = "rgba(255, 216, 77, 0.6)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
 
@@ -1961,7 +1991,7 @@ export class GameScene extends Phaser.Scene {
         this.campfires.delete(snap.id);
         this.visObjectCache.delete(`cf:${snap.id}`);
       } else {
-        existing.applyState(snap.gx, snap.gy, snap.fuel);
+        existing.applyState(snap.gx, snap.gy, snap.fuel, snap.size);
         return;
       }
     }
@@ -1972,6 +2002,7 @@ export class GameScene extends Phaser.Scene {
       snap.gx,
       snap.gy,
       snap.fuel,
+      snap.size,
       this.seed,
     );
     this.campfires.set(snap.id, f);
