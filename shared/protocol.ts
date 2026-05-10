@@ -3,16 +3,21 @@ export const MAX_PLAYERS = 10;
 export const MAX_TRIBE_SIZE = 12;
 
 export const DAY_LENGTH_SEC = 240;
-export const PHASE_LENGTH_SEC = DAY_LENGTH_SEC / 4;
+export const MORNING_LEN_SEC = 50;
+export const NOON_LEN_SEC = 30;
+export const AFTERNOON_LEN_SEC = 40;
+export const NIGHT_LEN_SEC = DAY_LENGTH_SEC - MORNING_LEN_SEC - NOON_LEN_SEC - AFTERNOON_LEN_SEC;
+export const SUNSET_AT_SEC = MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC;
+export const PHASE_LENGTH_SEC = NIGHT_LEN_SEC;
 export const NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = 40;
 
 export type DayPhase = "morning" | "noon" | "afternoon" | "night";
 
 export function phaseAt(timeSec: number): DayPhase {
   const t = ((timeSec % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC;
-  if (t < PHASE_LENGTH_SEC) return "morning";
-  if (t < 2 * PHASE_LENGTH_SEC) return "noon";
-  if (t < 3 * PHASE_LENGTH_SEC) return "afternoon";
+  if (t < MORNING_LEN_SEC) return "morning";
+  if (t < MORNING_LEN_SEC + NOON_LEN_SEC) return "noon";
+  if (t < SUNSET_AT_SEC) return "afternoon";
   return "night";
 }
 

@@ -13,6 +13,7 @@ import { Campfire } from "../Campfire";
 import { Artifact } from "../Artifact";
 import { Net } from "../net";
 import {
+  AFTERNOON_LEN_SEC,
   AnimalSnapshot,
   ArtifactFindEvent,
   ArtifactReward,
@@ -28,8 +29,10 @@ import {
   InitMessage,
   LeaderboardMessage,
   MAX_TRIBE_SIZE,
+  MORNING_LEN_SEC,
+  NIGHT_LEN_SEC,
+  NOON_LEN_SEC,
   ObjectKind,
-  PHASE_LENGTH_SEC,
   PlayerId,
   phaseAt,
   RemovedObject,
@@ -38,6 +41,7 @@ import {
   ScoreEntry,
   ServerMessage,
   StateMessage,
+  SUNSET_AT_SEC,
   TICK_RATE,
   TreeGrowthEvent,
 } from "../../shared/protocol";
@@ -1729,10 +1733,15 @@ export class GameScene extends Phaser.Scene {
   private clockString(): string {
     const tt = this.timeOfDay();
     let hour: number;
-    if (tt < PHASE_LENGTH_SEC) hour = 6 + (tt / PHASE_LENGTH_SEC) * 6;
-    else if (tt < 2 * PHASE_LENGTH_SEC) hour = 12 + ((tt - PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 3;
-    else if (tt < 3 * PHASE_LENGTH_SEC) hour = 15 + ((tt - 2 * PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 4;
-    else hour = 19 + ((tt - 3 * PHASE_LENGTH_SEC) / PHASE_LENGTH_SEC) * 11;
+    if (tt < MORNING_LEN_SEC) {
+      hour = 7 + (tt / MORNING_LEN_SEC) * 5;
+    } else if (tt < MORNING_LEN_SEC + NOON_LEN_SEC) {
+      hour = 12 + ((tt - MORNING_LEN_SEC) / NOON_LEN_SEC) * 3;
+    } else if (tt < SUNSET_AT_SEC) {
+      hour = 15 + ((tt - MORNING_LEN_SEC - NOON_LEN_SEC) / AFTERNOON_LEN_SEC) * 4;
+    } else {
+      hour = 19 + ((tt - SUNSET_AT_SEC) / NIGHT_LEN_SEC) * 12;
+    }
     if (hour >= 24) hour -= 24;
     const h = Math.floor(hour);
     const m = Math.floor((hour - h) * 60);
@@ -1740,39 +1749,36 @@ export class GameScene extends Phaser.Scene {
   }
 
   private overlayTintFor(t: number): { color: number; alpha: number } {
-    const PL = PHASE_LENGTH_SEC;
-    if (t < PL) {
-      const k = t / PL;
-      const startA = 0.45;
-      const endA = 0.0;
+    const noonStart = MORNING_LEN_SEC;
+    const afterStart = MORNING_LEN_SEC + NOON_LEN_SEC;
+    if (t < noonStart) {
+      const k = t / MORNING_LEN_SEC;
       return {
         color: lerpColor(0x2a3a5a, 0xffd0a0, Math.min(1, k * 1.5)),
-        alpha: startA * (1 - k) + endA * k,
+        alpha: 0.45 * (1 - k),
       };
     }
-    if (t < 2 * PL) {
+    if (t < afterStart) {
       return { color: 0xffffff, alpha: 0 };
     }
-    if (t < 3 * PL) {
-      const k = (t - 2 * PL) / PL;
-      const startA = 0.0;
-      const endA = 0.4;
+    if (t < SUNSET_AT_SEC) {
+      const k = (t - afterStart) / AFTERNOON_LEN_SEC;
       return {
         color: lerpColor(0xffffff, 0xff7a3a, k),
-        alpha: startA * (1 - k) + endA * k,
+        alpha: 0.4 * k,
       };
     }
-    const k = (t - 3 * PL) / PL;
-    if (k < 0.25) {
+    const k = (t - SUNSET_AT_SEC) / NIGHT_LEN_SEC;
+    if (k < 0.15) {
       return {
-        color: lerpColor(0xff7a3a, 0x0a1a30, k / 0.25),
-        alpha: 0.4 + 0.3 * (k / 0.25),
+        color: lerpColor(0xff7a3a, 0x0a1a30, k / 0.15),
+        alpha: 0.4 + 0.3 * (k / 0.15),
       };
     }
-    if (k > 0.75) {
+    if (k > 0.85) {
       return {
-        color: lerpColor(0x0a1a30, 0x2a3a5a, (k - 0.75) / 0.25),
-        alpha: 0.7 - 0.25 * ((k - 0.75) / 0.25),
+        color: lerpColor(0x0a1a30, 0x2a3a5a, (k - 0.85) / 0.15),
+        alpha: 0.7 - 0.25 * ((k - 0.85) / 0.15),
       };
     }
     return { color: 0x0a1a30, alpha: 0.7 };
@@ -1799,9 +1805,8 @@ export class GameScene extends Phaser.Scene {
   private eraseFireGlows(t: number): void {
     const cam = this.cameras.main;
     const er = this.nightEraser;
-    const PL = PHASE_LENGTH_SEC;
     const isNight = this.lastPhase === "night";
-    const nightK = isNight ? Math.min(1, (t - 3 * PL) / (PL * 0.25)) : 0;
+    const nightK = isNight ? Math.min(1, (t - SUNSET_AT_SEC) / (NIGHT_LEN_SEC * 0.15)) : 0;
     for (const f of this.campfires.values()) {
       const wx = f.container.x;
       const wy = f.container.y;
@@ -1835,19 +1840,18 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private celestialScreenPos(t: number, w: number, h: number):
+  private celestialScreenPos(t: number, w: number, _h: number):
     | { x: number; y: number; isNight: boolean }
     | null {
-    const PL = PHASE_LENGTH_SEC;
     const margin = 60;
     const arcTop = 60;
-    if (t >= 3 * PL) {
-      const k = (t - 3 * PL) / PL;
+    if (t >= SUNSET_AT_SEC) {
+      const k = (t - SUNSET_AT_SEC) / NIGHT_LEN_SEC;
       const x = margin + (w - margin * 2) * k;
       const y = arcTop + 40 + (1 - Math.sin(k * Math.PI)) * 80;
       return { x, y, isNight: true };
     }
-    const dayK = t / (3 * PL);
+    const dayK = t / SUNSET_AT_SEC;
     const x = margin + (w - margin * 2) * dayK;
     const y = arcTop + (1 - Math.sin(dayK * Math.PI)) * 90;
     return { x, y, isNight: false };
@@ -1870,10 +1874,16 @@ export class GameScene extends Phaser.Scene {
       g.fillCircle(pos.x + 3, pos.y + 4, 2);
       g.fillCircle(pos.x + 5, pos.y - 4, 1.5);
     } else {
-      const PL = PHASE_LENGTH_SEC;
+      const sunriseEnd = MORNING_LEN_SEC * 0.5;
+      const sunsetStart = SUNSET_AT_SEC - AFTERNOON_LEN_SEC * 0.5;
       let sunColor = 0xffe27a;
-      if (t < PL * 0.5) sunColor = lerpColor(0xff7a3a, 0xffe27a, t / (PL * 0.5));
-      else if (t > 2.5 * PL) sunColor = lerpColor(0xffe27a, 0xff5a1a, (t - 2.5 * PL) / (PL * 0.5));
+      if (t < sunriseEnd) sunColor = lerpColor(0xff7a3a, 0xffe27a, t / sunriseEnd);
+      else if (t > sunsetStart) {
+        sunColor = lerpColor(
+          0xffe27a, 0xff5a1a,
+          (t - sunsetStart) / (SUNSET_AT_SEC - sunsetStart),
+        );
+      }
       g.fillStyle(sunColor, 0.18);
       g.fillCircle(pos.x, pos.y, 50);
       g.fillStyle(sunColor, 0.4);

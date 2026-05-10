@@ -365,7 +365,7 @@ export class Sim {
   nextFishIdx = 0;
   fishCap = 0;
   tick = 0;
-  gameTimeSec = 40;
+  gameTimeSec = 30;
   private lastPhase: DayPhase = "morning";
 
   private animalGrid: Map<number, SimAnimal[]> = new Map();
@@ -794,17 +794,6 @@ export class Sim {
     return sharedOrigin;
   }
 
-  private onNightStart(): void {
-    for (const u of this.units.values()) {
-      u.huntTarget = null;
-      u.huntWeapon = null;
-      u.harvestTarget = null;
-      u.path = [];
-      u.state = "idle";
-      u.autoFollowing = false;
-    }
-  }
-
   private animalDetectRange(spec: AnimalSpec): number {
     if (!this.isNight()) return spec.detectRange;
     if (!spec.aggressive && !spec.predator) return spec.detectRange;
@@ -839,7 +828,6 @@ export class Sim {
   };
 
   cmdHunt(owner: PlayerId, unitIds: string[], animalId: string): void {
-    if (this.isNight()) return;
     const a = this.animals.get(animalId);
     if (!a) return;
     const claimed = new Set<string>();
@@ -1682,7 +1670,6 @@ export class Sim {
   }
 
   private maybeAutoEngage(u: SimUnit): void {
-    if (this.isNight()) return;
     let allyTarget: string | null = null;
     let allyD2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
     for (const ally of this.units.values()) {
@@ -2354,7 +2341,6 @@ export class Sim {
   }
 
   private tryEngageAnimalOnTile(u: SimUnit, ti: number, tj: number): void {
-    if (this.isNight()) return;
     if (u.huntTarget) return;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
@@ -2366,7 +2352,6 @@ export class Sim {
   }
 
   private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
-    if (this.isNight()) return;
     if (hasTreeAt(this.seed, ti, tj)) {
       const k = objKey("tree", ti, tj);
       if (!this.removedKeys.has(k)) {
@@ -2585,12 +2570,8 @@ export class Sim {
 
   step(dt: number): void {
     this.tick++;
-    const prevPhase = this.lastPhase;
     this.gameTimeSec += dt;
     this.lastPhase = phaseAt(this.gameTimeSec);
-    if (prevPhase !== "night" && this.lastPhase === "night") {
-      this.onNightStart();
-    }
     this.rebuildSpatialIndex();
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
@@ -3385,7 +3366,6 @@ export class Sim {
   }
 
   private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
-    if (this.isNight()) return false;
     const seed = this.seed;
     const ti0 = Math.floor(u.gx);
     const tj0 = Math.floor(u.gy);
