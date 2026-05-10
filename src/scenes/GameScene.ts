@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { gridToScreen, screenToGrid, TILE_W, TILE_H } from "../iso";
 import { Unit } from "../Unit";
-import { Tree } from "../Tree";
+import { Tree, TreeStage } from "../Tree";
 import { Bush } from "../Bush";
 import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
@@ -39,6 +39,7 @@ import {
   ServerMessage,
   StateMessage,
   TICK_RATE,
+  TreeGrowthEvent,
 } from "../../shared/protocol";
 import {
   biomeAt,
@@ -140,6 +141,7 @@ export class GameScene extends Phaser.Scene {
 
   private units: Map<string, Unit> = new Map();
   private trees: Map<string, Tree> = new Map();
+  private treeGrowthMap: Map<string, TreeStage> = new Map();
   private bushes: Map<string, Bush> = new Map();
   private mushrooms: Map<string, Mushroom> = new Map();
   private fishes: Map<string, Fish> = new Map();
@@ -286,6 +288,13 @@ export class GameScene extends Phaser.Scene {
     this.tribeCounts = data.init.tribeCounts ?? [];
     this.gameTimeSec = data.init.gameTimeSec ?? 0;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    if (data.init.treeGrowth) {
+      for (const ev of data.init.treeGrowth) {
+        if (ev.stage >= 1 && ev.stage <= 3) {
+          this.treeGrowthMap.set(`${ev.i},${ev.j}`, ev.stage as TreeStage);
+        }
+      }
+    }
   }
 
   create(): void {
@@ -898,10 +907,19 @@ export class GameScene extends Phaser.Scene {
           }
         } else if (hasTreeAt(this.seed, i, j)) {
           const id = objKey("tree", i, j);
-          if (!this.removedKeys.has(id) && !this.trees.has(id)) {
-            const t = new Tree(this, id, i, j, this.seed);
-            trees.set(id, t);
-            this.trees.set(id, t);
+          if (!this.trees.has(id)) {
+            if (!this.removedKeys.has(id)) {
+              const t = new Tree(this, id, i, j, this.seed);
+              trees.set(id, t);
+              this.trees.set(id, t);
+            } else {
+              const stage = this.treeGrowthMap.get(`${i},${j}`);
+              if (stage !== undefined) {
+                const t = new Tree(this, id, i, j, this.seed, stage);
+                trees.set(id, t);
+                this.trees.set(id, t);
+              }
+            }
           }
         } else if (hasBushAt(this.seed, i, j)) {
           const id = objKey("bush", i, j);
@@ -2273,6 +2291,11 @@ export class GameScene extends Phaser.Scene {
     for (const ro of msg.respawnedObjects) {
       this.applyRespawn(ro);
     }
+    if (msg.treeGrowthEvents) {
+      for (const ev of msg.treeGrowthEvents) {
+        this.applyTreeGrowthEvent(ev);
+      }
+    }
     for (const fp of msg.newFootprints) {
       this.footprints.push(fp);
     }
@@ -2581,6 +2604,30 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private applyTreeGrowthEvent(ev: TreeGrowthEvent): void {
+    const k = objKey("tree", ev.i, ev.j);
+    if (ev.stage >= 4) {
+      this.treeGrowthMap.delete(`${ev.i},${ev.j}`);
+      return;
+    }
+    this.treeGrowthMap.set(`${ev.i},${ev.j}`, ev.stage);
+    const existing = this.trees.get(k);
+    if (existing) {
+      existing.setStage(ev.stage);
+      return;
+    }
+    const cx = Math.floor(ev.i / CHUNK_SIZE);
+    const cy = Math.floor(ev.j / CHUNK_SIZE);
+    const chunk = this.chunks.get(`${cx},${cy}`);
+    if (!chunk) return;
+    const t = new Tree(this, k, ev.i, ev.j, this.seed, ev.stage);
+    chunk.trees.set(k, t);
+    this.trees.set(k, t);
+    const v = this.visible.has(`${ev.i},${ev.j}`);
+    t.container.setVisible(v);
+    t.shadow.setVisible(v);
+  }
+
   private applyRespawn(ro: RemovedObject): void {
     const k = objKey(ro.kind, ro.i, ro.j);
     if (!this.removedKeys.has(k)) return;
@@ -2605,12 +2652,17 @@ export class GameScene extends Phaser.Scene {
       b.container.setVisible(v);
       b.shadow.setVisible(v);
     } else if (ro.kind === "tree") {
-      if (this.trees.has(k)) return;
-      const t = new Tree(this, k, ro.i, ro.j, this.seed);
-      chunk.trees.set(k, t);
-      this.trees.set(k, t);
-      t.container.setVisible(v);
-      t.shadow.setVisible(v);
+      this.treeGrowthMap.delete(`${ro.i},${ro.j}`);
+      const existing = this.trees.get(k);
+      if (existing) {
+        existing.setStage(4);
+      } else {
+        const t = new Tree(this, k, ro.i, ro.j, this.seed);
+        chunk.trees.set(k, t);
+        this.trees.set(k, t);
+        t.container.setVisible(v);
+        t.shadow.setVisible(v);
+      }
     } else if (ro.kind === "stone") {
       if (this.stones.has(k)) return;
       const s = new Stone(this, ro.i, ro.j, this.seed);

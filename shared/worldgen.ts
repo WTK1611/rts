@@ -366,6 +366,18 @@ export function treeWoodAt(seed: number, i: number, j: number): number {
   return 18 + (hash3(seed ^ 0x77, i, j) % 12);
 }
 
+export type TreeSpecies = "deciduous" | "conifer";
+
+export function treeSpeciesAt(seed: number, i: number, j: number): TreeSpecies {
+  const biome = biomeRaw(seed, i, j);
+  let coniferBias = 0.35;
+  if (biome === "wald") coniferBias = 0.5;
+  else if (biome === "wiesen") coniferBias = 0.25;
+  else if (biome === "savanne" || biome === "wueste") coniferBias = 0.1;
+  const r = rand01(seed ^ 0xc01f, i, j);
+  return r < coniferBias ? "conifer" : "deciduous";
+}
+
 export function hasBushAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
   if (hasSequoiaAt(seed, i, j)) return false;

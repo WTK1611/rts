@@ -106,6 +106,14 @@ export interface RemovedObject {
   j: number;
 }
 
+export type TreeGrowthStage = 1 | 2 | 3 | 4;
+
+export interface TreeGrowthEvent {
+  i: number;
+  j: number;
+  stage: TreeGrowthStage;
+}
+
 export interface CampfireSnapshot {
   id: string;
   owner: PlayerId;
@@ -176,6 +184,7 @@ export interface InitMessage {
   tribeCounts: number[];
   artifacts: ArtifactSnapshot[];
   gameTimeSec: number;
+  treeGrowth: TreeGrowthEvent[];
 }
 
 export interface EncounterEvent {
@@ -229,6 +238,7 @@ export interface StateMessage {
   unitCount?: number;
   fishCount?: number;
   gameTimeSec: number;
+  treeGrowthEvents: TreeGrowthEvent[];
 }
 
 export interface OpponentJoinedMessage {

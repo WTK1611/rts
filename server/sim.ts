@@ -9,6 +9,7 @@ import {
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
   CampfireSnapshot,
+  DAY_LENGTH_SEC,
   DayPhase,
   EncounterEvent,
   NIGHT_CAMPFIRE_HOLZ_PER_NIGHT,
@@ -27,6 +28,8 @@ import {
   ResourceFlowEvent,
   Resources,
   TICK_RATE,
+  TreeGrowthEvent,
+  TreeGrowthStage,
   TribeSplit,
   UnitGender,
   UnitSnapshot,
@@ -65,7 +68,8 @@ const MUSHROOM_REGROW_TICKS = TICK_RATE * 60;
 const MUSHROOM_AUTOPICK_GAIN = 1;
 const BUSH_REGROW_TICKS = TICK_RATE * 120;
 const BUSH_AUTOPICK_GAIN = 1;
-const TREE_REGROW_TICKS = TICK_RATE * 120;
+const TREE_REGROW_TICKS = TICK_RATE * DAY_LENGTH_SEC * 5;
+const TREE_STAGE_TICKS = TREE_REGROW_TICKS / 4;
 const TREE_AUTOPICK_GAIN = 1;
 const STONE_AUTOPICK_GAIN = 1;
 const STONE_HARVEST_AMOUNT = 2;
@@ -327,6 +331,8 @@ export class Sim {
   newRemovedObjects: RemovedObject[] = [];
   respawnedObjects: RemovedObject[] = [];
   regrow: Map<string, number> = new Map();
+  treeRegrow: Map<string, { i: number; j: number; stage: number; nextStageTick: number }> = new Map();
+  treeGrowthEvents: TreeGrowthEvent[] = [];
   footprints: Footprint[] = [];
   newFootprints: Footprint[] = [];
   animals: Map<string, SimAnimal> = new Map();
@@ -2315,7 +2321,9 @@ export class Sim {
     const fp: Footprint = { o: u.owner, i: ti, j: tj, t: this.tick };
     this.footprints.push(fp);
     this.newFootprints.push(fp);
-    u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_TILE);
+    if (!this.unitAtAnyFire(u)) {
+      u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_TILE);
+    }
     this.tryAutoPick(u, ti, tj);
     this.tryEngageAnimalOnTile(u, ti, tj);
   }
@@ -2435,7 +2443,16 @@ export class Sim {
     this.removedObjects.push(ro);
     this.newRemovedObjects.push(ro);
     if (regrowTicks > 0) {
-      this.regrow.set(k, this.tick + regrowTicks);
+      if (kind === "tree") {
+        this.treeRegrow.set(k, {
+          i: ti,
+          j: tj,
+          stage: 0,
+          nextStageTick: this.tick + TREE_STAGE_TICKS,
+        });
+      } else {
+        this.regrow.set(k, this.tick + regrowTicks);
+      }
     }
     this.resources[u.owner][resKey] += gain;
     this.pushFlow(u.owner, resKey, gain, ti + 0.5, tj + 0.5);
@@ -2468,20 +2485,67 @@ export class Sim {
   }
 
   private expireRegrows(): void {
-    if (this.regrow.size === 0) return;
-    for (const [k, expire] of this.regrow) {
-      if (this.tick < expire) continue;
-      this.regrow.delete(k);
-      this.removedKeys.delete(k);
-      const idx = this.removedObjects.findIndex(
-        (o) => objKey(o.kind, o.i, o.j) === k,
-      );
-      if (idx >= 0) {
-        const ro = this.removedObjects[idx];
-        this.removedObjects.splice(idx, 1);
-        this.respawnedObjects.push(ro);
+    if (this.regrow.size > 0) {
+      for (const [k, expire] of this.regrow) {
+        if (this.tick < expire) continue;
+        this.regrow.delete(k);
+        this.removedKeys.delete(k);
+        const idx = this.removedObjects.findIndex(
+          (o) => objKey(o.kind, o.i, o.j) === k,
+        );
+        if (idx >= 0) {
+          const ro = this.removedObjects[idx];
+          this.removedObjects.splice(idx, 1);
+          this.respawnedObjects.push(ro);
+        }
       }
     }
+    if (this.treeRegrow.size > 0) {
+      for (const [k, entry] of this.treeRegrow) {
+        if (this.tick < entry.nextStageTick) continue;
+        entry.stage++;
+        if (entry.stage >= 4) {
+          this.treeRegrow.delete(k);
+          this.removedKeys.delete(k);
+          const idx = this.removedObjects.findIndex(
+            (o) => objKey(o.kind, o.i, o.j) === k,
+          );
+          if (idx >= 0) {
+            const ro = this.removedObjects[idx];
+            this.removedObjects.splice(idx, 1);
+            this.respawnedObjects.push(ro);
+          }
+          this.treeGrowthEvents.push({
+            i: entry.i,
+            j: entry.j,
+            stage: 4,
+          });
+        } else {
+          entry.nextStageTick = this.tick + TREE_STAGE_TICKS;
+          this.treeGrowthEvents.push({
+            i: entry.i,
+            j: entry.j,
+            stage: entry.stage as TreeGrowthStage,
+          });
+        }
+      }
+    }
+  }
+
+  consumeTreeGrowthEvents(): TreeGrowthEvent[] {
+    const out = this.treeGrowthEvents;
+    this.treeGrowthEvents = [];
+    return out;
+  }
+
+  treeGrowthSnapshot(): TreeGrowthEvent[] {
+    const out: TreeGrowthEvent[] = [];
+    for (const entry of this.treeRegrow.values()) {
+      if (entry.stage >= 1 && entry.stage <= 3) {
+        out.push({ i: entry.i, j: entry.j, stage: entry.stage as TreeGrowthStage });
+      }
+    }
+    return out;
   }
 
   private expireFootprints(): void {
@@ -2514,7 +2578,7 @@ export class Sim {
         this.autoEat(u);
       }
       if (this.unitAtAnyFire(u)) {
-        u.hp = Math.min(u.hpMax, u.hp + CAMPFIRE_HP_REGEN_PER_SEC * dt);
+        u.hp = Math.min(u.hpMax, u.hp + CAMPFIRE_HP_REGEN_PER_SEC * 1.5 * dt);
       } else {
         u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
       }
@@ -2583,7 +2647,97 @@ export class Sim {
     this.updateChiefs();
     this.followChief(dt);
     this.campfireStep(dt);
+    this.gatherAtCampfireStep();
     this.checkArtifactDiscovery();
+  }
+
+  private hasNearbyForageOrHunt(p: PlayerId, cx: number, cy: number, r: number): boolean {
+    const r2 = r * r;
+    for (const a of this.animals.values()) {
+      if (a.hp <= 0) continue;
+      const spec = ANIMAL_SPECS[a.kind];
+      if (!spec.autoHuntable) continue;
+      const dx = a.gx - cx;
+      const dy = a.gy - cy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    const ri = Math.ceil(r);
+    const ti0 = Math.floor(cx - ri);
+    const ti1 = Math.floor(cx + ri);
+    const tj0 = Math.floor(cy - ri);
+    const tj1 = Math.floor(cy + ri);
+    for (let j = tj0; j <= tj1; j++) {
+      for (let i = ti0; i <= ti1; i++) {
+        const ddx = i + 0.5 - cx;
+        const ddy = j + 0.5 - cy;
+        if (ddx * ddx + ddy * ddy > r2) continue;
+        if (
+          hasTreeAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("tree", i, j))
+        ) return true;
+        if (
+          hasBushAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("bush", i, j))
+        ) return true;
+        if (
+          hasMushroomAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("mushroom", i, j))
+        ) return true;
+        if (
+          hasStoneAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("stone", i, j))
+        ) return true;
+      }
+    }
+    return false;
+  }
+
+  private gatherAtCampfireStep(): void {
+    const FORAGE_SCAN_RADIUS = 9;
+    const GATHER_RADIUS = CAMPFIRE_RANGE - 0.4;
+    const gatherR2 = GATHER_RADIUS * GATHER_RADIUS;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!this.active[p]) continue;
+      const f = this.campfires.get(this.campfireIdFor(p));
+      if (!f) continue;
+
+      let chief: SimUnit | null = null;
+      for (const u of this.units.values()) {
+        if (u.owner === p && u.isChief) {
+          chief = u;
+          break;
+        }
+      }
+      if (chief && chief.path.length > 0) continue;
+
+      if (this.hasNearbyForageOrHunt(p, f.gx, f.gy, FORAGE_SCAN_RADIUS)) continue;
+
+      const targetI = Math.floor(f.gx);
+      const targetJ = Math.floor(f.gy);
+      const claimed = new Set<string>();
+      for (const u of this.units.values()) {
+        if (u.owner !== p) continue;
+        if (u.huntTarget || u.harvestTarget) continue;
+        if (u.path.length > 0) continue;
+        const dx = u.gx - f.gx;
+        const dy = u.gy - f.gy;
+        if (dx * dx + dy * dy <= gatherR2) {
+          claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
+          continue;
+        }
+        const blocked = this.blockedTilesFor(u, claimed);
+        let target: { i: number; j: number } | null = null;
+        if (this.isWalkable(targetI, targetJ) && !blocked.has(`${targetI},${targetJ}`)) {
+          target = { i: targetI, j: targetJ };
+        } else {
+          target = this.findFreeTileNear(targetI, targetJ, blocked);
+        }
+        if (!target) continue;
+        this.startMove(u, target.i, target.j, blocked);
+        const last = u.path[u.path.length - 1];
+        if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+      }
+    }
   }
 
   private unitAtAnyFire(u: SimUnit): boolean {
