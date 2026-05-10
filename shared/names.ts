@@ -2,7 +2,14 @@ import { UnitGender } from "./protocol";
 
 export type Language = "de" | "es" | "fr" | "it" | "en" | "pt";
 
-export type NameLanguage = Language | "sv" | "el" | "ru" | "pl";
+export type NameLanguage =
+  | Language
+  | "sv"
+  | "el"
+  | "ru"
+  | "pl"
+  | "us"
+  | "br";
 
 export const LANGUAGES: Language[] = ["de", "es", "fr", "it", "en", "pt"];
 
@@ -12,6 +19,8 @@ export const NAME_LANGUAGES: NameLanguage[] = [
   "el",
   "ru",
   "pl",
+  "us",
+  "br",
 ];
 
 export const LANGUAGE_LABEL: Record<NameLanguage, string> = {
@@ -25,6 +34,8 @@ export const LANGUAGE_LABEL: Record<NameLanguage, string> = {
   el: "Griechisch",
   ru: "Russisch",
   pl: "Polnisch",
+  us: "US-Amerikanisch",
+  br: "Brasilianisch",
 };
 
 export const LANGUAGE_FLAG: Record<NameLanguage, string> = {
@@ -38,6 +49,8 @@ export const LANGUAGE_FLAG: Record<NameLanguage, string> = {
   el: "🇬🇷",
   ru: "🇷🇺",
   pl: "🇵🇱",
+  us: "🇺🇸",
+  br: "🇧🇷",
 };
 
 interface NamePool {
@@ -204,6 +217,38 @@ export const NAMES: Record<NameLanguage, NamePool> = {
       "Halina", "Jadwiga", "Wanda", "Magdalena", "Jolanta",
       "Aleksandra", "Marta", "Karolina", "Iwona", "Beata",
       "Bożena", "Łucja", "Stanisława", "Joanna", "Helena",
+    ],
+  },
+  us: {
+    m: [
+      "John", "Michael", "David", "Robert", "Richard",
+      "Brandon", "Jason", "Justin", "Tyler", "Jacob",
+      "Ethan", "Mason", "Logan", "Ryan", "Brian",
+      "Kevin", "Scott", "Jeffrey", "Chad", "Dustin",
+      "Travis", "Cody", "Wyatt", "Hunter", "Cole",
+    ],
+    f: [
+      "Jennifer", "Jessica", "Ashley", "Madison", "Hannah",
+      "Brittany", "Megan", "Amber", "Tiffany", "Heather",
+      "Kayla", "Courtney", "Lauren", "Stephanie", "Rachel",
+      "Samantha", "Amanda", "Kimberly", "Brianna", "Taylor",
+      "Sydney", "Whitney", "Cassidy", "Mackenzie", "Savannah",
+    ],
+  },
+  br: {
+    m: [
+      "Thiago", "Vinícius", "Gustavo", "Rafael", "Bruno",
+      "Felipe", "Rodrigo", "Marcelo", "Marcos", "Ricardo",
+      "Luciano", "Caio", "Renato", "Fábio", "Otávio",
+      "Mateus", "Lucas", "Diego", "Leandro", "Wesley",
+      "Anderson", "Júnior", "Davi", "Murilo", "Heitor",
+    ],
+    f: [
+      "Bruna", "Camila", "Gabriela", "Larissa", "Letícia",
+      "Amanda", "Fernanda", "Vanessa", "Aline", "Tatiana",
+      "Adriana", "Sabrina", "Priscila", "Vitória", "Renata",
+      "Jaqueline", "Júlia", "Manuela", "Yasmin", "Lívia",
+      "Sofia", "Alice", "Helena", "Valentina", "Heloísa",
     ],
   },
 };

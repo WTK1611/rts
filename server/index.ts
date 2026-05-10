@@ -99,6 +99,16 @@ const TRIBE_NAMES_BY_LANG: Record<NameLanguage, string[]> = {
     "Kruki", "Rysie", "Żubry", "Dziki", "Lisy",
     "Tury", "Łosie",
   ],
+  us: [
+    "Grizzlies", "Coyotes", "Mustangs", "Buffalos", "Cougars",
+    "Bobcats", "Wolverines", "Rattlers", "Pronghorns", "Alligators",
+    "Pumas", "Roadrunners",
+  ],
+  br: [
+    "Onças", "Araras", "Tucanos", "Jacarés", "Capivaras",
+    "Sucuris", "Jaguatiricas", "Tatus", "Piranhas", "Tamanduás",
+    "Lobos-Guará", "Anhumas",
+  ],
 };
 
 function pickBotNames(
@@ -379,6 +389,7 @@ function joinPlayer(
     tribeCounts: world.sim.tribeCounts(),
     artifacts: world.sim.artifactsSnapshot(),
     gameTimeSec: world.sim.gameTimeSec,
+    treeGrowth: world.sim.treeGrowthSnapshot(),
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -472,6 +483,7 @@ function tick(): void {
   const tribeCounts = world.sim.tribeCounts();
   const artifactFinds = world.sim.consumeArtifactFinds();
   const resourceFlows = world.sim.consumeResourceFlows();
+  const treeGrowthEvents = world.sim.consumeTreeGrowthEvents();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -557,6 +569,7 @@ function tick(): void {
       unitCount: world.sim.units.size,
       fishCount: world.sim.fishes.size,
       gameTimeSec: world.sim.gameTimeSec,
+      treeGrowthEvents,
     });
   }
 
