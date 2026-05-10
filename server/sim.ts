@@ -19,6 +19,7 @@ import {
   ObjectKind,
   PlayerId,
   RemovedObject,
+  ResourceFlowEvent,
   Resources,
   TICK_RATE,
   TribeSplit,
@@ -152,6 +153,7 @@ const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
   caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0018, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 7, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 25, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, aquatic: false },
   mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: true,  detectRange: 3, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 12, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
   alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
+  bear:        { hp: 22, speed: 3.0, meat: 14, biomes: ["wald", "felsen"],                     density: 0.0016, wanderRadius: 10, damage: 8,  aggressive: true,  detectRange: 6, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, predator: true,  preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, aquatic: false },
 };
 
 function pickHuntWeapon(res: Resources): HuntWeapon {
@@ -282,6 +284,8 @@ export class Sim {
   followChiefEnabled: boolean[] = new Array(MAX_PLAYERS).fill(false);
   artifacts: Map<string, SimArtifact> = new Map();
   artifactFinds: ArtifactFindEvent[] = [];
+  tribeSplits: TribeSplit[] = [];
+  resourceFlows: ResourceFlowEvent[] = [];
   tick = 0;
 
   constructor(seed: number) {
@@ -466,6 +470,29 @@ export class Sim {
     const out = this.respawnedTribes;
     this.respawnedTribes = [];
     return out;
+  }
+
+  consumeTribeSplits(): TribeSplit[] {
+    const out = this.tribeSplits;
+    this.tribeSplits = [];
+    return out;
+  }
+
+  consumeResourceFlows(): ResourceFlowEvent[] {
+    const out = this.resourceFlows;
+    this.resourceFlows = [];
+    return out;
+  }
+
+  private pushFlow(
+    owner: PlayerId,
+    resource: keyof Resources,
+    amount: number,
+    gx: number,
+    gy: number,
+  ): void {
+    if (amount === 0) return;
+    this.resourceFlows.push({ owner, resource, amount, gx, gy });
   }
 
   tribeCounts(): number[] {
@@ -1786,6 +1813,7 @@ export class Sim {
       const b = biomeAt(this.seed, ti + di, tj + dj);
       if (b === "lake" || b === "river") {
         this.resources[u.owner].wasser += WATER_AUTOPICK_GAIN;
+        this.pushFlow(u.owner, "wasser", WATER_AUTOPICK_GAIN, u.gx, u.gy);
         return;
       }
     }
@@ -1828,6 +1856,7 @@ export class Sim {
       this.regrow.set(k, this.tick + regrowTicks);
     }
     this.resources[u.owner][resKey] += gain;
+    this.pushFlow(u.owner, resKey, gain, ti + 0.5, tj + 0.5);
   }
 
   private hpGainForResource(resKey: keyof Resources): number {
@@ -1851,6 +1880,7 @@ export class Sim {
       if (heal <= 0) continue;
       r[key] -= 1;
       u.hp = Math.min(u.hpMax, u.hp + heal);
+      this.pushFlow(u.owner, key, -1, u.gx, u.gy);
       return;
     }
   }
@@ -2210,12 +2240,13 @@ export class Sim {
         cx += u.gx;
         cy += u.gy;
       }
-      const canConceive =
-        males >= 1 && list.length >= 2 && list.length < MAX_TRIBE_SIZE;
+      const canConceive = males >= 1 && list.length >= 2;
       const centerX = cx / list.length;
       const centerY = cy / list.length;
 
-      let capacity = MAX_TRIBE_SIZE - list.length;
+      let birthsRemaining = list.length < MAX_TRIBE_SIZE
+        ? MAX_TRIBE_SIZE - list.length
+        : 1;
 
       for (const u of list) {
         if (u.gender !== "f") continue;
@@ -2225,12 +2256,23 @@ export class Sim {
           continue;
         }
         const t = (this.pregnancyTimer.get(u.id) ?? 0) + dt;
-        if (t >= GROWTH_REQUIRED_SEC && capacity > 0) {
+        if (t < GROWTH_REQUIRED_SEC || birthsRemaining <= 0) {
+          this.pregnancyTimer.set(u.id, Math.min(t, GROWTH_REQUIRED_SEC));
+          continue;
+        }
+        if (list.length < MAX_TRIBE_SIZE) {
           this.pregnancyTimer.delete(u.id);
           this.spawnNewTribeMember(p, centerX, centerY);
-          capacity--;
+          birthsRemaining--;
         } else {
-          this.pregnancyTimer.set(u.id, Math.min(t, GROWTH_REQUIRED_SEC));
+          const split = this.splitOffNewTribe(p, list, centerX, centerY);
+          if (split) {
+            this.pregnancyTimer.delete(u.id);
+            this.spawnNewTribeMember(p, centerX, centerY);
+            birthsRemaining = 0;
+          } else {
+            this.pregnancyTimer.set(u.id, GROWTH_REQUIRED_SEC);
+          }
         }
       }
     }
@@ -2238,6 +2280,74 @@ export class Sim {
     for (const [id, _] of this.pregnancyTimer) {
       if (!this.units.has(id)) this.pregnancyTimer.delete(id);
     }
+  }
+
+  private splitOffNewTribe(
+    parent: PlayerId,
+    parentList: SimUnit[],
+    ax: number,
+    ay: number,
+  ): boolean {
+    let target: PlayerId = -1;
+    for (let q = 0; q < MAX_PLAYERS; q++) {
+      if (!this.active[q]) {
+        target = q;
+        break;
+      }
+    }
+    if (target < 0) return false;
+
+    const elders = parentList
+      .filter((u) => u.gender === "m" && u.ageSec >= CHILD_AGE_SEC)
+      .sort((a, b) => b.ageSec - a.ageSec);
+    if (elders.length < 1) return false;
+
+    const founders = elders.slice(0, Math.min(3, elders.length));
+
+    this.active[target] = true;
+    this.tribeLanguage[target] = this.tribeLanguage[parent];
+    this.followChiefEnabled[target] = this.followChiefEnabled[parent];
+    this.resources[target] = emptyResources();
+    this.campfireIgniteSec[target] = 0;
+    this.spawns[target] = { cx: Math.floor(ax), cy: Math.floor(ay) };
+
+    const newColor = PLAYER_COLORS[target % PLAYER_COLORS.length];
+    for (const u of founders) {
+      u.owner = target;
+      u.color = newColor;
+      u.isChief = false;
+      u.path = [];
+      u.harvestTarget = null;
+      u.huntTarget = null;
+      u.huntTimer = 0;
+      u.huntWeapon = null;
+      u.harvestTimer = 0;
+      u.state = "idle";
+      u.autoFollowing = false;
+      u.autoFollowScanTimer = 0;
+      this.pregnancyTimer.delete(u.id);
+    }
+    this.updateChiefs();
+
+    const lo = Math.min(parent, target);
+    const hi = Math.max(parent, target);
+    this.lastEncounterTick.set(`${lo}_${hi}`, this.tick);
+
+    const angle =
+      rand01(this.seed ^ 0xc0ffee, target, this.tick) * Math.PI * 2;
+    const dist = 14;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const r = dist + attempt * 2;
+      const ti = Math.floor(ax + Math.cos(angle) * r);
+      const tj = Math.floor(ay + Math.sin(angle) * r);
+      if (!this.isWalkable(ti, tj)) continue;
+      const ids = founders.map((u) => u.id);
+      this.cmdMove(target, ids, ti, tj);
+      break;
+    }
+
+    this.tribeSplits.push({ from: parent, to: target });
+    return true;
   }
 
   growthSnapshot(): { progress: number[]; active: boolean[] } {

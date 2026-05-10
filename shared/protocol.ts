@@ -66,7 +66,8 @@ export type AnimalKind =
   | "bison"
   | "caveLion"
   | "mammoth"
-  | "alligator";
+  | "alligator"
+  | "bear";
 
 export interface AnimalSnapshot {
   id: string;
@@ -77,6 +78,12 @@ export interface AnimalSnapshot {
   hpMax: number;
   state: "idle" | "wander" | "flee" | "hunt";
   maturity: number;
+}
+
+export interface FishSnapshot {
+  id: string;
+  gx: number;
+  gy: number;
 }
 
 export interface RemovedObject {
@@ -149,6 +156,7 @@ export interface InitMessage {
   botSlots: PlayerId[];
   footprints: Footprint[];
   animals: AnimalSnapshot[];
+  fishes: FishSnapshot[];
   campfires: CampfireSnapshot[];
   tribeCounts: number[];
   artifacts: ArtifactSnapshot[];
@@ -161,6 +169,19 @@ export interface EncounterEvent {
   transfersBtoA: number;
 }
 
+export interface TribeSplit {
+  from: PlayerId;
+  to: PlayerId;
+}
+
+export interface ResourceFlowEvent {
+  owner: PlayerId;
+  resource: keyof Resources;
+  amount: number;
+  gx: number;
+  gy: number;
+}
+
 export interface StateMessage {
   type: "state";
   tick: number;
@@ -171,6 +192,8 @@ export interface StateMessage {
   newFootprints: Footprint[];
   animals: AnimalSnapshot[];
   removedAnimalIds: string[];
+  fishes: FishSnapshot[];
+  removedFishIds: string[];
   deadUnitIds: string[];
   outOfSightUnitIds: string[];
   newUnits: UnitSnapshot[];
@@ -183,6 +206,8 @@ export interface StateMessage {
   removedCampfireIds: string[];
   tribeCounts: number[];
   artifactFinds: ArtifactFindEvent[];
+  tribeSplits: TribeSplit[];
+  resourceFlows: ResourceFlowEvent[];
 }
 
 export interface OpponentJoinedMessage {
@@ -191,6 +216,8 @@ export interface OpponentJoinedMessage {
   name: string;
   language: string;
   units: UnitSnapshot[];
+  isBot?: boolean;
+  splitFrom?: PlayerId;
 }
 
 export interface OpponentLeftMessage {

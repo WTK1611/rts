@@ -116,6 +116,20 @@ function pickBotNames(
   return pool.slice(0, count);
 }
 
+function pickFreshTribeName(language: NameLanguage): string {
+  const used = new Set<string>();
+  for (const p of world.players) if (p) used.add(p.name);
+  const pool = TRIBE_NAMES_BY_LANG[language] ?? TRIBE_NAMES_BY_LANG.de;
+  const free = pool.filter((n) => !used.has(n));
+  if (free.length > 0) return free[Math.floor(Math.random() * free.length)];
+  for (const lang of NAME_LANGUAGES) {
+    for (const n of TRIBE_NAMES_BY_LANG[lang]) {
+      if (!used.has(n)) return n;
+    }
+  }
+  return `Stamm ${world.players.findIndex((p) => p === null)}`;
+}
+
 const ANIMAL_VIEW_RADIUS = 10;
 const ANIMAL_VIEW_RADIUS_SQ = ANIMAL_VIEW_RADIUS * ANIMAL_VIEW_RADIUS;
 const UNIT_VIEW_RADIUS = 10;
@@ -354,6 +368,32 @@ function tick(): void {
     slot.bot = fresh;
   }
   const respawnedTribes = world.sim.consumeRespawnedTribes();
+  const tribeSplits = world.sim.consumeTribeSplits();
+  const splitJoinPayloads: Array<{
+    playerId: PlayerId;
+    name: string;
+    language: NameLanguage;
+    splitFrom: PlayerId;
+  }> = [];
+  for (const sp of tribeSplits) {
+    const language = world.sim.tribeLanguage[sp.to];
+    const name = pickFreshTribeName(language);
+    const bot = new AIBot(world.sim, sp.to);
+    world.players[sp.to] = {
+      ws: null,
+      name,
+      id: sp.to,
+      language,
+      bot,
+    };
+    world.bots.push(bot);
+    splitJoinPayloads.push({
+      playerId: sp.to,
+      name,
+      language,
+      splitFrom: sp.from,
+    });
+  }
 
   const units = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
@@ -437,7 +477,27 @@ function tick(): void {
       removedCampfireIds,
       tribeCounts,
       artifactFinds,
+      tribeSplits,
     });
+  }
+
+  for (const sp of splitJoinPayloads) {
+    const splitUnits = units.filter((u) => u.owner === sp.playerId);
+    for (const other of world.players) {
+      if (!other || !other.ws) continue;
+      if (other.id === sp.playerId) continue;
+      const otherKnown = world.knownUnits[other.id];
+      for (const u of splitUnits) otherKnown.add(u.id);
+      send(other.ws, {
+        type: "opponentJoined",
+        playerId: sp.playerId,
+        name: sp.name,
+        language: sp.language,
+        units: splitUnits,
+        isBot: true,
+        splitFrom: sp.splitFrom,
+      });
+    }
   }
 }
 
