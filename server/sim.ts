@@ -52,6 +52,8 @@ import {
   SpawnArea,
   stoneAmountAt,
   treeWoodAt,
+  VOLCANO_CELL,
+  volcanoForCell,
 } from "../shared/worldgen";
 
 const HARVEST_INTERVAL = 1.2;
@@ -354,6 +356,7 @@ export class Sim {
   lastEncounterTick: Map<string, number> = new Map();
   encounterEvents: EncounterEvent[] = [];
   campfires: Map<string, SimCampfire> = new Map();
+  volcanoes: Array<{ gx: number; gy: number }> = [];
   removedCampfireIds: string[] = [];
   followChiefEnabled: boolean[] = new Array(MAX_PLAYERS).fill(false);
   artifacts: Map<string, SimArtifact> = new Map();
@@ -380,7 +383,21 @@ export class Sim {
     this.spawnAnimals();
     this.spawnFishes();
     this.spawnArtifacts();
+    this.scanVolcanoes();
     this.rebuildSpatialIndex();
+  }
+
+  private scanVolcanoes(): void {
+    const r = ANIMAL_SPAWN_RADIUS;
+    const cR = Math.ceil(r / VOLCANO_CELL) + 1;
+    for (let cj = -cR; cj <= cR; cj++) {
+      for (let ci = -cR; ci <= cR; ci++) {
+        const v = volcanoForCell(this.seed, ci, cj);
+        if (!v) continue;
+        if (Math.abs(v.i) > r || Math.abs(v.j) > r) continue;
+        this.volcanoes.push({ gx: v.i + 0.5, gy: v.j + 0.5 });
+      }
+    }
   }
 
   private spawnArtifacts(): void {
@@ -1027,26 +1044,16 @@ export class Sim {
       const spec = ANIMAL_SPECS[a.kind];
 
       if (spec.aggressive || spec.predator) {
-        let nearestFire: SimCampfire | null = null;
-        let nearestFireD2 = CAMPFIRE_REPEL_RADIUS * CAMPFIRE_REPEL_RADIUS;
-        for (const f of this.campfires.values()) {
-          const dx = f.gx - a.gx;
-          const dy = f.gy - a.gy;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < nearestFireD2) {
-            nearestFire = f;
-            nearestFireD2 = d2;
-          }
-        }
-        if (nearestFire) {
+        const nearestRepel = this.nearestRepellent(a.gx, a.gy);
+        if (nearestRepel) {
           a.attackTargetUnitId = null;
           a.attackTargetAnimalId = null;
           a.state = "flee";
           a.fleeRepathTimer -= dt;
           if (a.path.length === 0 || a.fleeRepathTimer <= 0) {
             a.fleeRepathTimer = PREY_FLEE_REPATH_SEC;
-            const dx = a.gx - nearestFire.gx;
-            const dy = a.gy - nearestFire.gy;
+            const dx = a.gx - nearestRepel.gx;
+            const dy = a.gy - nearestRepel.gy;
             const d = Math.hypot(dx, dy) || 1;
             const fd = CAMPFIRE_REPEL_RADIUS + 2;
             const ti = Math.floor(a.gx + (dx / d) * fd);
@@ -2756,6 +2763,51 @@ export class Sim {
       const dy = f.gy - u.gy;
       if (dx * dx + dy * dy <= r2) return true;
     }
+    if (this.isNight()) {
+      for (const v of this.volcanoes) {
+        const dx = v.gx - u.gx;
+        const dy = v.gy - u.gy;
+        if (dx * dx + dy * dy <= r2) return true;
+      }
+    }
+    return false;
+  }
+
+  private nearestRepellent(
+    ax: number,
+    ay: number,
+  ): { gx: number; gy: number; d2: number } | null {
+    let best: { gx: number; gy: number; d2: number } | null = null;
+    const limit = CAMPFIRE_REPEL_RADIUS * CAMPFIRE_REPEL_RADIUS;
+    for (const f of this.campfires.values()) {
+      const dx = f.gx - ax;
+      const dy = f.gy - ay;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < limit && (!best || d2 < best.d2)) {
+        best = { gx: f.gx, gy: f.gy, d2 };
+      }
+    }
+    if (this.isNight()) {
+      for (const v of this.volcanoes) {
+        const dx = v.gx - ax;
+        const dy = v.gy - ay;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < limit && (!best || d2 < best.d2)) {
+          best = { gx: v.gx, gy: v.gy, d2 };
+        }
+      }
+    }
+    return best;
+  }
+
+  private nearVolcanoNight(gx: number, gy: number, r: number): boolean {
+    if (!this.isNight()) return false;
+    const r2 = r * r;
+    for (const v of this.volcanoes) {
+      const dx = v.gx - gx;
+      const dy = v.gy - gy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
     return false;
   }
 
@@ -2828,6 +2880,7 @@ export class Sim {
       if (dx * dx + dy * dy <= r2) cluster++;
     }
     if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) return;
+    if (this.nearVolcanoNight(cx, cy, CAMPFIRE_RANGE)) return;
     r.holz -= CAMPFIRE_IGNITE_HOLZ_COST;
     r.stein -= CAMPFIRE_IGNITE_STEIN_COST;
     this.pushFlow(p, "holz", -CAMPFIRE_IGNITE_HOLZ_COST, cx, cy);

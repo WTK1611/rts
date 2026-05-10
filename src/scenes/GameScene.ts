@@ -1684,6 +1684,16 @@ export class GameScene extends Phaser.Scene {
       vol.container.setVisible(v);
       vol.shadow.setVisible(v);
     }
+    this.updateVolcanoRangeRings();
+  }
+
+  private updateVolcanoRangeRings(): void {
+    const showRings = this.lastPhase === "night" || this.lastPhase === "afternoon";
+    for (const vol of this.volcanoes.values()) {
+      const visible =
+        showRings && this.visible.has(`${vol.i},${vol.j}`);
+      vol.rangeRing.setVisible(visible);
+    }
   }
 
   private applyDynamicVisibility(): void {
@@ -1797,9 +1807,37 @@ export class GameScene extends Phaser.Scene {
 
     if (this.lastPhase === "night" || this.lastPhase === "afternoon") {
       this.eraseFireGlows(t);
+      this.eraseVolcanoGlows(t);
     }
 
     this.drawCelestial(t, w, h);
+    this.updateVolcanoRangeRings();
+  }
+
+  private eraseVolcanoGlows(t: number): void {
+    const cam = this.cameras.main;
+    const er = this.nightEraser;
+    for (const vol of this.volcanoes.values()) {
+      if (!this.visible.has(`${vol.i},${vol.j}`)) continue;
+      const wx = vol.container.x;
+      const wy = vol.container.y - 30;
+      const sx = (wx - cam.scrollX) * cam.zoom + (cam.width * (1 - cam.zoom)) / 2;
+      const sy = (wy - cam.scrollY) * cam.zoom + (cam.height * (1 - cam.zoom)) / 2;
+      const flicker = 0.85 + 0.15 * Math.sin(t * 7 + (wx + wy) * 0.011);
+      const baseR = 70 * cam.zoom * flicker;
+      er.clear();
+      er.fillStyle(0xffffff, 1);
+      er.fillCircle(sx, sy, baseR * 0.45);
+      this.nightOverlay.erase(er);
+      er.clear();
+      er.fillStyle(0xffffff, 0.55);
+      er.fillCircle(sx, sy, baseR);
+      this.nightOverlay.erase(er);
+      er.clear();
+      er.fillStyle(0xffffff, 0.25);
+      er.fillCircle(sx, sy, baseR * 1.5);
+      this.nightOverlay.erase(er);
+    }
   }
 
   private eraseFireGlows(t: number): void {

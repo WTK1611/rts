@@ -1,6 +1,7 @@
 import Phaser from "phaser";
-import { gridToScreen, TILE_H } from "./iso";
+import { gridToScreen, TILE_H, TILE_W } from "./iso";
 import { groundHeight, hash3 } from "../shared/worldgen";
+import { CAMPFIRE_RANGE } from "../shared/protocol";
 
 interface LavaBomb {
   obj: Phaser.GameObjects.Ellipse;
@@ -17,6 +18,7 @@ export class Volcano {
   j: number;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
+  rangeRing: Phaser.GameObjects.Graphics;
   private lavaGlow: Phaser.GameObjects.Ellipse;
   private craterFire: Phaser.GameObjects.Ellipse;
   private halo: Phaser.GameObjects.Ellipse;
@@ -70,6 +72,19 @@ export class Volcano {
 
     this.shadow = scene.add.ellipse(x, wy + 5, 84, 34, 0x000000, 0.45);
     this.shadow.setDepth((i + 0.5 + j + 0.5) * TILE_H - 0.5);
+
+    this.rangeRing = scene.add.graphics();
+    this.rangeRing.setDepth((i + 0.5 + j + 0.5) * TILE_H - 0.6);
+    this.rangeRing.setVisible(false);
+    {
+      const rw = CAMPFIRE_RANGE * TILE_W;
+      const rh = CAMPFIRE_RANGE * TILE_H;
+      const g = this.rangeRing;
+      g.fillStyle(0xff5a1a, 0.08);
+      g.fillEllipse(x, wy + 1, rw, rh);
+      g.lineStyle(1.5, 0xff5a1a, 0.7);
+      g.strokeEllipse(x, wy + 1, rw, rh);
+    }
 
     const coneBody = scene.add.polygon(0, 0, [
       -baseW / 2, 3,
@@ -244,6 +259,7 @@ export class Volcano {
     }
     this.bombs.length = 0;
     this.shadow.destroy();
+    this.rangeRing.destroy();
     this.container.destroy();
   }
 }

@@ -239,12 +239,12 @@ export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean 
   return false;
 }
 
-const VOLCANO_CELL = 22;
+export const VOLCANO_CELL = 22;
 
 interface VolcanoSpec { i: number; j: number; }
 const volcanoCellCache = new Map<string, VolcanoSpec | null>();
 
-function volcanoForCell(seed: number, ci: number, cj: number): VolcanoSpec | null {
+export function volcanoForCell(seed: number, ci: number, cj: number): VolcanoSpec | null {
   const key = `${seed}:${ci}:${cj}`;
   const cached = volcanoCellCache.get(key);
   if (cached !== undefined) return cached;
