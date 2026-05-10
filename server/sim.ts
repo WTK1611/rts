@@ -2265,7 +2265,7 @@ export class Sim {
           this.spawnNewTribeMember(p, centerX, centerY);
           birthsRemaining--;
         } else {
-          const split = this.splitOffNewTribe(p, list, centerX, centerY);
+          const split = this.splitOffNewTribe(p, list, u, centerX, centerY);
           if (split) {
             this.pregnancyTimer.delete(u.id);
             this.spawnNewTribeMember(p, centerX, centerY);
@@ -2285,6 +2285,7 @@ export class Sim {
   private splitOffNewTribe(
     parent: PlayerId,
     parentList: SimUnit[],
+    mother: SimUnit,
     ax: number,
     ay: number,
   ): boolean {
@@ -2297,12 +2298,20 @@ export class Sim {
     }
     if (target < 0) return false;
 
-    const elders = parentList
-      .filter((u) => u.gender === "m" && u.ageSec >= CHILD_AGE_SEC)
+    const candidates = parentList.filter((u) => u !== mother);
+    const males = candidates
+      .filter((u) => u.gender === "m")
       .sort((a, b) => b.ageSec - a.ageSec);
-    if (elders.length < 1) return false;
+    const females = candidates
+      .filter((u) => u.gender === "f")
+      .sort((a, b) => b.ageSec - a.ageSec);
 
-    const founders = elders.slice(0, Math.min(3, elders.length));
+    const founders: SimUnit[] = [];
+    for (let i = 0; i < males.length; i += 2) founders.push(males[i]);
+    for (let i = 0; i < females.length; i += 2) founders.push(females[i]);
+
+    if (founders.length < 2) return false;
+    if (candidates.length - founders.length < 1) return false;
 
     this.active[target] = true;
     this.tribeLanguage[target] = this.tribeLanguage[parent];
