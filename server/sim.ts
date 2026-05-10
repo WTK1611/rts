@@ -114,7 +114,7 @@ const MAX_AGE_SEC = 420;
 const CHILD_AGE_SEC = 60;
 
 const UNIT_HP_MAX = 100;
-const UNIT_HP_LOSS_PER_TILE = 0.2;
+const UNIT_HP_LOSS_PER_TILE = 0.4;
 const UNIT_HP_LOSS_PER_SEC_IDLE = 0.12;
 const EAT_INTERVAL = 1.0;
 const HP_GAIN_FLEISCH = 15;
