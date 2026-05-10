@@ -242,6 +242,7 @@ export class GameScene extends Phaser.Scene {
   private perfAnimalCount = 0;
   private perfUnitCount = 0;
   private perfFishCount = 0;
+  private perfVisible = true;
 
   constructor() {
     super("GameScene");
@@ -346,6 +347,7 @@ export class GameScene extends Phaser.Scene {
     kb.addCapture("UP,DOWN,LEFT,RIGHT");
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.P).on("down", () => this.togglePerf());
 
     const spectateKeys: Array<[number, number]> = [
       [Phaser.Input.Keyboard.KeyCodes.ONE, 0],
@@ -396,6 +398,9 @@ export class GameScene extends Phaser.Scene {
     this.minimapVisible = false;
     if (this.minimapWrap) this.minimapWrap.style.display = "none";
     this.perfEl = document.getElementById("perf");
+    const storedPerf = localStorage.getItem("rts.perfVisible");
+    if (storedPerf !== null) this.perfVisible = storedPerf === "1";
+    if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
 
     this.updateChunks();
     this.updateFog();
@@ -2803,8 +2808,14 @@ export class GameScene extends Phaser.Scene {
       othersHtml;
   }
 
+  private togglePerf(): void {
+    this.perfVisible = !this.perfVisible;
+    localStorage.setItem("rts.perfVisible", this.perfVisible ? "1" : "0");
+    if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
+  }
+
   private updatePerf(): void {
-    if (!this.perfEl) return;
+    if (!this.perfEl || !this.perfVisible) return;
     const fps = this.perfFrameTimeMs > 0 ? 1000 / this.perfFrameTimeMs : 0;
     const stick = this.perfServerTickMs;
     const tickBudget = 1000 / TICK_RATE;
@@ -2820,7 +2831,7 @@ export class GameScene extends Phaser.Scene {
       `srv   ${stickStr} ms / ${tickBudget.toFixed(0)} ms tick\n` +
       `world A:${this.perfAnimalCount} U:${this.perfUnitCount} F:${this.perfFishCount}\n` +
       `local A:${localAnimals} U:${localUnits} F:${localFishes} chk:${chunks}`;
-    let cls = "";
+    let cls = "good";
     if (fps < 30 || stick > tickBudget * 0.9) cls = "bad";
     else if (fps < 50 || stick > tickBudget * 0.6) cls = "warn";
     this.perfEl.className = cls;
