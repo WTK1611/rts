@@ -1,7 +1,6 @@
 import {
   biomeAt,
   hasBushAt,
-  hasFishAt,
   hasMushroomAt,
   hasStoneAt,
   hasTreeAt,
@@ -218,7 +217,7 @@ export class AIBot {
         const dc = Math.hypot(tgt.i + 0.5 - center.x, tgt.j + 0.5 - center.y);
         if (dc > MAX_TARGET_DIST_FROM_CENTER) continue;
       }
-      if (n.kind === "water") {
+      if (n.kind === "water" || n.kind === "fish") {
         this.sim.cmdMove(this.id, [u.id], tgt.i, tgt.j);
       } else {
         this.sim.cmdHarvest(this.id, [u.id], tgt.i, tgt.j);
@@ -289,8 +288,24 @@ export class AIBot {
       return false;
     }
     if (kind === "fish") {
-      if (!hasFishAt(seed, i, j)) return false;
-      return !this.sim.removedKeys.has(`f_${i}_${j}`);
+      if (!isLandTile(seed, i, j)) return false;
+      let waterAdj = false;
+      for (let dj = -1; dj <= 1 && !waterAdj; dj++) {
+        for (let di = -1; di <= 1 && !waterAdj; di++) {
+          if (di === 0 && dj === 0) continue;
+          const b = biomeAt(seed, i + di, j + dj);
+          if (b === "lake" || b === "river") waterAdj = true;
+        }
+      }
+      if (!waterAdj) return false;
+      const cx = i + 0.5;
+      const cy = j + 0.5;
+      for (const f of this.sim.fishes.values()) {
+        const dx = f.gx - cx;
+        const dy = f.gy - cy;
+        if (dx * dx + dy * dy <= 16) return true;
+      }
+      return false;
     }
     if (!isLandTile(seed, i, j)) return false;
     if (kind === "tree") {

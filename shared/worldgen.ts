@@ -239,8 +239,36 @@ export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean 
   return false;
 }
 
+const SEQUOIA_CELL = 5;
+
+export function hasSequoiaAt(seed: number, i: number, j: number): boolean {
+  const ci = Math.floor(i / SEQUOIA_CELL);
+  const cj = Math.floor(j / SEQUOIA_CELL);
+  const h = hash3(seed ^ 0x5e90, ci, cj);
+  const wantI = ci * SEQUOIA_CELL + (h % SEQUOIA_CELL);
+  const wantJ = cj * SEQUOIA_CELL + ((h >>> 8) % SEQUOIA_CELL);
+  if (i !== wantI || j !== wantJ) return false;
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  const biome = biomeRaw(seed, i, j);
+  if (biome !== "wald" && biome !== "wiesen") return false;
+  const r = rand01(seed ^ 0x5e91, ci, cj);
+  const threshold = biome === "wald" ? 0.018 : 0.005;
+  return r < threshold;
+}
+
+export function sequoiaIdAt(i: number, j: number): string {
+  return `q_${i}_${j}`;
+}
+
+export function parseSequoiaId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^q_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
 export function hasTreeAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
   const biome = biomeRaw(seed, i, j);
   if (
     biome === "lake" ||
@@ -288,6 +316,7 @@ export function treeWoodAt(seed: number, i: number, j: number): number {
 
 export function hasBushAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
   if (hasTreeAt(seed, i, j)) return false;
   if (biomeAt(seed, i, j) !== "wiesen") return false;
   return rand01(seed ^ 0xb05, i, j) < 0.045;
@@ -309,6 +338,7 @@ export function bushBerriesAt(seed: number, i: number, j: number): number {
 
 export function hasMushroomAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
   if (hasTreeAt(seed, i, j)) return false;
   if (hasBushAt(seed, i, j)) return false;
   const b = biomeAt(seed, i, j);
@@ -352,6 +382,7 @@ export function fishMeatAt(seed: number, i: number, j: number): number {
 
 export function hasStoneAt(seed: number, i: number, j: number): boolean {
   if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
   if (hasTreeAt(seed, i, j)) return false;
   if (hasBushAt(seed, i, j)) return false;
   if (hasMushroomAt(seed, i, j)) return false;
@@ -406,6 +437,7 @@ export function artifactsFromSeed(seed: number): ArtifactSpec[] {
     if (!isLandTile(seed, i, j)) continue;
     const b = biomeAt(seed, i, j);
     if (b === "lake" || b === "river" || b === "gebirge") continue;
+    if (hasSequoiaAt(seed, i, j)) continue;
     if (hasTreeAt(seed, i, j)) continue;
     if (hasBushAt(seed, i, j)) continue;
     if (hasMushroomAt(seed, i, j)) continue;

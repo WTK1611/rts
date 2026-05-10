@@ -4,6 +4,7 @@ import { AIBot } from "./aiBot";
 import {
   AnimalSnapshot,
   ClientMessage,
+  FishSnapshot,
   MAX_PLAYERS,
   PlayerId,
   ScoreEntry,
@@ -151,6 +152,10 @@ const world = {
     { length: MAX_PLAYERS },
     () => new Set<string>(),
   ),
+  knownFishes: Array.from(
+    { length: MAX_PLAYERS },
+    () => new Set<string>(),
+  ),
   bots: [] as AIBot[],
 };
 
@@ -216,6 +221,28 @@ function visibleAnimalsFor(
       const dy = a.gy - u.gy;
       if (dx * dx + dy * dy <= ANIMAL_VIEW_RADIUS_SQ) {
         out.push(a);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function visibleFishesFor(
+  ownerId: PlayerId,
+  units: UnitSnapshot[],
+  allFishes: FishSnapshot[],
+): FishSnapshot[] {
+  const myUnits: UnitSnapshot[] = [];
+  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
+  if (myUnits.length === 0) return [];
+  const out: FishSnapshot[] = [];
+  for (const f of allFishes) {
+    for (const u of myUnits) {
+      const dx = f.gx - u.gx;
+      const dy = f.gy - u.gy;
+      if (dx * dx + dy * dy <= ANIMAL_VIEW_RADIUS_SQ) {
+        out.push(f);
         break;
       }
     }
@@ -291,8 +318,10 @@ function joinPlayer(
 
   const allUnits = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
+  const allFishes = world.sim.fishesSnapshot();
   const allCampfires = world.sim.campfiresSnapshot();
   const visibleAnimals = visibleAnimalsFor(slotId, allUnits, allAnimals);
+  const visibleFishes = visibleFishesFor(slotId, allUnits, allFishes);
   const known = world.knownAnimals[slotId];
   known.clear();
   for (const a of visibleAnimals) known.add(a.id);
@@ -304,6 +333,10 @@ function joinPlayer(
   const knownF = world.knownCampfires[slotId];
   knownF.clear();
   for (const f of allCampfires) knownF.add(f.id);
+
+  const knownFi = world.knownFishes[slotId];
+  knownFi.clear();
+  for (const f of visibleFishes) knownFi.add(f.id);
 
   send(ws, {
     type: "init",
@@ -319,6 +352,7 @@ function joinPlayer(
     botSlots: botSlotIds(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
+    fishes: visibleFishes,
     campfires: allCampfires,
     tribeCounts: world.sim.tribeCounts(),
     artifacts: world.sim.artifactsSnapshot(),
@@ -397,6 +431,8 @@ function tick(): void {
 
   const units = world.sim.unitsSnapshot();
   const allAnimals = world.sim.animalsSnapshot();
+  const allFishes = world.sim.fishesSnapshot();
+  world.sim.consumeRemovedFishIds();
   const allCampfires = world.sim.campfiresSnapshot();
   const diedCampfireIds = world.sim.consumeRemovedCampfireIds();
   const resources = world.sim.resources.map((r) => ({ ...r }));
@@ -411,6 +447,7 @@ function tick(): void {
   world.sim.consumeRemovedAnimalIds();
   const tribeCounts = world.sim.tribeCounts();
   const artifactFinds = world.sim.consumeArtifactFinds();
+  const resourceFlows = world.sim.consumeResourceFlows();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -455,6 +492,16 @@ function tick(): void {
     const removedCampfireIds: string[] = [...diedCampfireIds];
     world.knownCampfires[slot.id] = visibleCampfireIds;
 
+    const visibleFishes = visibleFishesFor(slot.id, units, allFishes);
+    const visibleFishIds = new Set<string>();
+    for (const f of visibleFishes) visibleFishIds.add(f.id);
+    const knownFi = world.knownFishes[slot.id];
+    const removedFishIds: string[] = [];
+    for (const id of knownFi) {
+      if (!visibleFishIds.has(id)) removedFishIds.push(id);
+    }
+    world.knownFishes[slot.id] = visibleFishIds;
+
     send(slot.ws, {
       type: "state",
       tick: tickNo,
@@ -465,6 +512,8 @@ function tick(): void {
       newFootprints,
       animals: visible,
       removedAnimalIds,
+      fishes: visibleFishes,
+      removedFishIds,
       deadUnitIds,
       outOfSightUnitIds,
       newUnits: visibleNewUnits,
@@ -478,6 +527,7 @@ function tick(): void {
       tribeCounts,
       artifactFinds,
       tribeSplits,
+      resourceFlows: resourceFlows.filter((f) => f.owner === slot.id),
     });
   }
 
@@ -511,6 +561,7 @@ function disconnect(ws: WebSocket): void {
   world.knownAnimals[slot.id] = new Set();
   world.knownUnits[slot.id] = new Set();
   world.knownCampfires[slot.id] = new Set();
+  world.knownFishes[slot.id] = new Set();
   const removedUnitIds = world.sim.removePlayer(slot.id);
   for (const other of world.players) {
     if (!other || !other.ws) continue;

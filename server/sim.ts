@@ -11,6 +11,7 @@ import {
   CampfireSnapshot,
   EncounterEvent,
   emptyResources,
+  FishSnapshot,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   HuntWeapon,
@@ -32,7 +33,6 @@ import {
   Biome,
   biomeAt,
   bushBerriesAt,
-  fishMeatAt,
   hasBushAt,
   hasFishAt,
   hasMushroomAt,
@@ -51,7 +51,6 @@ const HARVEST_INTERVAL = 1.2;
 const TREE_HARVEST_AMOUNT = 5;
 const BUSH_HARVEST_AMOUNT = 3;
 const MUSH_HARVEST_AMOUNT = 1;
-const FISH_HARVEST_AMOUNT = 1;
 const STARTING_GENDERS: UnitGender[] = ["m", "f", "m", "f"];
 const TRIBE_SIZE = STARTING_GENDERS.length;
 const GROWTH_REQUIRED_SEC = 120;
@@ -72,7 +71,9 @@ const WATER_AUTOPICK_GAIN = 1;
 const CAMPFIRE_IGNITE_DELAY_SEC = 8;
 const CAMPFIRE_IGNITE_MIN_UNITS = 2;
 const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
-const CAMPFIRE_BURN_PER_FUEL_SEC = 25;
+const CAMPFIRE_BURN_PER_FUEL_SEC = 2;
+const CAMPFIRE_GROW_RADIUS = 1.5;
+const CAMPFIRE_MAX_SIZE = 6;
 const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
 const CAMPFIRE_REPEL_RADIUS = CAMPFIRE_RANGE + 2.5;
 
@@ -178,6 +179,10 @@ const PREY_FLEE_RANGE = 6;
 const PREY_FLEE_REPATH_SEC = 0.8;
 const ANIMAL_BREED_RANGE_SQ = 2.5 * 2.5;
 const ANIMAL_KIND_CAP_FACTOR = 2.0;
+const ANIMAL_RESPAWN_INTERVAL = 0.5;
+const ANIMAL_RESPAWN_PER_TICK = 80;
+const ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ = 22 * 22;
+const ANIMAL_RESPAWN_TILE_ATTEMPTS = 60;
 const TRIBE_COHESION_RADIUS = 6;
 const TRIBE_COHESION_IDLE_SEC = 2.0;
 const FOLLOW_CHIEF_NEAR = 5;
@@ -191,6 +196,7 @@ export interface SimCampfire {
   gx: number;
   gy: number;
   fuelTimer: number;
+  size: number;
 }
 
 export interface SimArtifact {
@@ -224,6 +230,30 @@ export interface SimAnimal {
   maxAgeSec: number;
   breedTimer: number;
 }
+
+export interface SimFish {
+  id: string;
+  gx: number;
+  gy: number;
+  homeI: number;
+  homeJ: number;
+  vx: number;
+  vy: number;
+  turnTimer: number;
+  ageSec: number;
+  breedTimer: number;
+}
+
+const FISH_SPEED = 0.6;
+const FISH_TURN_INTERVAL_MIN = 1.2;
+const FISH_TURN_INTERVAL_MAX = 3.5;
+const FISH_HOME_RADIUS = 4.5;
+const FISH_SHORE_BIAS = 0.35;
+const FISH_CATCH_RADIUS = 1.4;
+const FISH_MATURE_AGE_SEC = 30;
+const FISH_BREED_INTERVAL_SEC = 55;
+const FISH_BREED_RANGE_SQ = 1.6 * 1.6;
+const FISH_DENSITY_CAP_FACTOR = 1.8;
 
 function kindHash(kind: AnimalKind): number {
   let h = 0x12345;
@@ -267,6 +297,8 @@ export class Sim {
   removedAnimalIds: string[] = [];
   nextAnimalIdx = 0;
   animalKindCap: Map<AnimalKind, number> = new Map();
+  animalKindFloor: Map<AnimalKind, number> = new Map();
+  animalRespawnTimer = 0;
   deadUnitIds: string[] = [];
   extinctTribes: PlayerId[] = [];
   respawnedTribes: PlayerId[] = [];
@@ -286,12 +318,17 @@ export class Sim {
   artifactFinds: ArtifactFindEvent[] = [];
   tribeSplits: TribeSplit[] = [];
   resourceFlows: ResourceFlowEvent[] = [];
+  fishes: Map<string, SimFish> = new Map();
+  removedFishIds: string[] = [];
+  nextFishIdx = 0;
+  fishCap = 0;
   tick = 0;
 
   constructor(seed: number) {
     this.seed = seed;
     this.spawns = spawnsFromSeed(seed);
     this.spawnAnimals();
+    this.spawnFishes();
     this.spawnArtifacts();
   }
 
@@ -439,6 +476,7 @@ export class Sim {
     }
     for (const [kind, c] of counts) {
       this.animalKindCap.set(kind, Math.max(20, Math.ceil(c * ANIMAL_KIND_CAP_FACTOR)));
+      this.animalKindFloor.set(kind, c);
     }
   }
 
@@ -452,6 +490,158 @@ export class Sim {
     const out = this.removedAnimalIds;
     this.removedAnimalIds = [];
     return out;
+  }
+
+  private spawnFishes(): void {
+    const r = ANIMAL_SPAWN_RADIUS;
+    let count = 0;
+    for (let j = -r; j <= r; j++) {
+      for (let i = -r; i <= r; i++) {
+        if (!hasFishAt(this.seed, i, j)) continue;
+        const id = `f${this.nextFishIdx++}`;
+        const ang = rand01(this.seed ^ 0xf15a, i, j) * Math.PI * 2;
+        const ageR = rand01(this.seed ^ 0xf15c, i, j);
+        this.fishes.set(id, {
+          id,
+          gx: i + 0.5,
+          gy: j + 0.5,
+          homeI: i,
+          homeJ: j,
+          vx: Math.cos(ang) * FISH_SPEED,
+          vy: Math.sin(ang) * FISH_SPEED,
+          turnTimer: rand01(this.seed ^ 0xf15b, i, j) *
+            (FISH_TURN_INTERVAL_MAX - FISH_TURN_INTERVAL_MIN) +
+            FISH_TURN_INTERVAL_MIN,
+          ageSec: FISH_MATURE_AGE_SEC + ageR * 30,
+          breedTimer: -FISH_BREED_INTERVAL_SEC * ageR,
+        });
+        count++;
+      }
+    }
+    this.fishCap = Math.max(80, Math.ceil(count * FISH_DENSITY_CAP_FACTOR));
+  }
+
+  fishesSnapshot(): FishSnapshot[] {
+    const out: FishSnapshot[] = [];
+    for (const f of this.fishes.values()) {
+      out.push({ id: f.id, gx: f.gx, gy: f.gy });
+    }
+    return out;
+  }
+
+  consumeRemovedFishIds(): string[] {
+    const out = this.removedFishIds;
+    this.removedFishIds = [];
+    return out;
+  }
+
+  private isWaterTileAt(i: number, j: number): boolean {
+    const b = biomeAt(this.seed, i, j);
+    return b === "lake" || b === "river";
+  }
+
+  private fishWalkable(gx: number, gy: number): boolean {
+    return this.isWaterTileAt(Math.floor(gx), Math.floor(gy));
+  }
+
+  private pickFishHeading(f: SimFish): void {
+    const ti = Math.floor(f.gx);
+    const tj = Math.floor(f.gy);
+    let ang = Math.random() * Math.PI * 2;
+    if (Math.random() < FISH_SHORE_BIAS) {
+      const dirs: Array<[number, number]> = [];
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          if (di === 0 && dj === 0) continue;
+          if (this.isWaterTileAt(ti + di, tj + dj)) continue;
+          dirs.push([di, dj]);
+        }
+      }
+      if (dirs.length > 0) {
+        const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)];
+        ang = Math.atan2(dy, dx);
+      }
+    }
+    f.vx = Math.cos(ang) * FISH_SPEED;
+    f.vy = Math.sin(ang) * FISH_SPEED;
+    f.turnTimer = FISH_TURN_INTERVAL_MIN +
+      Math.random() * (FISH_TURN_INTERVAL_MAX - FISH_TURN_INTERVAL_MIN);
+  }
+
+  private stepFishes(dt: number): void {
+    const newborns: SimFish[] = [];
+    for (const f of this.fishes.values()) {
+      f.ageSec += dt;
+      f.turnTimer -= dt;
+      if (f.turnTimer <= 0) this.pickFishHeading(f);
+
+      const homeDx = (f.homeI + 0.5) - f.gx;
+      const homeDy = (f.homeJ + 0.5) - f.gy;
+      const homeDist = Math.hypot(homeDx, homeDy);
+      if (homeDist > FISH_HOME_RADIUS) {
+        f.vx = (homeDx / homeDist) * FISH_SPEED;
+        f.vy = (homeDy / homeDist) * FISH_SPEED;
+      }
+
+      const nx = f.gx + f.vx * dt;
+      const ny = f.gy + f.vy * dt;
+      const xOk = this.fishWalkable(nx, f.gy);
+      const yOk = this.fishWalkable(f.gx, ny);
+      if (xOk) f.gx = nx;
+      else f.vx = -f.vx;
+      if (yOk) f.gy = ny;
+      else f.vy = -f.vy;
+      if (!xOk && !yOk) {
+        f.gx = f.homeI + 0.5;
+        f.gy = f.homeJ + 0.5;
+      }
+    }
+
+    if (this.fishes.size < this.fishCap) {
+      for (const f of this.fishes.values()) {
+        if (f.ageSec < FISH_MATURE_AGE_SEC) continue;
+        let mate: SimFish | null = null;
+        for (const g of this.fishes.values()) {
+          if (g === f) continue;
+          if (g.id <= f.id) continue;
+          if (g.ageSec < FISH_MATURE_AGE_SEC) continue;
+          const dx = g.gx - f.gx;
+          const dy = g.gy - f.gy;
+          if (dx * dx + dy * dy < FISH_BREED_RANGE_SQ) {
+            mate = g;
+            break;
+          }
+        }
+        if (mate) {
+          f.breedTimer += dt;
+          if (f.breedTimer >= FISH_BREED_INTERVAL_SEC) {
+            f.breedTimer = -FISH_BREED_INTERVAL_SEC * 0.6;
+            const ti = Math.floor(f.gx);
+            const tj = Math.floor(f.gy);
+            if (this.isWaterTileAt(ti, tj)) {
+              const id = `f${this.nextFishIdx++}`;
+              const ang = Math.random() * Math.PI * 2;
+              newborns.push({
+                id,
+                gx: f.gx,
+                gy: f.gy,
+                homeI: ti,
+                homeJ: tj,
+                vx: Math.cos(ang) * FISH_SPEED,
+                vy: Math.sin(ang) * FISH_SPEED,
+                turnTimer: FISH_TURN_INTERVAL_MIN,
+                ageSec: 0,
+                breedTimer: -FISH_BREED_INTERVAL_SEC,
+              });
+              if (this.fishes.size + newborns.length >= this.fishCap) break;
+            }
+          }
+        } else if (f.breedTimer > 0) {
+          f.breedTimer = Math.max(0, f.breedTimer - dt * 0.5);
+        }
+      }
+    }
+    for (const n of newborns) this.fishes.set(n.id, n);
   }
 
   consumeDeadUnitIds(): string[] {
@@ -524,6 +714,7 @@ export class Sim {
         gx: f.gx,
         gy: f.gy,
         fuel: Math.max(0, Math.min(1, f.fuelTimer / CAMPFIRE_BURN_PER_FUEL_SEC)),
+        size: f.size,
       });
     }
     return out;
@@ -981,6 +1172,79 @@ export class Sim {
       maxAgeSec: spec.maxAgeSec * (0.85 + Math.random() * 0.3),
       breedTimer: -spec.gestationSec,
     };
+  }
+
+  private stepAnimalRespawn(dt: number): void {
+    this.animalRespawnTimer -= dt;
+    if (this.animalRespawnTimer > 0) return;
+    this.animalRespawnTimer = ANIMAL_RESPAWN_INTERVAL;
+
+    const counts: Map<AnimalKind, number> = new Map();
+    for (const a of this.animals.values()) {
+      counts.set(a.kind, (counts.get(a.kind) ?? 0) + 1);
+    }
+
+    const deficits: Array<{ kind: AnimalKind; missing: number }> = [];
+    for (const [kind, floor] of this.animalKindFloor) {
+      const cur = counts.get(kind) ?? 0;
+      if (cur < floor) deficits.push({ kind, missing: floor - cur });
+    }
+    if (deficits.length === 0) return;
+    deficits.sort((a, b) => b.missing - a.missing);
+
+    const r = ANIMAL_SPAWN_RADIUS;
+    let spawnedTotal = 0;
+    for (const { kind } of deficits) {
+      if (spawnedTotal >= ANIMAL_RESPAWN_PER_TICK) break;
+      const spec = ANIMAL_SPECS[kind];
+      let spawned = false;
+      for (let attempt = 0; attempt < ANIMAL_RESPAWN_TILE_ATTEMPTS && !spawned; attempt++) {
+        const i = Math.floor((Math.random() * 2 - 1) * r);
+        const j = Math.floor((Math.random() * 2 - 1) * r);
+        const b = biomeAt(this.seed, i, j);
+        if (!spec.biomes.includes(b)) continue;
+        if (!this.animalWalkable(spec, i, j)) continue;
+        const cx = i + 0.5;
+        const cy = j + 0.5;
+        let nearUnit = false;
+        for (const u of this.units.values()) {
+          if (u.hp <= 0) continue;
+          const dx = cx - u.gx;
+          const dy = cy - u.gy;
+          if (dx * dx + dy * dy < ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) {
+            nearUnit = true;
+            break;
+          }
+        }
+        if (nearUnit) continue;
+        const id = `a_${kind[0]}r${this.nextAnimalIdx++}`;
+        const ageR = Math.random();
+        this.animals.set(id, {
+          id,
+          kind,
+          hp: spec.hp,
+          hpMax: spec.hp,
+          gx: cx,
+          gy: cy,
+          homeI: i,
+          homeJ: j,
+          state: "idle",
+          path: [],
+          decisionTimer: Math.random() * 4,
+          attackTargetUnitId: null,
+          attackTargetAnimalId: null,
+          attackTimer: 0,
+          repathTimer: 0,
+          aggroExpireTick: 0,
+          fleeRepathTimer: 0,
+          ageSec: spec.matureAgeSec * (0.3 + ageR * 0.4),
+          maxAgeSec: spec.maxAgeSec * (0.85 + Math.random() * 0.3),
+          breedTimer: -spec.gestationSec * Math.random(),
+        });
+        spawned = true;
+        spawnedTotal++;
+      }
+    }
   }
 
   private stepAnimalAttack(
@@ -1595,19 +1859,40 @@ export class Sim {
     }
     const SIGHT = 10;
     if (nearest > SIGHT * SIGHT) return;
-    r.holz -= 1;
-    r.stein -= 1;
+    const cx = i + 0.5;
+    const cy = j + 0.5;
     const id = this.campfireIdFor(owner);
-    if (this.campfires.has(id)) {
+    const existing = this.campfires.get(id);
+    if (existing) {
+      const ddx = existing.gx - cx;
+      const ddy = existing.gy - cy;
+      const closeEnough =
+        ddx * ddx + ddy * ddy <= CAMPFIRE_GROW_RADIUS * CAMPFIRE_GROW_RADIUS;
+      if (closeEnough) {
+        if (existing.size >= CAMPFIRE_MAX_SIZE) return;
+        r.holz -= 1;
+        r.stein -= 1;
+        this.pushFlow(owner, "holz", -1, existing.gx, existing.gy);
+        this.pushFlow(owner, "stein", -1, existing.gx, existing.gy);
+        existing.size += 1;
+        existing.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
+        this.campfireIgniteSec[owner] = 0;
+        return;
+      }
       this.campfires.delete(id);
       this.removedCampfireIds.push(id);
     }
+    r.holz -= 1;
+    r.stein -= 1;
+    this.pushFlow(owner, "holz", -1, cx, cy);
+    this.pushFlow(owner, "stein", -1, cx, cy);
     this.campfires.set(id, {
       id,
       owner,
-      gx: i + 0.5,
-      gy: j + 0.5,
+      gx: cx,
+      gy: cy,
       fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+      size: 1,
     });
     this.campfireIgniteSec[owner] = 0;
   }
@@ -1625,10 +1910,6 @@ export class Sim {
       hasMushroomAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("mushroom", i, j))
     ) return "mushroom";
-    if (
-      hasFishAt(this.seed, i, j) &&
-      !this.removedKeys.has(objKey("fish", i, j))
-    ) return "fish";
     if (
       hasStoneAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("stone", i, j))
@@ -1820,21 +2101,30 @@ export class Sim {
   }
 
   private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
-    const adj: Array<[number, number]> = [
-      [1, 0], [-1, 0], [0, 1], [0, -1],
-      [1, 1], [1, -1], [-1, 1], [-1, -1],
-    ];
-    for (const [di, dj] of adj) {
-      const ni = ti + di;
-      const nj = tj + dj;
-      if (!hasFishAt(this.seed, ni, nj)) continue;
-      const k = objKey("fish", ni, nj);
-      if (this.removedKeys.has(k)) continue;
-      this.autoPickAndRegrow(
-        u, "fish", ni, nj, "fisch",
-        FISH_AUTOPICK_GAIN, 0,
-      );
+    const cx = ti + 0.5;
+    const cy = tj + 0.5;
+    const r2 = FISH_CATCH_RADIUS * FISH_CATCH_RADIUS;
+    let caught: SimFish | null = null;
+    let bestD = Infinity;
+    for (const f of this.fishes.values()) {
+      const fi = Math.floor(f.gx);
+      const fj = Math.floor(f.gy);
+      if (!this.isWaterTileAt(fi, fj)) continue;
+      if (Math.abs(fi - ti) > 1 || Math.abs(fj - tj) > 1) continue;
+      const dx = f.gx - cx;
+      const dy = f.gy - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      if (d2 < bestD) {
+        bestD = d2;
+        caught = f;
+      }
     }
+    if (!caught) return;
+    this.fishes.delete(caught.id);
+    this.removedFishIds.push(caught.id);
+    this.resources[u.owner].fisch += FISH_AUTOPICK_GAIN;
+    this.pushFlow(u.owner, "fisch", FISH_AUTOPICK_GAIN, caught.gx, caught.gy);
   }
 
   private autoPickAndRegrow(
@@ -1916,6 +2206,8 @@ export class Sim {
     this.tick++;
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
+    this.stepAnimalRespawn(dt);
+    this.stepFishes(dt);
     for (const u of this.units.values()) {
       u.eatCooldown -= dt;
       if (u.eatCooldown <= 0) {
@@ -2018,9 +2310,10 @@ export class Sim {
       f.fuelTimer -= dt;
       if (f.fuelTimer > 0) continue;
       const r = this.resources[f.owner];
-      if (r.holz >= 1 && r.stein >= 1) {
-        r.holz -= 1;
-        r.stein -= 1;
+      const cost = f.size;
+      if (r.holz >= cost) {
+        r.holz -= cost;
+        this.pushFlow(f.owner, "holz", -cost, f.gx, f.gy);
         f.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
       } else {
         this.campfires.delete(f.id);
@@ -2087,13 +2380,18 @@ export class Sim {
     if (r.holz < 1 || r.stein < 1) return;
     r.holz -= 1;
     r.stein -= 1;
+    const igniteCx = this.campfireIgniteCx[p];
+    const igniteCy = this.campfireIgniteCy[p];
+    this.pushFlow(p, "holz", -1, igniteCx, igniteCy);
+    this.pushFlow(p, "stein", -1, igniteCx, igniteCy);
     const id = this.campfireIdFor(p);
     this.campfires.set(id, {
       id,
       owner: p,
-      gx: this.campfireIgniteCx[p],
-      gy: this.campfireIgniteCy[p],
+      gx: igniteCx,
+      gy: igniteCy,
       fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+      size: 1,
     });
     this.campfireIgniteSec[p] = 0;
   }
@@ -2677,7 +2975,6 @@ export class Sim {
     if (t.kind === "tree") return hasTreeAt(this.seed, t.i, t.j);
     if (t.kind === "bush") return hasBushAt(this.seed, t.i, t.j);
     if (t.kind === "mushroom") return hasMushroomAt(this.seed, t.i, t.j);
-    if (t.kind === "fish") return hasFishAt(this.seed, t.i, t.j);
     return hasStoneAt(this.seed, t.i, t.j);
   }
 
@@ -2701,10 +2998,6 @@ export class Sim {
       amount = MUSH_HARVEST_AMOUNT;
       resKey = "pilze";
       baseTotal = mushroomBerriesAt(this.seed, t.i, t.j);
-    } else if (t.kind === "fish") {
-      amount = FISH_HARVEST_AMOUNT;
-      resKey = "fisch";
-      baseTotal = fishMeatAt(this.seed, t.i, t.j);
     } else {
       amount = STONE_HARVEST_AMOUNT;
       resKey = "stein";

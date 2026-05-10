@@ -6,6 +6,7 @@ import { Bush } from "../Bush";
 import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
+import { Sequoia } from "../Sequoia";
 import { Animal } from "../Animal";
 import { Campfire } from "../Campfire";
 import { Artifact } from "../Artifact";
@@ -17,6 +18,7 @@ import {
   ArtifactSnapshot,
   CampfireSnapshot,
   emptyResources,
+  FishSnapshot,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   InitMessage,
@@ -39,6 +41,7 @@ import {
   hasBushAt,
   hasFishAt,
   hasMushroomAt,
+  hasSequoiaAt,
   hasStoneAt,
   hasTreeAt,
   heightAt,
@@ -72,6 +75,7 @@ interface Chunk {
   mushrooms: Map<string, Mushroom>;
   fishes: Map<string, Fish>;
   stones: Map<string, Stone>;
+  sequoias: Map<string, Sequoia>;
   surfSegments: SurfSeg[];
   bbox: { x: number; y: number; w: number; h: number };
 }
@@ -120,6 +124,7 @@ export class GameScene extends Phaser.Scene {
   private mushrooms: Map<string, Mushroom> = new Map();
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
+  private sequoias: Map<string, Sequoia> = new Map();
   private animals: Map<string, Animal> = new Map();
   private campfires: Map<string, Campfire> = new Map();
   private artifacts: Map<string, Artifact> = new Map();
@@ -147,6 +152,7 @@ export class GameScene extends Phaser.Scene {
   private footprints: Footprint[] = [];
   private playerColors: Record<number, number> = {};
   private pendingAnimals: AnimalSnapshot[] = [];
+  private pendingFishes: FishSnapshot[] = [];
   private pendingCampfires: CampfireSnapshot[] = [];
 
   private camTargetX = 0;
@@ -233,6 +239,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.footprints = [...data.init.footprints];
     this.pendingAnimals = data.init.animals;
+    this.pendingFishes = data.init.fishes ?? [];
     this.pendingCampfires = data.init.campfires ?? [];
     this.pendingArtifacts = data.init.artifacts ?? [];
     this.tribeCounts = data.init.tribeCounts ?? [];
@@ -256,6 +263,10 @@ export class GameScene extends Phaser.Scene {
       this.spawnAnimalLocal(snap);
     }
     this.pendingAnimals = [];
+    for (const snap of this.pendingFishes) {
+      this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy));
+    }
+    this.pendingFishes = [];
     for (const snap of this.pendingCampfires) {
       this.applyCampfireSnap(snap, false);
     }
@@ -779,6 +790,7 @@ export class GameScene extends Phaser.Scene {
     const mushrooms = new Map<string, Mushroom>();
     const fishes = new Map<string, Fish>();
     const stones = new Map<string, Stone>();
+    const sequoias = new Map<string, Sequoia>();
     const i0 = cx * CHUNK_SIZE;
     const j0 = cy * CHUNK_SIZE;
     // Pass 1: draw water tiles first so land tiles can carve a jagged shoreline over them.
@@ -795,7 +807,14 @@ export class GameScene extends Phaser.Scene {
         const i = i0 + di;
         const j = j0 + dj;
         if (!this.isWaterAt(i, j)) this.drawTile(g, g, i, j);
-        if (hasTreeAt(this.seed, i, j)) {
+        if (hasSequoiaAt(this.seed, i, j)) {
+          const sid = `q_${i}_${j}`;
+          if (!this.sequoias.has(sid)) {
+            const s = new Sequoia(this, i, j, this.seed);
+            sequoias.set(sid, s);
+            this.sequoias.set(sid, s);
+          }
+        } else if (hasTreeAt(this.seed, i, j)) {
           const id = objKey("tree", i, j);
           if (!this.removedKeys.has(id) && !this.trees.has(id)) {
             const t = new Tree(this, id, i, j, this.seed);
@@ -815,13 +834,6 @@ export class GameScene extends Phaser.Scene {
             const m = new Mushroom(this, i, j, this.seed);
             mushrooms.set(id, m);
             this.mushrooms.set(id, m);
-          }
-        } else if (hasFishAt(this.seed, i, j)) {
-          const id = objKey("fish", i, j);
-          if (!this.removedKeys.has(id) && !this.fishes.has(id)) {
-            const f = new Fish(this, i, j);
-            fishes.set(id, f);
-            this.fishes.set(id, f);
           }
         } else if (hasStoneAt(this.seed, i, j)) {
           const id = objKey("stone", i, j);
@@ -843,7 +855,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
-      trees, bushes, mushrooms, fishes, stones,
+      trees, bushes, mushrooms, fishes, stones, sequoias,
       surfSegments,
       bbox: { x: ofx, y: ofy, w, h },
     });
@@ -916,6 +928,10 @@ export class GameScene extends Phaser.Scene {
       s.container.destroy();
       s.shadow.destroy();
       this.stones.delete(sid);
+    }
+    for (const [qid, q] of chunk.sequoias) {
+      q.destroy();
+      this.sequoias.delete(qid);
     }
     this.chunks.delete(key);
   }
@@ -1363,6 +1379,14 @@ export class GameScene extends Phaser.Scene {
       a.container.setVisible(v);
       a.shadow.setVisible(v);
       a.glow.setVisible(v && !a.found);
+    }
+    for (const q of this.sequoias.values()) {
+      const key = `q:${q.i},${q.j}`;
+      const v = this.explored.has(`${q.i},${q.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      q.container.setVisible(v);
+      q.shadow.setVisible(v);
     }
   }
 
@@ -1829,6 +1853,22 @@ export class GameScene extends Phaser.Scene {
       const a = this.animals.get(snap.id);
       if (a) a.applySnapshot(snap);
       else this.spawnAnimalLocal(snap);
+    }
+    if (msg.removedFishIds) {
+      for (const id of msg.removedFishIds) {
+        const f = this.fishes.get(id);
+        if (f) {
+          this.fishes.delete(id);
+          f.remove();
+        }
+      }
+    }
+    if (msg.fishes) {
+      for (const snap of msg.fishes) {
+        const f = this.fishes.get(snap.id);
+        if (f) f.setTarget(snap.gx, snap.gy);
+        else this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy));
+      }
     }
     if (msg.campfires) {
       for (const snap of msg.campfires) this.applyCampfireSnap(snap, true);

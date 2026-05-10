@@ -12,6 +12,7 @@ export class Campfire {
   gx: number;
   gy: number;
   fuel = 1;
+  size = 1;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   rangeRing: Phaser.GameObjects.Graphics;
@@ -30,6 +31,7 @@ export class Campfire {
     gx: number,
     gy: number,
     fuel: number,
+    size: number,
     worldSeed: number,
   ) {
     this.scene = scene;
@@ -38,6 +40,7 @@ export class Campfire {
     this.gx = gx;
     this.gy = gy;
     this.fuel = fuel;
+    this.size = Math.max(1, size);
     this.worldSeed = worldSeed;
 
     const { x, y } = gridToScreen(gx, gy);
@@ -77,7 +80,7 @@ export class Campfire {
     this.container.setDepth((gx + gy) * TILE_H);
   }
 
-  applyState(gx: number, gy: number, fuel: number): void {
+  applyState(gx: number, gy: number, fuel: number, size: number): void {
     if (this.gx !== gx || this.gy !== gy) {
       this.gx = gx;
       this.gy = gy;
@@ -92,6 +95,7 @@ export class Campfire {
       this.applyDepth();
     }
     this.fuel = fuel;
+    this.size = Math.max(1, size);
   }
 
   setAboveFog(above: boolean): void {
@@ -120,10 +124,13 @@ export class Campfire {
     this.phase += dt * 9;
     const flicker = 0.85 + Math.sin(this.phase) * 0.1 + Math.sin(this.phase * 1.7) * 0.05;
     const dim = 0.5 + this.fuel * 0.5;
-    this.flame1.setScale(flicker * dim, flicker * dim);
-    this.flame2.setScale((1.05 - (flicker - 0.85) * 0.5) * dim, flicker * dim);
+    const grow = 1 + (this.size - 1) * 0.35;
+    this.flame1.setScale(flicker * dim * grow, flicker * dim * grow);
+    this.flame2.setScale((1.05 - (flicker - 0.85) * 0.5) * dim * grow, flicker * dim * grow);
     this.ember.setAlpha(0.6 + (1 - flicker) * 0.4);
+    this.ember.setScale(grow, grow);
     this.glow.setAlpha((0.18 + (flicker - 0.85) * 0.4) * dim);
+    this.glow.setScale(grow, grow);
   }
 
   remove(): void {

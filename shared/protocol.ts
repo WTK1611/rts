@@ -98,6 +98,7 @@ export interface CampfireSnapshot {
   gx: number;
   gy: number;
   fuel: number;
+  size: number;
 }
 
 export const CAMPFIRE_RANGE = 2.5;

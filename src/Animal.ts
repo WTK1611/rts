@@ -21,6 +21,7 @@ const LOOKS: Record<AnimalKind, AnimalLook> = {
   caveLion:    { bodyW: 18, bodyH: 8,  bodyColor: 0xc28a48, bellyColor: 0xe6b878, legH: 7,  shadowW: 22, scale: 1 },
   mammoth:     { bodyW: 28, bodyH: 16, bodyColor: 0x4a352a, bellyColor: 0x6a4a35, legH: 12, shadowW: 36, scale: 1 },
   alligator:   { bodyW: 24, bodyH: 6,  bodyColor: 0x3d5a2a, bellyColor: 0x6d8a48, legH: 2,  shadowW: 26, scale: 1 },
+  bear:        { bodyW: 22, bodyH: 12, bodyColor: 0x4a3320, bellyColor: 0x6b4a30, legH: 8,  shadowW: 28, scale: 1 },
 };
 
 const KIND_LABELS: Record<AnimalKind, string> = {
@@ -31,6 +32,7 @@ const KIND_LABELS: Record<AnimalKind, string> = {
   caveLion: "Höhlenlöwe",
   mammoth: "Mamut",
   alligator: "Alligator",
+  bear: "Bär",
 };
 
 export function animalLabel(kind: AnimalKind): string {
