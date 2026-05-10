@@ -58,6 +58,8 @@ export interface Strings {
   toastOtherDiedSing: (name: string) => string;
   toastOtherDied: (name: string, n: number) => string;
   toastExtinct: (name: string) => string;
+  toastTribeFounded: (name: string) => string;
+  toastTribeSplit: (parent: string, child: string) => string;
   toastOwnCampfire: string;
   toastOtherCampfire: (name: string) => string;
   toastCampfireNotVisible: string;
@@ -151,6 +153,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDied: (n, k) =>
       `Im Stamm von ${n} sind ${k} Mitglieder gestorben`,
     toastExtinct: (n) => `Stamm von ${n} ist ausgestorben`,
+    toastTribeFounded: (n) => `Stamm von ${n} wurde gegründet`,
+    toastTribeSplit: (a, b) => `Älteste von Stamm ${a} spalten sich ab und gründen Stamm ${b}`,
     toastOwnCampfire: "Dein Stamm hat ein Lagerfeuer entzündet",
     toastOtherCampfire: (n) => `Stamm von ${n} hat ein Lagerfeuer entzündet`,
     toastCampfireNotVisible: "Lagerfeuer hier nicht sichtbar",
@@ -239,6 +243,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDiedSing: (n) => `A member of ${n}'s tribe has died`,
     toastOtherDied: (n, k) => `${k} members of ${n}'s tribe have died`,
     toastExtinct: (n) => `${n}'s tribe has gone extinct`,
+    toastTribeFounded: (n) => `${n}'s tribe was founded`,
+    toastTribeSplit: (a, b) => `Elders of ${a}'s tribe split off and found tribe ${b}`,
     toastOwnCampfire: "Your tribe lit a campfire",
     toastOtherCampfire: (n) => `${n}'s tribe lit a campfire`,
     toastCampfireNotVisible: "Campfire not visible here",
@@ -328,6 +334,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDiedSing: (n) => `Un membro della tribù di ${n} è morto`,
     toastOtherDied: (n, k) => `${k} membri della tribù di ${n} sono morti`,
     toastExtinct: (n) => `La tribù di ${n} si è estinta`,
+    toastTribeFounded: (n) => `La tribù di ${n} è stata fondata`,
+    toastTribeSplit: (a, b) => `Gli anziani della tribù di ${a} si separano e fondano la tribù ${b}`,
     toastOwnCampfire: "La tua tribù ha acceso un falò",
     toastOtherCampfire: (n) => `La tribù di ${n} ha acceso un falò`,
     toastCampfireNotVisible: "Falò non visibile qui",
@@ -417,6 +425,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDiedSing: (n) => `Un miembro de la tribu de ${n} ha muerto`,
     toastOtherDied: (n, k) => `${k} miembros de la tribu de ${n} han muerto`,
     toastExtinct: (n) => `La tribu de ${n} se ha extinguido`,
+    toastTribeFounded: (n) => `La tribu de ${n} ha sido fundada`,
+    toastTribeSplit: (a, b) => `Los ancianos de la tribu de ${a} se separan y fundan la tribu ${b}`,
     toastOwnCampfire: "Tu tribu ha encendido una hoguera",
     toastOtherCampfire: (n) => `La tribu de ${n} ha encendido una hoguera`,
     toastCampfireNotVisible: "Hoguera no visible aquí",
@@ -506,6 +516,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDiedSing: (n) => `Um membro da tribo de ${n} morreu`,
     toastOtherDied: (n, k) => `${k} membros da tribo de ${n} morreram`,
     toastExtinct: (n) => `A tribo de ${n} extinguiu-se`,
+    toastTribeFounded: (n) => `A tribo de ${n} foi fundada`,
+    toastTribeSplit: (a, b) => `Os anciãos da tribo de ${a} separam-se e fundam a tribo ${b}`,
     toastOwnCampfire: "A tua tribo acendeu uma fogueira",
     toastOtherCampfire: (n) => `A tribo de ${n} acendeu uma fogueira`,
     toastCampfireNotVisible: "Fogueira não visível aqui",
@@ -595,6 +607,8 @@ const STRINGS: Record<Language, Strings> = {
     toastOtherDiedSing: (n) => `Un membre de la tribu de ${n} est mort`,
     toastOtherDied: (n, k) => `${k} membres de la tribu de ${n} sont morts`,
     toastExtinct: (n) => `La tribu de ${n} s'est éteinte`,
+    toastTribeFounded: (n) => `La tribu de ${n} a été fondée`,
+    toastTribeSplit: (a, b) => `Les anciens de la tribu de ${a} se séparent et fondent la tribu ${b}`,
     toastOwnCampfire: "Ta tribu a allumé un feu de camp",
     toastOtherCampfire: (n) => `La tribu de ${n} a allumé un feu de camp`,
     toastCampfireNotVisible: "Feu de camp non visible ici",

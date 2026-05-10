@@ -1567,17 +1567,35 @@ export class GameScene extends Phaser.Scene {
     name: string;
     language?: string;
     units: import("../../shared/protocol").UnitSnapshot[];
+    isBot?: boolean;
+    splitFrom?: PlayerId;
   }): void {
     this.names[msg.playerId] = msg.name;
     if (msg.language) this.tribeLanguages[msg.playerId] = msg.language;
+    if (msg.isBot && !this.botSlots.includes(msg.playerId)) {
+      this.botSlots.push(msg.playerId);
+    }
     for (const snap of msg.units) {
       this.playerColors[snap.owner] = snap.color;
       if (!this.units.has(snap.id)) {
         this.units.set(snap.id, new Unit(this, snap, snap.owner === this.playerId, this.seed));
+      } else {
+        const u = this.units.get(snap.id);
+        if (u) u.applySnapshot(snap, snap.owner === this.playerId);
       }
     }
     this.updateHud();
-    this.showToast(t().toastJoinedTribe(msg.name), "join");
+    if (msg.splitFrom !== undefined) {
+      const parentName =
+        this.names[msg.splitFrom] || t().hudTribeFallback(msg.splitFrom);
+      this.showToast(
+        t().toastTribeSplit(parentName, msg.name),
+        "join",
+        [msg.splitFrom, msg.playerId],
+      );
+    } else {
+      this.showToast(t().toastJoinedTribe(msg.name), "join");
+    }
   }
 
   private onOpponentLeft(msg: {
@@ -1790,6 +1808,14 @@ export class GameScene extends Phaser.Scene {
         if (owner === this.playerId) continue;
         const name = this.names[owner] || s.hudTribeFallback(owner);
         this.showToast(s.toastExtinct(name), "extinct");
+      }
+    }
+    if (msg.respawnedTribes && msg.respawnedTribes.length > 0) {
+      const s = t();
+      for (const owner of msg.respawnedTribes) {
+        if (owner === this.playerId) continue;
+        const name = this.names[owner] || s.hudTribeFallback(owner);
+        this.showToast(s.toastTribeFounded(name), "join", owner);
       }
     }
     if (msg.newUnits && msg.newUnits.length > 0) {
