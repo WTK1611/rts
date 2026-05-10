@@ -209,6 +209,10 @@ export interface StateMessage {
   artifactFinds: ArtifactFindEvent[];
   tribeSplits: TribeSplit[];
   resourceFlows: ResourceFlowEvent[];
+  serverTickMs?: number;
+  animalCount?: number;
+  unitCount?: number;
+  fishCount?: number;
 }
 
 export interface OpponentJoinedMessage {

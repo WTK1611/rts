@@ -236,6 +236,14 @@ export class GameScene extends Phaser.Scene {
   private chunkLoadQueue: Array<{ cx: number; cy: number; key: string }> = [];
   private chunkLoadQueued = new Set<string>();
 
+  private perfEl: HTMLElement | null = null;
+  private perfFrameTimeMs = 16.7;
+  private perfLastDomUpdateMs = 0;
+  private perfServerTickMs = 0;
+  private perfAnimalCount = 0;
+  private perfUnitCount = 0;
+  private perfFishCount = 0;
+
   constructor() {
     super("GameScene");
   }
@@ -392,6 +400,7 @@ export class GameScene extends Phaser.Scene {
     this.minimapWrap = document.getElementById("minimap-wrap");
     this.minimapVisible = false;
     if (this.minimapWrap) this.minimapWrap.style.display = "none";
+    this.perfEl = document.getElementById("perf");
 
     this.updateChunks();
     this.updateFog();
@@ -401,6 +410,11 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    this.perfFrameTimeMs = this.perfFrameTimeMs * 0.92 + deltaMs * 0.08;
+    if (time - this.perfLastDomUpdateMs > 500) {
+      this.perfLastDomUpdateMs = time;
+      this.updatePerf();
+    }
     for (const u of this.units.values()) u.update(dt);
     for (const a of this.animals.values()) a.update(dt);
     for (const f of this.campfires.values()) f.update(dt);
@@ -1895,6 +1909,10 @@ export class GameScene extends Phaser.Scene {
 
   private applyState(msg: StateMessage): void {
     this.serverTick = msg.tick;
+    if (typeof msg.serverTickMs === "number") this.perfServerTickMs = msg.serverTickMs;
+    if (typeof msg.animalCount === "number") this.perfAnimalCount = msg.animalCount;
+    if (typeof msg.unitCount === "number") this.perfUnitCount = msg.unitCount;
+    if (typeof msg.fishCount === "number") this.perfFishCount = msg.fishCount;
     if (msg.encounters && msg.encounters.length > 0) {
       for (const ev of msg.encounters) {
         if (ev.a === this.playerId || ev.b === this.playerId) {
@@ -2850,6 +2868,29 @@ export class GameScene extends Phaser.Scene {
       this.growthHudHtml() +
       `<div class="res">${resHtml}</div>` +
       othersHtml;
+  }
+
+  private updatePerf(): void {
+    if (!this.perfEl) return;
+    const fps = this.perfFrameTimeMs > 0 ? 1000 / this.perfFrameTimeMs : 0;
+    const stick = this.perfServerTickMs;
+    const tickBudget = 1000 / TICK_RATE;
+    const chunks = this.chunks.size;
+    const localUnits = this.units.size;
+    const localAnimals = this.animals.size;
+    const localFishes = this.fishes.size;
+    const fpsStr = fps.toFixed(0).padStart(3, " ");
+    const ftStr = this.perfFrameTimeMs.toFixed(1).padStart(4, " ");
+    const stickStr = stick.toFixed(1).padStart(4, " ");
+    this.perfEl.textContent =
+      `fps   ${fpsStr}  (${ftStr} ms)\n` +
+      `srv   ${stickStr} ms / ${tickBudget.toFixed(0)} ms tick\n` +
+      `world A:${this.perfAnimalCount} U:${this.perfUnitCount} F:${this.perfFishCount}\n` +
+      `local A:${localAnimals} U:${localUnits} F:${localFishes} chk:${chunks}`;
+    let cls = "";
+    if (fps < 30 || stick > tickBudget * 0.9) cls = "bad";
+    else if (fps < 50 || stick > tickBudget * 0.6) cls = "warn";
+    this.perfEl.className = cls;
   }
 
   private flagFor(playerId: PlayerId): string {

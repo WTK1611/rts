@@ -44,7 +44,7 @@ interface PlayerSlot {
   bot?: AIBot;
 }
 
-const BOT_COUNT = 3;
+const BOT_COUNT = Number(process.env.RTS_BOT_COUNT ?? 1);
 const BOT_RESPAWN_DELAY_MS = 12000;
 const pendingBotRespawns: Map<PlayerId, number> = new Map();
 
@@ -157,6 +157,7 @@ const world = {
     () => new Set<string>(),
   ),
   bots: [] as AIBot[],
+  tickMsAvg: 0,
 };
 
 const slots = new Map<WebSocket, PlayerSlot>();
@@ -359,6 +360,7 @@ function joinPlayer(
 }
 
 function tick(): void {
+  const tickStart = performance.now();
   const now = Date.now();
   const dt = (now - world.lastTick) / 1000;
   world.lastTick = now;
@@ -512,8 +514,15 @@ function tick(): void {
       artifactFinds,
       tribeSplits,
       resourceFlows: resourceFlows.filter((f) => f.owner === slot.id),
+      serverTickMs: world.tickMsAvg,
+      animalCount: world.sim.animals.size,
+      unitCount: world.sim.units.size,
+      fishCount: world.sim.fishes.size,
     });
   }
+
+  const tickMs = performance.now() - tickStart;
+  world.tickMsAvg = world.tickMsAvg * 0.9 + tickMs * 0.1;
 
   for (const sp of splitJoinPayloads) {
     const splitUnits = units.filter((u) => u.owner === sp.playerId);

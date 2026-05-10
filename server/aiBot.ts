@@ -25,6 +25,9 @@ const DANGER_DETECT: Partial<Record<AnimalKind, number>> = {
   alligator: 5,
 };
 
+const DANGER_MAX_RANGE =
+  Math.max(...Object.values(DANGER_DETECT).map((v) => v ?? 0)) + 5;
+
 interface BotUnitMem {
   cooldown: number;
 }
@@ -128,27 +131,35 @@ export class AIBot {
   }
 
   private maybeRetreat(u: SimUnit): boolean {
-    let nearest: { a: SimAnimal; d: number; range: number } | null = null;
-    for (const a of this.sim.animals.values()) {
-      if (a.hp <= 0) continue;
+    let nearestA: SimAnimal | null = null;
+    let nearestD = Infinity;
+    let nearestRange = 0;
+    this.sim.forEachAnimalInRadius(u.gx, u.gy, DANGER_MAX_RANGE, (a, d2) => {
+      if (a.hp <= 0) return;
       const dr = DANGER_DETECT[a.kind];
-      if (dr === undefined) continue;
-      const d = Math.hypot(a.gx - u.gx, a.gy - u.gy);
-      if (d > dr + 5) continue;
-      if (!nearest || d < nearest.d) nearest = { a, d, range: dr };
-    }
-    if (!nearest) return false;
+      if (dr === undefined) return;
+      const limit = dr + 5;
+      if (d2 > limit * limit) return;
+      const d = Math.sqrt(d2);
+      if (!nearestA || d < nearestD) {
+        nearestA = a;
+        nearestD = d;
+        nearestRange = dr;
+      }
+    });
+    if (!nearestA) return false;
+    const near: SimAnimal = nearestA;
 
     const lethal =
-      nearest.a.kind === "mammoth" ||
-      nearest.a.kind === "caveLion" ||
-      nearest.a.kind === "alligator";
+      near.kind === "mammoth" ||
+      near.kind === "caveLion" ||
+      near.kind === "alligator";
     const lowHp = u.hp < RETREAT_HP_THRESHOLD;
     if (!lethal && !lowHp) return false;
-    if (nearest.d > nearest.range + 1) return false;
+    if (nearestD > nearestRange + 1) return false;
 
-    const dx = u.gx - nearest.a.gx;
-    const dy = u.gy - nearest.a.gy;
+    const dx = u.gx - near.gx;
+    const dy = u.gy - near.gy;
     const len = Math.max(0.001, Math.hypot(dx, dy));
     for (let step = 7; step >= 3; step--) {
       const ti = Math.floor(u.gx + (dx / len) * step);
@@ -171,20 +182,24 @@ export class AIBot {
     const haveSpear = r.holz >= 1 && r.stein >= 1;
     if (food >= 30 && !haveSpear) return false;
 
-    let nearest: { a: SimAnimal; d: number } | null = null;
-    for (const a of this.sim.animals.values()) {
-      if (a.hp <= 0) continue;
-      if (!SAFE_HUNT.has(a.kind)) continue;
-      const d = Math.hypot(a.gx - u.gx, a.gy - u.gy);
-      if (d > HUNT_SCAN_RADIUS) continue;
+    let nearestA: SimAnimal | null = null;
+    let nearestD = Infinity;
+    this.sim.forEachAnimalInRadius(u.gx, u.gy, HUNT_SCAN_RADIUS, (a, d2) => {
+      if (a.hp <= 0) return;
+      if (!SAFE_HUNT.has(a.kind)) return;
       if (center) {
-        const dc = Math.hypot(a.gx - center.x, a.gy - center.y);
-        if (dc > MAX_TARGET_DIST_FROM_CENTER) continue;
+        const dcx = a.gx - center.x;
+        const dcy = a.gy - center.y;
+        if (dcx * dcx + dcy * dcy > MAX_TARGET_DIST_FROM_CENTER * MAX_TARGET_DIST_FROM_CENTER) return;
       }
-      if (!nearest || d < nearest.d) nearest = { a, d };
-    }
-    if (!nearest) return false;
-    this.sim.cmdHunt(this.id, [u.id], nearest.a.id);
+      const d = Math.sqrt(d2);
+      if (!nearestA || d < nearestD) {
+        nearestA = a;
+        nearestD = d;
+      }
+    });
+    if (!nearestA) return false;
+    this.sim.cmdHunt(this.id, [u.id], (nearestA as SimAnimal).id);
     return true;
   }
 

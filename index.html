@@ -227,6 +227,20 @@
         image-rendering: pixelated; cursor: crosshair;
         touch-action: none;
       }
+      #perf {
+        position: fixed; top: 12px; right: 12px;
+        background: rgba(10, 14, 10, 0.85); color: #c8d8c8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; line-height: 1.35;
+        padding: 6px 10px; border-radius: 6px;
+        border: 1px solid #3a5a3a;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        z-index: 6; pointer-events: none;
+        font-variant-numeric: tabular-nums;
+        white-space: pre;
+      }
+      #perf.warn { color: #ffd84d; }
+      #perf.bad { color: #ff8a6a; border-color: #a05050; }
       #lobby {
         position: fixed; inset: 0; display: flex;
         align-items: center; justify-content: center;
@@ -419,6 +433,7 @@
       <div id="minimap-label">Karte</div>
       <canvas id="minimap" width="200" height="200"></canvas>
     </div>
+    <div id="perf"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

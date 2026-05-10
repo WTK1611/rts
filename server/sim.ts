@@ -164,7 +164,7 @@ function pickHuntWeapon(res: Resources): HuntWeapon {
   return "fists";
 }
 
-const ANIMAL_SPAWN_RADIUS = 220;
+const ANIMAL_SPAWN_RADIUS = 160;
 const HUNT_INTERVAL = 0.9;
 const FIST_HUNT_DAMAGE = 2;
 const STONE_HUNT_DAMAGE = 3;
@@ -912,6 +912,31 @@ export class Sim {
       }
     }
     return out;
+  }
+
+  forEachAnimalInRadius(
+    gx: number,
+    gy: number,
+    radius: number,
+    fn: (a: SimAnimal, distSq: number) => void,
+  ): void {
+    const r2 = radius * radius;
+    const cs = SPATIAL_CELL;
+    const rr = Math.ceil(radius / cs);
+    const ux = Math.floor(gx / cs);
+    const uy = Math.floor(gy / cs);
+    for (let cy = uy - rr; cy <= uy + rr; cy++) {
+      for (let cx = ux - rr; cx <= ux + rr; cx++) {
+        const arr = this.animalGrid.get(gridKey(cx, cy));
+        if (!arr) continue;
+        for (const a of arr) {
+          const dx = a.gx - gx;
+          const dy = a.gy - gy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= r2) fn(a, d2);
+        }
+      }
+    }
   }
 
   private stepAnimals(dt: number): void {
