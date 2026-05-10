@@ -104,6 +104,7 @@ export interface SimUnit {
   huntTarget: string | null;
   huntTimer: number;
   huntWeapon: HuntWeapon | null;
+  weapon: HuntWeapon;
   huntFacing: 1 | -1;
   harvestTimer: number;
   lastFootprintTile: { i: number; j: number } | null;
@@ -166,11 +167,24 @@ const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
   bear:        { hp: 22, speed: 3.0, meat: 14, biomes: ["wald", "felsen"],                     density: 0.0016, wanderRadius: 10, damage: 8,  aggressive: true,  detectRange: 6, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, predator: true,  preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, aquatic: false },
 };
 
-function pickHuntWeapon(res: Resources): HuntWeapon {
+function craftBetterWeapon(current: HuntWeapon, res: Resources): HuntWeapon | null {
+  if (current === "spear") return null;
   if (res.holz >= 1 && res.stein >= 1) return "spear";
+  if (current === "club" || current === "stones") return null;
   if (res.holz >= 1) return "club";
   if (res.stein >= 1) return "stones";
-  return "fists";
+  return null;
+}
+
+function payWeaponCost(weapon: HuntWeapon, res: Resources): void {
+  if (weapon === "spear") {
+    res.holz -= 1;
+    res.stein -= 1;
+  } else if (weapon === "club") {
+    res.holz -= 1;
+  } else if (weapon === "stones") {
+    res.stein -= 1;
+  }
 }
 
 const ANIMAL_SPAWN_RADIUS = 200;
@@ -1747,22 +1761,27 @@ export class Sim {
       u.state = "hunting";
       u.huntFacing = a.gx >= u.gx ? 1 : -1;
       const ownerRes = this.resources[u.owner];
-      u.huntWeapon = pickHuntWeapon(ownerRes);
+      const upgrade = craftBetterWeapon(u.weapon, ownerRes);
+      if (upgrade) {
+        payWeaponCost(upgrade, ownerRes);
+        if (upgrade === "spear") {
+          this.pushFlow(u.owner, "holz", -1, u.gx, u.gy);
+          this.pushFlow(u.owner, "stein", -1, u.gx, u.gy);
+        } else if (upgrade === "club") {
+          this.pushFlow(u.owner, "holz", -1, u.gx, u.gy);
+        } else if (upgrade === "stones") {
+          this.pushFlow(u.owner, "stein", -1, u.gx, u.gy);
+        }
+        u.weapon = upgrade;
+      }
+      u.huntWeapon = u.weapon;
       u.huntTimer += dt;
       if (u.huntTimer >= HUNT_INTERVAL) {
         u.huntTimer = 0;
         let damage = FIST_HUNT_DAMAGE;
-        if (u.huntWeapon === "spear") {
-          ownerRes.holz -= 1;
-          ownerRes.stein -= 1;
-          damage = SPEAR_HUNT_DAMAGE;
-        } else if (u.huntWeapon === "club") {
-          ownerRes.holz -= 1;
-          damage = CLUB_HUNT_DAMAGE;
-        } else if (u.huntWeapon === "stones") {
-          ownerRes.stein -= 1;
-          damage = STONE_HUNT_DAMAGE;
-        }
+        if (u.weapon === "spear") damage = SPEAR_HUNT_DAMAGE;
+        else if (u.weapon === "club") damage = CLUB_HUNT_DAMAGE;
+        else if (u.weapon === "stones") damage = STONE_HUNT_DAMAGE;
         a.hp -= damage;
         const spec = ANIMAL_SPECS[a.kind];
         if (spec.damage > 0) {
@@ -1851,6 +1870,7 @@ export class Sim {
         huntTarget: null,
         huntTimer: 0,
         huntWeapon: null,
+        weapon: "fists",
         huntFacing: 1,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
@@ -1914,6 +1934,7 @@ export class Sim {
         huntTarget: null,
         huntTimer: 0,
         huntWeapon: null,
+        weapon: "fists",
         huntFacing: 1,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
@@ -2974,6 +2995,7 @@ export class Sim {
       huntTarget: null,
       huntTimer: 0,
       huntWeapon: null,
+      weapon: "fists",
       huntFacing: 1,
       harvestTimer: 0,
       lastFootprintTile: { i: spot.i, j: spot.j },
