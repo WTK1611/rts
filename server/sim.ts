@@ -2985,7 +2985,12 @@ export class Sim {
       if (dx * dx + dy * dy <= r2) cluster++;
     }
     if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) return;
-    if (this.nearVolcanoNight(cx, cy, CAMPFIRE_RANGE)) return;
+    const volR2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+    for (const v of this.volcanoes) {
+      const dx = v.gx - cx;
+      const dy = v.gy - cy;
+      if (dx * dx + dy * dy <= volR2) return;
+    }
     r.holz -= CAMPFIRE_IGNITE_HOLZ_COST;
     r.stein -= CAMPFIRE_IGNITE_STEIN_COST;
     this.pushFlow(p, "holz", -CAMPFIRE_IGNITE_HOLZ_COST, cx, cy);

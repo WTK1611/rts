@@ -40,6 +40,8 @@ export class Unit {
   head: Phaser.GameObjects.Arc;
   hair: Phaser.GameObjects.Arc;
   hairBack: Phaser.GameObjects.Ellipse | null = null;
+  bangs: Phaser.GameObjects.Ellipse | null = null;
+  bun: Phaser.GameObjects.Arc | null = null;
   beard: Phaser.GameObjects.Ellipse | null = null;
   crown: Phaser.GameObjects.Graphics;
   bodyShadow: Phaser.GameObjects.Ellipse;
@@ -105,16 +107,27 @@ export class Unit {
     const dark = shade(snap.color, 0.7);
     const light = shade(snap.color, 1.25);
 
-    this.bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
-    this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
-    this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
+    const isFemale = snap.gender === "f";
+    const bodyW = isFemale ? 12 : 18;
+    const bodyH = isFemale ? 22 : 20;
+    const bodyY = isFemale ? -14 : -13;
+    this.bodyShadow = scene.add.ellipse(1, bodyY + 1, bodyW, bodyH, dark, 0.6);
+    this.body = scene.add.ellipse(0, bodyY, bodyW, bodyH, snap.color).setStrokeStyle(1.5, 0x141414);
+    this.bodyHighlight = scene.add.ellipse(
+      isFemale ? -2 : -3,
+      isFemale ? -18 : -16,
+      isFemale ? 4 : 7,
+      isFemale ? 7 : 10,
+      light,
+      0.85,
+    );
 
-    if (snap.gender === "f") {
-      this.hairBack = scene.add.ellipse(0, -20, 14, 18, HAIR_BASE_COLOR);
-    }
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
-    if (snap.gender === "f") {
-      this.hair = scene.add.arc(0, -27, 7, 180, 360, false, HAIR_BASE_COLOR);
+    if (isFemale) {
+      this.hair = scene.add.arc(0, -27, 8, 180, 360, false, HAIR_BASE_COLOR);
+      this.bangs = scene.add.ellipse(0, -24, 11, 3, HAIR_BASE_COLOR);
+      this.bun = scene.add.arc(0, -34, 4, 0, 360, false, HAIR_BASE_COLOR)
+        .setStrokeStyle(1, 0x141414);
     } else {
       this.hair = scene.add.arc(0, -28, 6, 200, 340, false, HAIR_BASE_COLOR);
       this.beard = scene.add.ellipse(0, -22, 7, 3, HAIR_BASE_COLOR);
@@ -149,6 +162,8 @@ export class Unit {
     ];
     if (this.hairBack) layers.push(this.hairBack);
     layers.push(this.head, this.hair);
+    if (this.bangs) layers.push(this.bangs);
+    if (this.bun) layers.push(this.bun);
     if (this.beard) layers.push(this.beard);
     layers.push(this.crown);
     layers.push(this.hpBarBg, this.hpBarFill, this.nameLabel);
@@ -260,6 +275,8 @@ export class Unit {
       this.head.setAngle(lean);
       this.hair.setAngle(lean);
       this.hairBack?.setAngle(lean);
+      this.bangs?.setAngle(lean);
+      this.bun?.setAngle(lean);
       this.beard?.setAngle(lean);
     }
     let hairColor = HAIR_BASE_COLOR;
@@ -273,6 +290,8 @@ export class Unit {
     }
     this.hair.setFillStyle(hairColor);
     this.hairBack?.setFillStyle(hairColor);
+    this.bangs?.setFillStyle(hairColor);
+    this.bun?.setFillStyle(hairColor);
     this.beard?.setFillStyle(hairColor);
   }
 
