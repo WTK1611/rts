@@ -1870,7 +1870,8 @@ export class Sim {
     const usedNames = new Set<string>();
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
-      const ageJitter = rand01(this.seed ^ 0xa6e, k, p) * 240;
+      const isParent = k < 2;
+      const startAge = isParent ? CHILD_AGE_SEC * 2 : CHILD_AGE_SEC;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
       usedNames.add(firstName);
@@ -1895,7 +1896,7 @@ export class Sim {
         hpMax: UNIT_HP_MAX,
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
-        ageSec: CHILD_AGE_SEC + ageJitter,
+        ageSec: startAge,
         gender,
         firstName,
         isChief: false,
@@ -1935,7 +1936,8 @@ export class Sim {
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const idx = base + k;
-      const ageJitter = rand01(this.seed ^ 0xa6e, idx, p) * 240;
+      const isParent = k < 2;
+      const startAge = isParent ? CHILD_AGE_SEC * 2 : CHILD_AGE_SEC;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, idx, usedNames);
       usedNames.add(firstName);
@@ -1960,7 +1962,7 @@ export class Sim {
         hpMax: UNIT_HP_MAX,
         eatCooldown: 0,
         autoHuntScanTimer: rand01(this.seed ^ 0xb33, idx, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
-        ageSec: CHILD_AGE_SEC + ageJitter,
+        ageSec: startAge,
         gender,
         firstName,
         isChief: false,
