@@ -36,13 +36,13 @@ export class Unit {
   owner: PlayerId;
   color: number;
   container: Phaser.GameObjects.Container;
-  body: Phaser.GameObjects.Shape;
+  body: Phaser.GameObjects.Ellipse;
   head: Phaser.GameObjects.Arc;
   hair: Phaser.GameObjects.Arc;
   hairBack: Phaser.GameObjects.Ellipse | null = null;
   beard: Phaser.GameObjects.Ellipse | null = null;
   crown: Phaser.GameObjects.Graphics;
-  bodyShadow: Phaser.GameObjects.Shape;
+  bodyShadow: Phaser.GameObjects.Ellipse;
   bodyHighlight: Phaser.GameObjects.Ellipse;
   shadow: Phaser.GameObjects.Ellipse;
   ownerRing: Phaser.GameObjects.Ellipse;
@@ -105,26 +105,15 @@ export class Unit {
     const dark = shade(snap.color, 0.7);
     const light = shade(snap.color, 1.25);
 
-    const isFemale = snap.gender === "f";
-    if (isFemale) {
-      this.bodyShadow = scene.add.ellipse(1, -13, 12, 22, dark, 0.6);
-      this.body = scene.add.ellipse(0, -14, 12, 22, snap.color)
-        .setStrokeStyle(1.5, 0x141414);
-      this.bodyHighlight = scene.add.ellipse(-2, -19, 4, 7, light, 0.85);
-    } else {
-      const vPoints = [-10, -10, 10, -10, 5, 10, -5, 10];
-      this.bodyShadow = scene.add.polygon(1, -12, vPoints, dark, 0.6);
-      this.body = scene.add.polygon(0, -13, vPoints, snap.color)
-        .setStrokeStyle(1.5, 0x141414);
-      this.bodyHighlight = scene.add.ellipse(-3, -18, 6, 8, light, 0.85);
-    }
+    this.bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
+    this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
+    this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
 
-    if (isFemale) {
-      this.hairBack = scene.add.ellipse(0, -18, 14, 16, HAIR_BASE_COLOR);
+    if (snap.gender === "f") {
+      this.hairBack = scene.add.ellipse(0, -20, 14, 18, HAIR_BASE_COLOR);
     }
-
     this.head = scene.add.circle(0, -26, 6, 0xf3c79a).setStrokeStyle(1.5, 0x141414);
-    if (isFemale) {
+    if (snap.gender === "f") {
       this.hair = scene.add.arc(0, -27, 7, 180, 360, false, HAIR_BASE_COLOR);
     } else {
       this.hair = scene.add.arc(0, -28, 6, 200, 340, false, HAIR_BASE_COLOR);
