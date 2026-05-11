@@ -475,6 +475,32 @@ export function stoneAmountAt(seed: number, i: number, j: number): number {
   return 4 + (hash3(seed ^ 0x57e, i, j) % 4);
 }
 
+export function hasCactusAt(seed: number, i: number, j: number): boolean {
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (biomeAt(seed, i, j) !== "wueste") return false;
+  if (hasVolcanoAt(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
+  if (hasTreeAt(seed, i, j)) return false;
+  if (hasBushAt(seed, i, j)) return false;
+  if (hasMushroomAt(seed, i, j)) return false;
+  if (hasStoneAt(seed, i, j)) return false;
+  return rand01(seed ^ 0xcac7, i, j) < 0.05;
+}
+
+export function cactusIdAt(i: number, j: number): string {
+  return `c_${i}_${j}`;
+}
+
+export function parseCactusId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^c_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function cactusYieldAt(seed: number, i: number, j: number): number {
+  return 4 + (hash3(seed ^ 0xcac7, i, j) % 4);
+}
+
 export const ARTIFACT_COUNT = 10;
 const ARTIFACT_AREA_RADIUS = 180;
 const ARTIFACT_MIN_SEPARATION = 36;
@@ -508,6 +534,7 @@ export function artifactsFromSeed(seed: number): ArtifactSpec[] {
     if (hasBushAt(seed, i, j)) continue;
     if (hasMushroomAt(seed, i, j)) continue;
     if (hasStoneAt(seed, i, j)) continue;
+    if (hasCactusAt(seed, i, j)) continue;
     let tooNearSpawn = false;
     for (const s of sp) {
       const di = i - s.cx;

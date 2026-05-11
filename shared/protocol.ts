@@ -178,6 +178,18 @@ export interface ArtifactFindEvent {
 
 export const ARTIFACT_DISCOVERY_RADIUS = 4;
 
+export interface DropPileSnapshot {
+  id: string;
+  gx: number;
+  gy: number;
+  resources: Resources;
+  decaySec: number;
+}
+
+export const DROP_PILE_LIFETIME_SEC = 180;
+export const DROP_PILE_PICKUP_RADIUS = 0.7;
+export const DROP_PILE_PICKUP_DELAY_SEC = 4;
+
 export interface Footprint {
   o: PlayerId;
   i: number;
@@ -206,6 +218,7 @@ export interface InitMessage {
   campfires: CampfireSnapshot[];
   tribeCounts: number[];
   artifacts: ArtifactSnapshot[];
+  dropPiles: DropPileSnapshot[];
   gameTimeSec: number;
   treeGrowth: TreeGrowthEvent[];
   tribeOrigin: PlayerId[];
@@ -257,6 +270,8 @@ export interface StateMessage {
   artifactFinds: ArtifactFindEvent[];
   tribeSplits: TribeSplit[];
   resourceFlows: ResourceFlowEvent[];
+  dropPiles: DropPileSnapshot[];
+  removedDropPileIds: string[];
   serverTickMs?: number;
   animalCount?: number;
   unitCount?: number;

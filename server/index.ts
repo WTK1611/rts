@@ -331,6 +331,7 @@ function joinPlayer(
     campfires: allCampfires,
     tribeCounts: world.sim.tribeCounts(),
     artifacts: world.sim.artifactsSnapshot(),
+    dropPiles: world.sim.dropPilesSnapshot(),
     gameTimeSec: world.sim.gameTimeSec,
     treeGrowth: world.sim.treeGrowthSnapshot(),
     tribeOrigin: [...world.sim.tribeOrigin],
@@ -429,6 +430,8 @@ function tick(): void {
   const tribeCounts = world.sim.tribeCounts();
   const artifactFinds = world.sim.consumeArtifactFinds();
   const resourceFlows = world.sim.consumeResourceFlows();
+  const newDropPiles = world.sim.consumeNewDropPiles();
+  const removedDropPileIds = world.sim.consumeRemovedDropPileIds();
   const treeGrowthEvents = world.sim.consumeTreeGrowthEvents();
   const tribeOrigin = [...world.sim.tribeOrigin];
   const winnerOrigin = world.sim.winnerOrigin();
@@ -512,6 +515,8 @@ function tick(): void {
       artifactFinds,
       tribeSplits,
       resourceFlows: resourceFlows.filter((f) => f.owner === slot.id),
+      dropPiles: newDropPiles,
+      removedDropPileIds,
       serverTickMs: world.tickMsAvg,
       animalCount: world.sim.animals.size,
       unitCount: world.sim.units.size,
@@ -547,7 +552,16 @@ function tick(): void {
   }
 }
 
-setInterval(tick, 1000 / TICK_RATE);
+const tickInterval = setInterval(tick, 1000 / TICK_RATE);
+
+function shutdown(): void {
+  clearInterval(tickInterval);
+  for (const client of wss.clients) client.terminate();
+  wss.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 300).unref();
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 function disconnect(ws: WebSocket): void {
   const slot = slots.get(ws);

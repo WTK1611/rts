@@ -8,6 +8,10 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
+  DROP_PILE_LIFETIME_SEC,
+  DROP_PILE_PICKUP_DELAY_SEC,
+  DROP_PILE_PICKUP_RADIUS,
+  DropPileSnapshot,
   CampfireSnapshot,
   DAY_LENGTH_SEC,
   DayPhase,
@@ -28,6 +32,7 @@ import {
   resourceCap,
   ResourceFlowEvent,
   Resources,
+  RESOURCE_KEYS,
   TICK_RATE,
   TreeGrowthEvent,
   TreeGrowthStage,
@@ -41,7 +46,9 @@ import {
   Biome,
   biomeAt,
   bushBerriesAt,
+  cactusYieldAt,
   hasBushAt,
+  hasCactusAt,
   hasFishAt,
   hasMushroomAt,
   hasStoneAt,
@@ -78,6 +85,11 @@ const STONE_AUTOPICK_GAIN = 1;
 const STONE_HARVEST_AMOUNT = 2;
 const FISH_AUTOPICK_GAIN = 1;
 const WATER_AUTOPICK_GAIN = 1;
+const CACTUS_REGROW_TICKS = TICK_RATE * 180;
+const CACTUS_AUTOPICK_HOLZ = 1;
+const CACTUS_AUTOPICK_WASSER = 1;
+const CACTUS_HARVEST_HOLZ = 1;
+const CACTUS_HARVEST_WASSER = 1;
 
 const CAMPFIRE_IGNITE_MIN_UNITS = 2;
 const CAMPFIRE_IGNITE_HOLZ_COST = 5;
@@ -111,6 +123,7 @@ export interface SimUnit {
   huntTarget: string | null;
   huntTimer: number;
   huntWeapon: HuntWeapon | null;
+  huntAuto: boolean;
   weapon: HuntWeapon;
   huntFacing: 1 | -1;
   harvestTimer: number;
@@ -217,11 +230,10 @@ const ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ = 12 * 12;
 const ANIMAL_RESPAWN_TILE_ATTEMPTS = 60;
 const ANIMAL_FULL_STEP_RADIUS = 12;
 const ANIMAL_PASSIVE_STEP_BUCKETS = 10;
-const TRIBE_COHESION_IDLE_SEC = 2.0;
 const FOLLOW_CHIEF_NEAR = 5;
-const FOLLOW_CHIEF_SCAN_INTERVAL = 0.5;
-const FOLLOW_CHIEF_SIGHT = 5;
-const AUTO_FORAGE_CHIEF_RADIUS = 6;
+const FOLLOW_CHIEF_SCAN_INTERVAL = 0.3;
+const CHIEF_VISION_RADIUS = 9;
+const AUTO_HUNT_ABORT_DIST = CHIEF_VISION_RADIUS + 3;
 
 export interface SimCampfire {
   id: string;
@@ -316,6 +328,15 @@ function updateBucketForId(id: string, buckets: number): number {
   return Math.abs(h) % buckets;
 }
 
+interface SimDropPile {
+  id: string;
+  gx: number;
+  gy: number;
+  resources: Resources;
+  decaySec: number;
+  pickupDelaySec: number;
+}
+
 function objKey(kind: ObjectKind, i: number, j: number): string {
   const p =
     kind === "tree"
@@ -326,7 +347,9 @@ function objKey(kind: ObjectKind, i: number, j: number): string {
           ? "m"
           : kind === "fish"
             ? "f"
-            : "s";
+            : kind === "cactus"
+              ? "c"
+              : "s";
   return `${p}_${i}_${j}`;
 }
 
@@ -376,6 +399,10 @@ export class Sim {
   fishes: Map<string, SimFish> = new Map();
   removedFishIds: string[] = [];
   nextFishIdx = 0;
+  dropPiles: Map<string, SimDropPile> = new Map();
+  newDropPiles: SimDropPile[] = [];
+  removedDropPileIds: string[] = [];
+  private nextDropPileIdx = 0;
   fishCap = 0;
   fishBreedScanTimer = 0;
   tick = 0;
@@ -388,6 +415,17 @@ export class Sim {
   private unitGrid: Map<number, SimUnit[]> = new Map();
   private fishGrid: Map<number, SimFish[]> = new Map();
   private activeAnimalIds = new Set<string>();
+
+  // Per-tick caches. Rebuilt at the start of each step() and refreshed
+  // after mutations that change ownership or chief state. Used by hot
+  // helpers that previously iterated the full unit map.
+  private byOwnerCache: SimUnit[][] = Array.from(
+    { length: MAX_PLAYERS },
+    () => [],
+  );
+  private chiefByOwnerCache: Array<SimUnit | null> = new Array(
+    MAX_PLAYERS,
+  ).fill(null);
 
   constructor(seed: number) {
     this.seed = seed;
@@ -936,14 +974,19 @@ export class Sim {
       if (!u || u.owner !== owner) continue;
       u.autoFollowing = false;
       const blocked = this.blockedTilesFor(u, claimed);
-      this.startHunt(u, a, blocked);
+      this.startHunt(u, a, blocked, false);
       const last = u.path[u.path.length - 1];
       if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
     }
   }
 
-  private startHunt(u: SimUnit, a: SimAnimal, blocked: Set<string>): void {
+  private startHunt(
+    u: SimUnit,
+    a: SimAnimal,
+    blocked: Set<string>,
+    auto: boolean,
+  ): void {
     const bestPath = this.findHuntApproach(u, a, blocked);
     if (!bestPath) return;
     u.path =
@@ -951,6 +994,7 @@ export class Sim {
         ? bestPath.slice(1).map((c) => ({ gx: c.i + 0.5, gy: c.j + 0.5 }))
         : [];
     u.huntTarget = a.id;
+    u.huntAuto = auto;
     u.harvestTarget = null;
     u.huntTimer = 0;
     u.huntWeapon = null;
@@ -1002,6 +1046,18 @@ export class Sim {
       if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
     }
     return bestPath;
+  }
+
+  private rebuildOwnerCaches(): void {
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      const arr = this.byOwnerCache[p];
+      if (arr.length > 0) arr.length = 0;
+      this.chiefByOwnerCache[p] = null;
+    }
+    for (const u of this.units.values()) {
+      this.byOwnerCache[u.owner].push(u);
+      if (u.isChief) this.chiefByOwnerCache[u.owner] = u;
+    }
   }
 
   private rebuildSpatialIndex(): void {
@@ -1813,8 +1869,8 @@ export class Sim {
   private maybeAutoEngage(u: SimUnit): void {
     let allyTarget: string | null = null;
     let allyD2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
-    for (const ally of this.units.values()) {
-      if (ally.owner !== u.owner) continue;
+    const allies = this.byOwnerCache[u.owner];
+    for (const ally of allies) {
       if (ally.id === u.id) continue;
       if (!ally.huntTarget) continue;
       if (ally.hp <= 0) continue;
@@ -1828,7 +1884,7 @@ export class Sim {
     }
     if (allyTarget && this.animals.has(allyTarget)) {
       const a = this.animals.get(allyTarget)!;
-      this.startHunt(u, a, new Set<string>());
+      this.startHunt(u, a, new Set<string>(), true);
       return;
     }
 
@@ -1859,13 +1915,13 @@ export class Sim {
       }
     }
     if (bestAnimal) {
-      this.startHunt(u, bestAnimal, new Set<string>());
+      this.startHunt(u, bestAnimal, new Set<string>(), true);
     }
   }
 
   private callForHelp(victim: SimUnit, animalId: string): void {
-    for (const u of this.units.values()) {
-      if (u.owner !== victim.owner) continue;
+    const list = this.byOwnerCache[victim.owner];
+    for (const u of list) {
       if (u.hp <= 0) continue;
       if (u.huntTarget === animalId) continue;
       u.huntTarget = animalId;
@@ -1881,8 +1937,8 @@ export class Sim {
   private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
     const claimed = new Set<string>();
     const r2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
-    for (const u of this.units.values()) {
-      if (u.owner !== hunter.owner) continue;
+    const list = this.byOwnerCache[hunter.owner];
+    for (const u of list) {
       if (u.id === hunter.id) continue;
       if (u.huntTarget) continue;
       if (u.harvestTarget) continue;
@@ -1891,7 +1947,7 @@ export class Sim {
       const dy = u.gy - a.gy;
       if (dx * dx + dy * dy > r2) continue;
       const blocked = this.blockedTilesFor(u, claimed);
-      this.startHunt(u, a, blocked);
+      this.startHunt(u, a, blocked, hunter.huntAuto);
       const last = u.path[u.path.length - 1];
       if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       else claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
@@ -1903,10 +1959,26 @@ export class Sim {
     const a = this.animals.get(u.huntTarget);
     if (!a) {
       u.huntTarget = null;
+      u.huntAuto = false;
       u.huntWeapon = null;
       u.state = "idle";
       u.path = [];
       return true;
+    }
+    if (u.huntAuto && !u.isChief) {
+      const c = this.chiefByOwnerCache[u.owner];
+      if (c) {
+        const cdx = u.gx - c.gx;
+        const cdy = u.gy - c.gy;
+        if (cdx * cdx + cdy * cdy > AUTO_HUNT_ABORT_DIST * AUTO_HUNT_ABORT_DIST) {
+          u.huntTarget = null;
+          u.huntAuto = false;
+          u.huntWeapon = null;
+          u.state = "idle";
+          u.path = [];
+          return true;
+        }
+      }
     }
     const dx = a.gx - u.gx;
     const dy = a.gy - u.gy;
@@ -1953,6 +2025,7 @@ export class Sim {
           this.animals.delete(a.id);
           this.removedAnimalIds.push(a.id);
           u.huntTarget = null;
+          u.huntAuto = false;
           u.huntWeapon = null;
           u.state = "idle";
         }
@@ -2031,6 +2104,7 @@ export class Sim {
         huntWeapon: null,
         weapon: "fists",
         huntFacing: 1,
+        huntAuto: false,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
         hp: UNIT_HP_MAX,
@@ -2097,6 +2171,7 @@ export class Sim {
         huntWeapon: null,
         weapon: "fists",
         huntFacing: 1,
+        huntAuto: false,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
         hp: UNIT_HP_MAX,
@@ -2146,7 +2221,7 @@ export class Sim {
     return removed;
   }
 
-  private campfireIdFor(p: PlayerId): string {
+  campfireIdFor(p: PlayerId): string {
     return `cf_p${p}`;
   }
 
@@ -2365,6 +2440,10 @@ export class Sim {
       hasStoneAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("stone", i, j))
     ) return "stone";
+    if (
+      hasCactusAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("cactus", i, j))
+    ) return "cactus";
     return null;
   }
 
@@ -2413,6 +2492,7 @@ export class Sim {
       u.path = [];
       u.harvestTarget = null;
       u.huntTarget = null;
+      u.huntAuto = false;
       u.huntWeapon = null;
       u.state = "idle";
       return;
@@ -2421,6 +2501,7 @@ export class Sim {
     u.state = "moving";
     u.harvestTarget = null;
     u.huntTarget = null;
+    u.huntAuto = false;
     u.huntWeapon = null;
   }
 
@@ -2462,6 +2543,7 @@ export class Sim {
         : [];
     u.harvestTarget = { kind, i: ti, j: tj };
     u.huntTarget = null;
+    u.huntAuto = false;
     u.huntWeapon = null;
     u.harvestTimer = 0;
     u.state = u.path.length > 0 ? "moving" : "harvesting";
@@ -2489,7 +2571,7 @@ export class Sim {
       if (a.hp <= 0) continue;
       if (Math.floor(a.gx) !== ti) continue;
       if (Math.floor(a.gy) !== tj) continue;
-      this.startHunt(u, a, this.blockedTilesFor(u, new Set()));
+      this.startHunt(u, a, this.blockedTilesFor(u, new Set()), true);
       return;
     }
   }
@@ -2544,6 +2626,21 @@ export class Sim {
           u, "stone", ti, tj, "stein",
           STONE_AUTOPICK_GAIN, 0,
         );
+      }
+    }
+    if (hasCactusAt(this.seed, ti, tj)) {
+      const k = objKey("cactus", ti, tj);
+      if (
+        !this.removedKeys.has(k) &&
+        (this.resourceRoom(u.owner, "holz") >= CACTUS_AUTOPICK_HOLZ ||
+          this.resourceRoom(u.owner, "wasser") >= CACTUS_AUTOPICK_WASSER)
+      ) {
+        this.autoPickAndRegrow(
+          u, "cactus", ti, tj, "holz",
+          CACTUS_AUTOPICK_HOLZ, CACTUS_REGROW_TICKS,
+        );
+        this.gainResource(u.owner, "wasser", CACTUS_AUTOPICK_WASSER, ti + 0.5, tj + 0.5);
+        return;
       }
     }
     this.tryAutoPickShallowFish(u, ti, tj);
@@ -2728,6 +2825,7 @@ export class Sim {
     this.lastPhase = phaseAt(this.gameTimeSec);
     this.rebuildSpatialIndex();
     this.rebuildActiveAnimalSet();
+    this.rebuildOwnerCaches();
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
     this.stepAnimalRespawn(dt);
@@ -2802,11 +2900,16 @@ export class Sim {
     this.expireFootprints();
     this.expireRegrows();
     this.reapDeadUnits();
+    this.stepDropPiles(dt);
     this.growthCheck(dt);
     this.encounterCheck();
+    // reapDeadUnits / growthCheck / encounterCheck can add, remove, or
+    // change the owner of units. Refresh the cache so the remaining
+    // tribe-scoped helpers see the post-mutation state.
+    this.rebuildOwnerCaches();
+    this.updateChiefs();
     this.spreadIdleUnits();
     this.cohereTribes();
-    this.updateChiefs();
     this.followChief(dt);
     this.campfireStep(dt);
     this.gatherAtCampfireStep();
@@ -2849,44 +2952,81 @@ export class Sim {
           hasStoneAt(this.seed, i, j) &&
           !this.removedKeys.has(objKey("stone", i, j))
         ) return true;
+        if (
+          hasCactusAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("cactus", i, j))
+        ) return true;
       }
     }
     return false;
   }
 
   private gatherAtCampfireStep(): void {
-    const FORAGE_SCAN_RADIUS = 9;
+    // Once a campfire is lit (afternoon/night), the tribe heads home and
+    // stays until sunrise; the campfire is auto-removed in the morning.
+    // Repath every 5 ticks (~250ms) — fast enough to hold them in place.
+    if (this.tick % 5 !== 3) return;
     const GATHER_RADIUS = CAMPFIRE_RANGE - 0.4;
     const gatherR2 = GATHER_RADIUS * GATHER_RADIUS;
+    const fireR2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+    const DEFEND_R2 = 4;
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!this.active[p]) continue;
       const f = this.campfires.get(this.campfireIdFor(p));
       if (!f) continue;
 
-      let chief: SimUnit | null = null;
-      for (const u of this.units.values()) {
-        if (u.owner === p && u.isChief) {
-          chief = u;
-          break;
-        }
-      }
-      if (chief && chief.path.length > 0) continue;
-
-      if (this.hasNearbyForageOrHunt(p, f.gx, f.gy, FORAGE_SCAN_RADIUS)) continue;
-
       const targetI = Math.floor(f.gx);
       const targetJ = Math.floor(f.gy);
       const claimed = new Set<string>();
-      for (const u of this.units.values()) {
-        if (u.owner !== p) continue;
-        if (u.huntTarget || u.harvestTarget) continue;
-        if (u.path.length > 0) continue;
+      for (const u of this.byOwnerCache[p]) {
+        u.harvestTarget = null;
+        if (u.huntTarget) {
+          const a = this.animals.get(u.huntTarget);
+          if (!a || a.hp <= 0) {
+            u.huntTarget = null;
+            u.huntAuto = false;
+            u.huntWeapon = null;
+          } else {
+            const adx = a.gx - u.gx;
+            const ady = a.gy - u.gy;
+            if (adx * adx + ady * ady > DEFEND_R2) {
+              u.huntTarget = null;
+              u.huntAuto = false;
+              u.huntWeapon = null;
+            }
+          }
+        }
+        if (u.huntTarget) continue;
+
         const dx = u.gx - f.gx;
         const dy = u.gy - f.gy;
-        if (dx * dx + dy * dy <= gatherR2) {
+        const atFire = dx * dx + dy * dy <= gatherR2;
+
+        if (atFire) {
+          if (u.path.length > 0) u.path = [];
+          if (u.state !== "idle") u.state = "idle";
           claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
           continue;
         }
+
+        if (this.unitAtAnyFire(u)) {
+          if (u.path.length > 0) u.path = [];
+          if (u.state !== "idle") u.state = "idle";
+          claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
+          continue;
+        }
+
+        if (u.path.length > 0) {
+          const last = u.path[u.path.length - 1];
+          const ldx = last.gx - f.gx;
+          const ldy = last.gy - f.gy;
+          if (ldx * ldx + ldy * ldy <= fireR2) {
+            claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
+            continue;
+          }
+          u.path = [];
+        }
+
         const blocked = this.blockedTilesFor(u, claimed);
         let target: { i: number; j: number } | null = null;
         if (this.isWalkable(targetI, targetJ) && !blocked.has(`${targetI},${targetJ}`)) {
@@ -3048,6 +3188,10 @@ export class Sim {
   }
 
   private encounterCheck(): void {
+    // Encounter cooldown is 60s; running this every 10 ticks (~500ms)
+    // is indistinguishable from every tick gameplay-wise but cuts the
+    // O(players² × units²) pair scan to a tenth.
+    if (this.tick % 10 !== 0) return;
     const byPlayer: SimUnit[][] = Array.from(
       { length: MAX_PLAYERS },
       () => [],
@@ -3146,6 +3290,7 @@ export class Sim {
       u.path = [];
       u.harvestTarget = null;
       u.huntTarget = null;
+      u.huntAuto = false;
       u.huntTimer = 0;
       u.huntWeapon = null;
       u.harvestTimer = 0;
@@ -3281,6 +3426,7 @@ export class Sim {
       u.path = [];
       u.harvestTarget = null;
       u.huntTarget = null;
+      u.huntAuto = false;
       u.huntTimer = 0;
       u.huntWeapon = null;
       u.harvestTimer = 0;
@@ -3370,6 +3516,7 @@ export class Sim {
       huntWeapon: null,
       weapon: "fists",
       huntFacing: 1,
+      huntAuto: false,
       harvestTimer: 0,
       lastFootprintTile: { i: spot.i, j: spot.j },
       hp: UNIT_HP_MAX,
@@ -3397,13 +3544,8 @@ export class Sim {
   }
 
   private updateChiefs(): void {
-    const byOwner: SimUnit[][] = Array.from(
-      { length: MAX_PLAYERS },
-      () => [],
-    );
-    for (const u of this.units.values()) byOwner[u.owner].push(u);
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      const list = byOwner[p];
+      const list = this.byOwnerCache[p];
       let chief: SimUnit | null = null;
       for (const u of list) {
         if (!u.isChief) continue;
@@ -3419,30 +3561,172 @@ export class Sim {
           if (uMale && !bestMale) best = u;
           else if (uMale === bestMale && u.ageSec > best.ageSec) best = u;
         }
-        if (best) best.isChief = true;
+        if (best) {
+          best.isChief = true;
+          chief = best;
+        }
       }
+      this.chiefByOwnerCache[p] = chief;
     }
   }
 
   private reapDeadUnits(): void {
     const before: number[] = new Array(MAX_PLAYERS).fill(0);
     for (const u of this.units.values()) before[u.owner]++;
+    const remaining: number[] = before.slice();
     for (const u of this.units.values()) {
       if (u.hp <= 0) {
+        this.dropFromDeadUnit(u, remaining[u.owner]);
+        remaining[u.owner]--;
         this.deadUnitIds.push(u.id);
         this.units.delete(u.id);
       }
     }
-    const after: number[] = new Array(MAX_PLAYERS).fill(0);
-    for (const u of this.units.values()) after[u.owner]++;
     for (let p = 0; p < MAX_PLAYERS; p++) {
-      if (this.active[p] && before[p] > 0 && after[p] === 0) {
+      if (this.active[p] && before[p] > 0 && remaining[p] === 0) {
         this.extinctTribes.push(p);
       }
     }
   }
 
+  private dropFromDeadUnit(u: SimUnit, tribeSizeBefore: number): void {
+    if (tribeSizeBefore <= 0) return;
+    const pool = this.resources[u.owner];
+    const drop = emptyResources();
+    let any = false;
+    if (tribeSizeBefore === 1) {
+      for (const k of RESOURCE_KEYS) {
+        const amt = pool[k];
+        if (amt > 0) {
+          drop[k] = amt;
+          pool[k] = 0;
+          any = true;
+        }
+      }
+    } else {
+      for (const k of RESOURCE_KEYS) {
+        const share = Math.floor(pool[k] / tribeSizeBefore);
+        if (share > 0) {
+          drop[k] = share;
+          pool[k] -= share;
+          any = true;
+        }
+      }
+    }
+    if (!any) return;
+    this.createDropPile(u.gx, u.gy, drop);
+  }
+
+  private createDropPile(gx: number, gy: number, resources: Resources): void {
+    const id = `drop_${this.nextDropPileIdx++}`;
+    const pile: SimDropPile = {
+      id,
+      gx,
+      gy,
+      resources,
+      decaySec: DROP_PILE_LIFETIME_SEC,
+      pickupDelaySec: DROP_PILE_PICKUP_DELAY_SEC,
+    };
+    this.dropPiles.set(id, pile);
+    this.newDropPiles.push(pile);
+  }
+
+  private stepDropPiles(dt: number): void {
+    if (this.dropPiles.size === 0) return;
+    const r2 = DROP_PILE_PICKUP_RADIUS * DROP_PILE_PICKUP_RADIUS;
+    const cs = SPATIAL_CELL;
+    const toRemove: string[] = [];
+    for (const pile of this.dropPiles.values()) {
+      if (pile.pickupDelaySec > 0) pile.pickupDelaySec -= dt;
+      let picker: SimUnit | null = null;
+      if (pile.pickupDelaySec <= 0) {
+        // Pickup radius is well below one spatial cell, but a pile near
+        // a cell boundary may have eligible pickers in neighbouring
+        // cells, so scan a 3x3 window.
+        const cgx = Math.floor(pile.gx / cs);
+        const cgy = Math.floor(pile.gy / cs);
+        outer: for (let dgy = -1; dgy <= 1; dgy++) {
+          for (let dgx = -1; dgx <= 1; dgx++) {
+            const arr = this.unitGrid.get(gridKey(cgx + dgx, cgy + dgy));
+            if (!arr) continue;
+            for (const u of arr) {
+              if (u.hp <= 0) continue;
+              const dx = u.gx - pile.gx;
+              const dy = u.gy - pile.gy;
+              if (dx * dx + dy * dy <= r2) {
+                picker = u;
+                break outer;
+              }
+            }
+          }
+        }
+      }
+      if (picker) {
+        let total = 0;
+        for (const k of RESOURCE_KEYS) {
+          const amt = pile.resources[k];
+          if (amt <= 0) continue;
+          const gained = this.gainResource(
+            picker.owner,
+            k,
+            amt,
+            pile.gx,
+            pile.gy,
+          );
+          pile.resources[k] -= gained;
+          total += pile.resources[k];
+        }
+        if (total <= 0) {
+          toRemove.push(pile.id);
+          continue;
+        }
+      }
+      pile.decaySec -= dt;
+      if (pile.decaySec <= 0) toRemove.push(pile.id);
+    }
+    for (const id of toRemove) {
+      this.dropPiles.delete(id);
+      this.removedDropPileIds.push(id);
+    }
+  }
+
+  dropPilesSnapshot(): DropPileSnapshot[] {
+    const out: DropPileSnapshot[] = [];
+    for (const p of this.dropPiles.values()) {
+      out.push({
+        id: p.id,
+        gx: p.gx,
+        gy: p.gy,
+        resources: { ...p.resources },
+        decaySec: p.decaySec,
+      });
+    }
+    return out;
+  }
+
+  consumeNewDropPiles(): DropPileSnapshot[] {
+    const out: DropPileSnapshot[] = this.newDropPiles.map((p) => ({
+      id: p.id,
+      gx: p.gx,
+      gy: p.gy,
+      resources: { ...p.resources },
+      decaySec: p.decaySec,
+    }));
+    this.newDropPiles = [];
+    return out;
+  }
+
+  consumeRemovedDropPileIds(): string[] {
+    const out = this.removedDropPileIds;
+    this.removedDropPileIds = [];
+    return out;
+  }
+
   private spreadIdleUnits(): void {
+    // Idle de-stacking is a slow cosmetic correction; running it every
+    // 5 ticks (~250ms) is invisible to the player but spares many A*
+    // calls per second. Offset from cohere/gather/encounter.
+    if (this.tick % 5 !== 1) return;
     const groups = new Map<string, SimUnit[]>();
     const dest = new Set<string>();
     for (const u of this.units.values()) {
@@ -3470,7 +3754,7 @@ export class Sim {
           this.startHarvest(u, t.kind, t.i, t.j, blocked);
         } else if (u.huntTarget && this.animals.has(u.huntTarget)) {
           const a = this.animals.get(u.huntTarget)!;
-          this.startHunt(u, a, blocked);
+          this.startHunt(u, a, blocked, u.huntAuto);
         } else {
           const free = this.findFreeTileNear(ti, tj, blocked);
           if (!free) continue;
@@ -3483,10 +3767,10 @@ export class Sim {
   }
 
   private cohereTribes(): void {
-    const chiefByOwner: Array<SimUnit | null> = new Array(MAX_PLAYERS).fill(null);
-    for (const u of this.units.values()) {
-      if (u.isChief) chiefByOwner[u.owner] = u;
-    }
+    // Tribe cohesion is a slow drift correction; every 5 ticks
+    // (~250ms) keeps the same gameplay feel at 1/5 the cost.
+    // Offset from spread/gather/encounter.
+    if (this.tick % 5 !== 2) return;
     const r2 = FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR;
     const claimed = new Set<string>();
     for (const u of this.units.values()) {
@@ -3494,7 +3778,9 @@ export class Sim {
       if (u.path.length > 0) continue;
       if (u.harvestTarget || u.huntTarget) continue;
       if (u.state !== "idle") continue;
-      const c = chiefByOwner[u.owner];
+      // Campfire takes priority: gatherAtCampfireStep herds the tribe home.
+      if (this.campfires.has(this.campfireIdFor(u.owner))) continue;
+      const c = this.chiefByOwnerCache[u.owner];
       if (!c) continue;
       const dx = u.gx - c.gx;
       const dy = u.gy - c.gy;
@@ -3516,103 +3802,149 @@ export class Sim {
   }
 
   private followChief(dt: number): void {
-    const chiefByOwner: Array<SimUnit | null> = new Array(MAX_PLAYERS).fill(null);
-    for (const u of this.units.values()) {
-      if (u.isChief) chiefByOwner[u.owner] = u;
-    }
     for (const u of this.units.values()) {
       if (u.isChief) continue;
       if (!this.active[u.owner]) continue;
       if (!this.followChiefEnabled[u.owner]) continue;
       if (u.huntTarget) continue;
       if (u.harvestTarget) continue;
+      // Campfire takes priority — sleeping at the fire, not foraging.
+      if (this.campfires.has(this.campfireIdFor(u.owner))) {
+        u.autoFollowing = false;
+        continue;
+      }
 
       u.autoFollowScanTimer -= dt;
 
-      const c = chiefByOwner[u.owner];
+      const c = this.chiefByOwnerCache[u.owner];
       if (!c) {
         u.autoFollowing = false;
         continue;
       }
 
-      const tribeSettled =
-        c.path.length === 0 &&
-        !c.harvestTarget &&
-        !c.huntTarget &&
-        c.idleSec >= TRIBE_COHESION_IDLE_SEC;
+      if (u.autoFollowScanTimer > 0) continue;
+      u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
 
-      if (u.path.length > 0) {
-        if (!u.autoFollowing) continue;
-        if (u.autoFollowScanTimer > 0) continue;
-        u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
-        this.tryAutoForage(u, c);
-        continue;
-      }
-
-      if (!tribeSettled) {
-        u.autoFollowing = false;
-        continue;
-      }
-
-      const dx = u.gx - c.gx;
-      const dy = u.gy - c.gy;
-      if (dx * dx + dy * dy > FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) {
-        // Still rallying back to chief; cohereTribes will path us.
-        u.autoFollowing = false;
-        continue;
-      }
-
-      if (this.tryAutoForage(u, c)) {
+      const foraged = this.tryAutoForage(u, c);
+      if (foraged) {
         u.autoFollowing = true;
-        u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
-      } else {
-        u.autoFollowing = false;
+        continue;
       }
+
+      // Nothing left to gather or hunt in the chief's sight — rally back.
+      if (u.path.length === 0) {
+        const dx = u.gx - c.gx;
+        const dy = u.gy - c.gy;
+        if (dx * dx + dy * dy > FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) {
+          const ti = Math.floor(c.gx);
+          const tj = Math.floor(c.gy);
+          const blocked = this.blockedTilesFor(u, new Set());
+          let target: { i: number; j: number } | null = null;
+          if (this.isWalkable(ti, tj) && !blocked.has(`${ti},${tj}`)) {
+            target = { i: ti, j: tj };
+          } else {
+            target = this.findFreeTileNear(ti, tj, blocked);
+          }
+          if (target) this.startMove(u, target.i, target.j, blocked);
+        }
+      }
+      u.autoFollowing = false;
     }
   }
 
   private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
     const seed = this.seed;
-    const ti0 = Math.floor(u.gx);
-    const tj0 = Math.floor(u.gy);
-    const R = FOLLOW_CHIEF_SIGHT;
+    const R = CHIEF_VISION_RADIUS;
     const R2 = R * R;
-    const cR2 = AUTO_FORAGE_CHIEF_RADIUS * AUTO_FORAGE_CHIEF_RADIUS;
-    let best: { kind: ObjectKind; i: number; j: number; d2: number } | null = null;
-    for (let dj = -R; dj <= R; dj++) {
-      for (let di = -R; di <= R; di++) {
-        const d2 = di * di + dj * dj;
-        if (d2 > R2) continue;
-        const i = ti0 + di;
-        const j = tj0 + dj;
-        const cdx = i + 0.5 - chief.gx;
-        const cdy = j + 0.5 - chief.gy;
-        if (cdx * cdx + cdy * cdy > cR2) continue;
-        let kind: ObjectKind | null = null;
-        if (
-          hasMushroomAt(seed, i, j) &&
-          !this.removedKeys.has(objKey("mushroom", i, j))
-        ) {
-          kind = "mushroom";
-        } else if (
-          hasBushAt(seed, i, j) &&
-          !this.removedKeys.has(objKey("bush", i, j))
-        ) {
-          kind = "bush";
-        } else if (
-          hasStoneAt(seed, i, j) &&
-          !this.removedKeys.has(objKey("stone", i, j))
-        ) {
-          kind = "stone";
+    const ci0 = Math.floor(chief.gx);
+    const cj0 = Math.floor(chief.gy);
+    const roomPilze = this.resourceRoom(u.owner, "pilze") > 0;
+    const roomBeeren = this.resourceRoom(u.owner, "beeren") > 0;
+    const roomStein = this.resourceRoom(u.owner, "stein") > 0;
+    const roomHolz = this.resourceRoom(u.owner, "holz") > 0;
+    const roomWasser = this.resourceRoom(u.owner, "wasser") > 0;
+    const roomFleisch = this.resourceRoom(u.owner, "fleisch") > 0;
+    const roomCactus = roomHolz || roomWasser;
+    let bestGather: { kind: ObjectKind; i: number; j: number; d2: number } | null = null;
+    if (roomPilze || roomBeeren || roomStein || roomCactus) {
+      for (let dj = -R; dj <= R; dj++) {
+        for (let di = -R; di <= R; di++) {
+          const cdx = di + 0.5 - (chief.gx - ci0);
+          const cdy = dj + 0.5 - (chief.gy - cj0);
+          if (cdx * cdx + cdy * cdy > R2) continue;
+          const i = ci0 + di;
+          const j = cj0 + dj;
+          let kind: ObjectKind | null = null;
+          if (
+            roomPilze &&
+            hasMushroomAt(seed, i, j) &&
+            !this.removedKeys.has(objKey("mushroom", i, j))
+          ) {
+            kind = "mushroom";
+          } else if (
+            roomBeeren &&
+            hasBushAt(seed, i, j) &&
+            !this.removedKeys.has(objKey("bush", i, j))
+          ) {
+            kind = "bush";
+          } else if (
+            roomStein &&
+            hasStoneAt(seed, i, j) &&
+            !this.removedKeys.has(objKey("stone", i, j))
+          ) {
+            kind = "stone";
+          } else if (
+            roomCactus &&
+            hasCactusAt(seed, i, j) &&
+            !this.removedKeys.has(objKey("cactus", i, j))
+          ) {
+            kind = "cactus";
+          }
+          if (!kind) continue;
+          const mdx = i + 0.5 - u.gx;
+          const mdy = j + 0.5 - u.gy;
+          const d2 = mdx * mdx + mdy * mdy;
+          if (!bestGather || d2 < bestGather.d2) bestGather = { kind, i, j, d2 };
         }
-        if (!kind) continue;
-        if (!best || d2 < best.d2) best = { kind, i, j, d2 };
       }
     }
-    if (!best) return false;
+
+    let bestHunt: { animal: SimAnimal; d2: number } | null = null;
+    if (roomFleisch) {
+      const cs = SPATIAL_CELL;
+      const cellR = Math.ceil(R / cs);
+      const ccx = Math.floor(chief.gx / cs);
+      const ccy = Math.floor(chief.gy / cs);
+      for (let cy = ccy - cellR; cy <= ccy + cellR; cy++) {
+        for (let cx = ccx - cellR; cx <= ccx + cellR; cx++) {
+          const arr = this.animalGrid.get(gridKey(cx, cy));
+          if (!arr) continue;
+          for (const a of arr) {
+            if (a.hp <= 0) continue;
+            const spec = ANIMAL_SPECS[a.kind];
+            if (!spec.autoHuntable) continue;
+            const cdx = a.gx - chief.gx;
+            const cdy = a.gy - chief.gy;
+            if (cdx * cdx + cdy * cdy > R2) continue;
+            const mdx = a.gx - u.gx;
+            const mdy = a.gy - u.gy;
+            const d2 = mdx * mdx + mdy * mdy;
+            if (!bestHunt || d2 < bestHunt.d2) bestHunt = { animal: a, d2 };
+          }
+        }
+      }
+    }
+
     const blocked = this.blockedTilesFor(u, new Set());
-    this.startHarvest(u, best.kind, best.i, best.j, blocked);
-    return u.harvestTarget !== null;
+    if (bestHunt && (!bestGather || bestHunt.d2 < bestGather.d2)) {
+      this.startHunt(u, bestHunt.animal, blocked, true);
+      return u.huntTarget !== null;
+    }
+    if (bestGather) {
+      this.startHarvest(u, bestGather.kind, bestGather.i, bestGather.j, blocked);
+      return u.harvestTarget !== null;
+    }
+    return false;
   }
 
   private objectStillThere(t: { kind: ObjectKind; i: number; j: number }): boolean {
@@ -3621,6 +3953,7 @@ export class Sim {
     if (t.kind === "tree") return hasTreeAt(this.seed, t.i, t.j);
     if (t.kind === "bush") return hasBushAt(this.seed, t.i, t.j);
     if (t.kind === "mushroom") return hasMushroomAt(this.seed, t.i, t.j);
+    if (t.kind === "cactus") return hasCactusAt(this.seed, t.i, t.j);
     return hasStoneAt(this.seed, t.i, t.j);
   }
 
@@ -3644,6 +3977,10 @@ export class Sim {
       amount = MUSH_HARVEST_AMOUNT;
       resKey = "pilze";
       baseTotal = mushroomBerriesAt(this.seed, t.i, t.j);
+    } else if (t.kind === "cactus") {
+      amount = CACTUS_HARVEST_HOLZ;
+      resKey = "holz";
+      baseTotal = cactusYieldAt(this.seed, t.i, t.j);
     } else {
       amount = STONE_HARVEST_AMOUNT;
       resKey = "stein";
@@ -3652,6 +3989,11 @@ export class Sim {
     const gained = this.gainResource(
       u.owner, resKey, amount, t.i + 0.5, t.j + 0.5, false,
     );
+    if (t.kind === "cactus" && gained > 0) {
+      this.gainResource(
+        u.owner, "wasser", CACTUS_HARVEST_WASSER, t.i + 0.5, t.j + 0.5, false,
+      );
+    }
     if (gained <= 0) {
       u.harvestTarget = null;
       u.state = "idle";

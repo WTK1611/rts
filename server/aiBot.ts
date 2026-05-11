@@ -1,6 +1,7 @@
 import {
   biomeAt,
   hasBushAt,
+  hasCactusAt,
   hasMushroomAt,
   hasStoneAt,
   hasTreeAt,
@@ -10,7 +11,7 @@ import {
 import { AnimalKind, PlayerId } from "../shared/protocol";
 import { Sim, SimAnimal, SimUnit } from "./sim";
 
-type Need = "tree" | "bush" | "mushroom" | "fish" | "stone" | "water";
+type Need = "tree" | "bush" | "mushroom" | "fish" | "stone" | "water" | "cactus";
 
 const SAFE_HUNT: ReadonlySet<AnimalKind> = new Set<AnimalKind>([
   "hare",
@@ -67,11 +68,18 @@ export class AIBot {
       this.exploreCenter.y += Math.sin(this.exploreAngle) * DRIFT_STEP;
     }
 
+    // Build the own-tribe list once and reuse it for tribeCenter()
+    // and the decision loop, instead of walking the full unit map twice.
+    const myUnits: SimUnit[] = [];
+    for (const u of this.sim.units.values()) {
+      if (u.owner === this.id) myUnits.push(u);
+    }
+
     for (const id of [...this.mem.keys()]) {
       if (!this.sim.units.has(id)) this.mem.delete(id);
     }
 
-    const center = this.tribeCenter();
+    const center = this.tribeCenterFrom(myUnits);
     if (center) {
       const dx = center.x - this.exploreCenter.x;
       const dy = center.y - this.exploreCenter.y;
@@ -81,8 +89,9 @@ export class AIBot {
       this.exploreCenter.y += dy * 0.2 * pull;
     }
 
-    for (const u of this.sim.units.values()) {
-      if (u.owner !== this.id) continue;
+    const sleepingAtFire = this.sim.campfires.has(this.sim.campfireIdFor(this.id));
+
+    for (const u of myUnits) {
       let m = this.mem.get(u.id);
       if (!m) {
         m = { cooldown: Math.random() };
@@ -91,6 +100,13 @@ export class AIBot {
       m.cooldown -= dt;
       if (m.cooldown > 0) continue;
       if (u.state !== "idle") continue;
+      if (sleepingAtFire) {
+        // Sim's gather step herds the tribe to the fire until sunrise;
+        // only react to immediate danger.
+        m.cooldown = 1.0 + Math.random();
+        this.maybeRetreat(u);
+        continue;
+      }
       m.cooldown = 0.7 + Math.random();
       this.decide(u, center);
     }
@@ -104,18 +120,15 @@ export class AIBot {
     this.wander(u, center);
   }
 
-  private tribeCenter(): { x: number; y: number } | null {
-    let n = 0;
+  private tribeCenterFrom(myUnits: SimUnit[]): { x: number; y: number } | null {
+    if (myUnits.length === 0) return null;
     let cx = 0;
     let cy = 0;
-    for (const u of this.sim.units.values()) {
-      if (u.owner !== this.id) continue;
+    for (const u of myUnits) {
       cx += u.gx;
       cy += u.gy;
-      n++;
     }
-    if (n === 0) return null;
-    return { x: cx / n, y: cy / n };
+    return { x: cx / myUnits.length, y: cy / myUnits.length };
   }
 
   private maybeRegroup(u: SimUnit, c: { x: number; y: number }): boolean {
@@ -212,6 +225,9 @@ export class AIBot {
 
     const needs: Array<{ kind: Need; w: number }> = [];
     if (r.wasser < 6) needs.push({ kind: "water", w: 6 - r.wasser });
+    if (r.wasser < 6 || r.holz < 12) {
+      needs.push({ kind: "cactus", w: Math.max(6 - r.wasser, (12 - r.holz) * 0.6) });
+    }
     if (fruit < 12) needs.push({ kind: "bush", w: 12 - fruit });
     if (fruit < 12) needs.push({ kind: "mushroom", w: 12 - fruit });
     if (r.holz < 12) needs.push({ kind: "tree", w: 12 - r.holz });
@@ -332,6 +348,11 @@ export class AIBot {
     if (kind === "mushroom") {
       return (
         hasMushroomAt(seed, i, j) && !this.sim.removedKeys.has(`m_${i}_${j}`)
+      );
+    }
+    if (kind === "cactus") {
+      return (
+        hasCactusAt(seed, i, j) && !this.sim.removedKeys.has(`c_${i}_${j}`)
       );
     }
     return hasStoneAt(seed, i, j) && !this.sim.removedKeys.has(`s_${i}_${j}`);
