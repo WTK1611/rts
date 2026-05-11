@@ -103,6 +103,11 @@ export interface Strings {
   lbLoading: string;
   lbEmpty: string;
   lbYourRank: (rank: number) => string;
+
+  // help / tips
+  helpTipBerry: string;
+  helpEnabled: string;
+  helpDisabled: string;
 }
 
 const STRINGS: Record<Language, Strings> = {
@@ -214,6 +219,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "Bestenliste lädt …",
     lbEmpty: "Noch keine Einträge.",
     lbYourRank: (r) => `Dein Platz: #${r}`,
+
+    helpTipBerry: "Sammele Beeren als Energiequelle, um deine Kraft durch Verzehr aufzuladen",
+    helpEnabled: "Hilfetexte: An (i)",
+    helpDisabled: "Hilfetexte: Aus (i)",
   },
 
   en: {
@@ -320,6 +329,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "Loading leaderboard …",
     lbEmpty: "No entries yet.",
     lbYourRank: (r) => `Your rank: #${r}`,
+
+    helpTipBerry: "Gather berries as an energy source — eating them recharges your strength",
+    helpEnabled: "Help tips: On (i)",
+    helpDisabled: "Help tips: Off (i)",
   },
 
   it: {
@@ -427,6 +440,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "Caricamento classifica …",
     lbEmpty: "Ancora nessuna voce.",
     lbYourRank: (r) => `La tua posizione: #${r}`,
+
+    helpTipBerry: "Raccogli bacche come fonte di energia: mangiandole ricarichi le forze",
+    helpEnabled: "Suggerimenti: Attivi (i)",
+    helpDisabled: "Suggerimenti: Disattivati (i)",
   },
 
   es: {
@@ -534,6 +551,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "Cargando clasificación …",
     lbEmpty: "Aún no hay entradas.",
     lbYourRank: (r) => `Tu posición: #${r}`,
+
+    helpTipBerry: "Recolecta bayas como fuente de energía: comerlas recarga tus fuerzas",
+    helpEnabled: "Consejos: Activados (i)",
+    helpDisabled: "Consejos: Desactivados (i)",
   },
 
   pt: {
@@ -641,6 +662,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "A carregar classificação …",
     lbEmpty: "Ainda sem entradas.",
     lbYourRank: (r) => `A tua posição: #${r}`,
+
+    helpTipBerry: "Recolhe bagas como fonte de energia: comê-las recarrega as tuas forças",
+    helpEnabled: "Sugestões: Ativadas (i)",
+    helpDisabled: "Sugestões: Desativadas (i)",
   },
 
   fr: {
@@ -748,6 +773,10 @@ const STRINGS: Record<Language, Strings> = {
     lbLoading: "Chargement du classement …",
     lbEmpty: "Aucune entrée pour l'instant.",
     lbYourRank: (r) => `Ta position : #${r}`,
+
+    helpTipBerry: "Récolte des baies comme source d'énergie : les manger restaure tes forces",
+    helpEnabled: "Astuces : Activées (i)",
+    helpDisabled: "Astuces : Désactivées (i)",
   },
 };
 

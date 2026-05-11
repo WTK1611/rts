@@ -118,6 +118,19 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
+type HelpKey = "berry";
+
+const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
+  berry: {
+    img: "/image/sammlerin-beeren-300.webp",
+    text: (s) => s.helpTipBerry,
+  },
+};
+
+const HELP_DURATION_MS = 2500;
+const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
+const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
+
 function objKey(kind: ObjectKind, i: number, j: number): string {
   const p =
     kind === "tree"
@@ -251,6 +264,14 @@ export class GameScene extends Phaser.Scene {
   private chunkLoadQueued = new Set<string>();
 
   private perfEl: HTMLElement | null = null;
+  private helpEl: HTMLElement | null = null;
+  private helpImgEl: HTMLImageElement | null = null;
+  private helpTextEl: HTMLElement | null = null;
+  private helpVisible = true;
+  private helpSeen = new Set<string>();
+  private helpHideTimerId: number | null = null;
+  private helpCurrentKey: HelpKey | null = null;
+  private helpCheckAccum = 0;
   private perfFrameTimeMs = 16.7;
   private perfLastDomUpdateMs = 0;
   private perfServerTickMs = 0;
@@ -397,6 +418,7 @@ export class GameScene extends Phaser.Scene {
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.P).on("down", () => this.togglePerf());
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.I).on("down", () => this.toggleHelp());
 
     const spectateKeys: Array<[number, number]> = [
       [Phaser.Input.Keyboard.KeyCodes.ONE, 0],
@@ -451,6 +473,22 @@ export class GameScene extends Phaser.Scene {
     if (storedPerf !== null) this.perfVisible = storedPerf === "1";
     if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
 
+    this.helpEl = document.getElementById("help-card");
+    this.helpImgEl = document.getElementById("help-img") as HTMLImageElement | null;
+    this.helpTextEl = document.getElementById("help-text");
+    const storedHelp = localStorage.getItem(HELP_STORAGE_KEY_VISIBLE);
+    if (storedHelp !== null) this.helpVisible = storedHelp === "1";
+    const storedSeen = localStorage.getItem(HELP_STORAGE_KEY_SEEN);
+    if (storedSeen) {
+      for (const k of storedSeen.split(",")) {
+        if (k) this.helpSeen.add(k);
+      }
+    }
+    if (this.helpEl) {
+      this.helpEl.classList.remove("show");
+      this.helpEl.setAttribute("aria-hidden", "true");
+    }
+
     this.updateChunks();
     this.updateFog();
     this.drawFootprints();
@@ -500,6 +538,7 @@ export class GameScene extends Phaser.Scene {
     this.updateTribeRally(dt);
     this.updateMoveTarget(dt);
     this.updateDayNight();
+    this.checkHelpTriggers(dt);
   }
 
   private updateTribeRally(dt: number): void {
@@ -3231,6 +3270,88 @@ export class GameScene extends Phaser.Scene {
     this.perfVisible = !this.perfVisible;
     localStorage.setItem("rts.perfVisible", this.perfVisible ? "1" : "0");
     if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
+  }
+
+  private toggleHelp(): void {
+    this.helpVisible = !this.helpVisible;
+    localStorage.setItem(HELP_STORAGE_KEY_VISIBLE, this.helpVisible ? "1" : "0");
+    if (!this.helpVisible) this.hideHelpCard();
+    const s = t();
+    this.showToast(this.helpVisible ? s.helpEnabled : s.helpDisabled, "join");
+  }
+
+  private persistHelpSeen(): void {
+    try {
+      localStorage.setItem(
+        HELP_STORAGE_KEY_SEEN,
+        [...this.helpSeen].join(","),
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  private triggerHelp(key: HelpKey): void {
+    if (!this.helpVisible) return;
+    if (this.helpSeen.has(key)) return;
+    if (this.helpCurrentKey) return;
+    this.helpSeen.add(key);
+    this.persistHelpSeen();
+    this.showHelpCard(key);
+  }
+
+  private showHelpCard(key: HelpKey): void {
+    const el = this.helpEl;
+    const img = this.helpImgEl;
+    const text = this.helpTextEl;
+    if (!el || !img || !text) return;
+    const tip = HELP_TIPS[key];
+    img.src = tip.img;
+    img.alt = "";
+    text.textContent = tip.text(t());
+    el.setAttribute("aria-hidden", "false");
+    this.helpCurrentKey = key;
+    requestAnimationFrame(() => el.classList.add("show"));
+    if (this.helpHideTimerId !== null) {
+      window.clearTimeout(this.helpHideTimerId);
+    }
+    this.helpHideTimerId = window.setTimeout(
+      () => this.hideHelpCard(),
+      HELP_DURATION_MS,
+    );
+  }
+
+  private hideHelpCard(): void {
+    if (this.helpHideTimerId !== null) {
+      window.clearTimeout(this.helpHideTimerId);
+      this.helpHideTimerId = null;
+    }
+    const el = this.helpEl;
+    if (!el) {
+      this.helpCurrentKey = null;
+      return;
+    }
+    el.classList.remove("show");
+    el.setAttribute("aria-hidden", "true");
+    this.helpCurrentKey = null;
+  }
+
+  private checkHelpTriggers(dt: number): void {
+    this.helpCheckAccum += dt;
+    if (this.helpCheckAccum < 0.15) return;
+    this.helpCheckAccum = 0;
+    if (!this.helpVisible) return;
+    if (!this.helpSeen.has("berry")) {
+      for (const u of this.units.values()) {
+        if (u.owner !== this.playerId) continue;
+        const i = Math.floor(u.gx);
+        const j = Math.floor(u.gy);
+        if (this.bushes.has(objKey("bush", i, j))) {
+          this.triggerHelp("berry");
+          break;
+        }
+      }
+    }
   }
 
   private updatePerf(): void {

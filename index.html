@@ -250,6 +250,30 @@
       #perf.good { color: #6dbf6d; border-color: #4d8a4d; }
       #perf.warn { color: #ffd84d; border-color: #a08038; }
       #perf.bad  { color: #ff6a5a; border-color: #a04040; }
+      #help-card {
+        position: fixed; top: 12px; right: 12px;
+        width: 300px; max-width: calc(100vw - 24px);
+        background: rgba(10, 14, 10, 0.92); color: #e8f0e8;
+        font-family: system-ui, sans-serif; font-size: 14px;
+        line-height: 1.35;
+        padding: 10px; border-radius: 10px;
+        border: 1px solid #3a5a3a;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+        opacity: 0; transform: translateY(-6px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        pointer-events: none; z-index: 50;
+        visibility: hidden;
+      }
+      #help-card.show {
+        opacity: 1; transform: translateY(0);
+        visibility: visible;
+      }
+      #help-card img {
+        display: block; width: 100%; height: auto;
+        border-radius: 6px; margin-bottom: 8px;
+        image-rendering: auto;
+      }
+      #help-card .help-text { color: #e8f0e8; }
       #lobby {
         position: fixed; inset: 0; display: flex;
         align-items: center; justify-content: center;
@@ -452,6 +476,10 @@
       <canvas id="minimap" width="200" height="200"></canvas>
     </div>
     <div id="perf"></div>
+    <div id="help-card" aria-hidden="true">
+      <img id="help-img" src="" alt="" />
+      <div class="help-text" id="help-text"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
