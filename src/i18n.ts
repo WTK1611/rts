@@ -107,6 +107,7 @@ export interface Strings {
   // help / tips
   helpTipBerry: string;
   helpTipWater: string;
+  helpTipBirth: string;
   helpEnabled: string;
   helpDisabled: string;
 }
@@ -223,6 +224,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Beeren ernten: Klicke auf einen Beerenstrauch, damit dein Stamm ihn pflückt. Beeren sind eine wichtige Nahrungs- und Energiequelle.",
     helpTipWater: "Im Wasser kannst du Fische jagen, aber Vorsicht vor den Alligatoren.",
+    helpTipBirth: "Geburt! Wenn Mann und Frau zusammen sind und genug Nahrung haben, wächst dein Stamm. Jedes Kind braucht Zeit, bevor es selbst sammeln oder jagen kann.",
     helpEnabled: "Hilfetexte: An (i)",
     helpDisabled: "Hilfetexte: Aus (i)",
   },
@@ -334,6 +336,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Harvest berries: click on a berry bush so your tribe picks it. Berries are an important source of food and energy.",
     helpTipWater: "You can hunt fish in the water — but watch out for alligators.",
+    helpTipBirth: "A birth! When men and women are together and have enough food, your tribe grows. Every child needs time before it can gather or hunt on its own.",
     helpEnabled: "Help tips: On (i)",
     helpDisabled: "Help tips: Off (i)",
   },
@@ -446,6 +449,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Raccogli bacche: clicca su un cespuglio per farlo raccogliere alla tua tribù. Le bacche sono un'importante fonte di cibo ed energia.",
     helpTipWater: "Nell'acqua puoi pescare, ma attento agli alligatori.",
+    helpTipBirth: "Una nascita! Quando uomini e donne stanno insieme e c'è cibo a sufficienza, la tribù cresce. Ogni bambino ha bisogno di tempo prima di poter raccogliere o cacciare da solo.",
     helpEnabled: "Suggerimenti: Attivi (i)",
     helpDisabled: "Suggerimenti: Disattivati (i)",
   },
@@ -558,6 +562,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Recolecta bayas: haz clic en un arbusto para que tu tribu lo recoja. Las bayas son una importante fuente de alimento y energía.",
     helpTipWater: "En el agua puedes pescar, pero cuidado con los caimanes.",
+    helpTipBirth: "¡Un nacimiento! Cuando hombres y mujeres están juntos y hay suficiente comida, tu tribu crece. Cada niño necesita tiempo antes de poder recolectar o cazar por sí solo.",
     helpEnabled: "Consejos: Activados (i)",
     helpDisabled: "Consejos: Desactivados (i)",
   },
@@ -670,6 +675,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Colhe bagas: clica num arbusto para a tua tribo o apanhar. As bagas são uma importante fonte de alimento e energia.",
     helpTipWater: "Na água podes pescar, mas cuidado com os jacarés.",
+    helpTipBirth: "Um nascimento! Quando homens e mulheres estão juntos e há comida suficiente, a tua tribo cresce. Cada criança precisa de tempo antes de poder colher ou caçar sozinha.",
     helpEnabled: "Sugestões: Ativadas (i)",
     helpDisabled: "Sugestões: Desativadas (i)",
   },
@@ -782,6 +788,7 @@ const STRINGS: Record<Language, Strings> = {
 
     helpTipBerry: "Récolter des baies : clique sur un buisson pour que ta tribu le cueille. Les baies sont une importante source de nourriture et d'énergie.",
     helpTipWater: "Dans l'eau, tu peux pêcher des poissons — mais attention aux alligators.",
+    helpTipBirth: "Une naissance ! Quand hommes et femmes sont ensemble et qu'il y a assez de nourriture, ta tribu grandit. Chaque enfant a besoin de temps avant de pouvoir cueillir ou chasser seul.",
     helpEnabled: "Astuces : Activées (i)",
     helpDisabled: "Astuces : Désactivées (i)",
   },

@@ -123,7 +123,7 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
-type HelpKey = "berry" | "water";
+type HelpKey = "berry" | "water" | "birth";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
@@ -133,6 +133,10 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
   water: {
     img: "/image/fische-alligatoren-300.webp",
     text: (s) => s.helpTipWater,
+  },
+  birth: {
+    img: "/image/stamm-baby-300.webp",
+    text: (s) => s.helpTipBirth,
   },
 };
 
@@ -2356,6 +2360,7 @@ export class GameScene extends Phaser.Scene {
         const txt =
           ownGrew === 1 ? s.toastOwnGrewSing : s.toastOwnGrew(ownGrew);
         this.showToast(txt, "grow");
+        this.triggerHelp("birth");
       }
       for (const ownerStr of Object.keys(otherGrew)) {
         const owner = Number(ownerStr);
@@ -3223,7 +3228,7 @@ export class GameScene extends Phaser.Scene {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
       fleisch: 0, fisch: 0, stein: 0,
     };
-    const labels: Record<keyof Resources, string> = {
+    const titles: Record<keyof Resources, string> = {
       holz: s.resHolz,
       wasser: s.resWasser,
       beeren: s.resBeeren,
@@ -3234,8 +3239,8 @@ export class GameScene extends Phaser.Scene {
     };
     const resHtml = RESOURCE_KEYS.map(
       (k) =>
-        `<div class="item"><span class="ico ${k}"></span>` +
-        `<span class="label">${labels[k]}</span><b>${myRes[k]}</b></div>`,
+        `<div class="item" title="${titles[k]}">` +
+        `<span class="ico ${k}"></span><b>${myRes[k]}</b></div>`,
     ).join("");
 
     const tribeCounts = this.tribeCounts;
