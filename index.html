@@ -64,22 +64,24 @@
         display: flex; align-items: center; gap: 8px;
       }
       #hud .me .swatch { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 12px; }
-      #hud .res { display: grid; grid-template-columns: repeat(7, auto);
-        gap: 4px 14px; font-variant-numeric: tabular-nums; font-size: 14px;
+      #hud .res { display: flex; flex-direction: column;
+        gap: 4px; font-variant-numeric: tabular-nums; font-size: 16px;
+        background: none; border: none; padding: 0;
       }
-      #hud .res .item { display: inline-flex; align-items: center; gap: 6px; }
-      #hud .res .ico {
-        width: 12px; height: 12px; border-radius: 50%; flex: 0 0 12px;
-        box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
-      }
-      #hud .res .ico.holz    { background: #8a5a2c; }
-      #hud .res .ico.wasser  { background: #3a78b0; }
-      #hud .res .ico.beeren  { background: #b03a6a; }
-      #hud .res .ico.pilze   { background: #c24a3a; }
-      #hud .res .ico.fleisch { background: #c25a4a; }
-      #hud .res .ico.fisch   { background: #6a90b0; }
-      #hud .res .ico.stein   { background: #909090; }
+      #hud .res .item { display: inline-flex; align-items: center; gap: 8px; }
       #hud .res .label { color: #c8d8c8; }
+      #hud .res .ico {
+        width: 60px; height: 60px; flex: 0 0 60px;
+        background-size: contain; background-repeat: no-repeat;
+        background-position: center;
+      }
+      #hud .res .ico.holz    { background-image: url(/image/holz-300.webp); }
+      #hud .res .ico.wasser  { background-image: url(/image/wasser-300.webp); }
+      #hud .res .ico.beeren  { background-image: url(/image/beeren-300.webp); }
+      #hud .res .ico.pilze   { background-image: url(/image/piltze-300.webp); }
+      #hud .res .ico.fleisch { background-image: url(/image/fleisch-300.webp); }
+      #hud .res .ico.fisch   { background-image: url(/image/fische-300.webp); }
+      #hud .res .ico.stein   { background-image: url(/image/steine-300.webp); }
       #hud .res b { color: #f0f5f0; font-weight: 600; }
       #hud .growth {
         margin: -4px 0 8px;
@@ -170,11 +172,10 @@
         }
         #hud .me .swatch { width: 9px; height: 9px; flex-basis: 9px; }
         #hud .res {
-          grid-template-columns: repeat(2, auto);
-          gap: 2px 8px; font-size: 11px;
+          gap: 3px; font-size: 13px;
         }
-        #hud .res .item { gap: 4px; }
-        #hud .res .ico { width: 8px; height: 8px; flex-basis: 8px; }
+        #hud .res .item { gap: 6px; }
+        #hud .res .ico { width: 40px; height: 40px; flex-basis: 40px; }
         #hud .growth {
           margin: -2px 0 4px; font-size: 9px;
         }
@@ -187,8 +188,99 @@
         #hud .count { padding: 0 5px; font-size: 9px; }
         #hud .me .count { font-size: 10px; padding: 0 6px; }
       }
+      #tribe-banner {
+        position: fixed; top: 12px; left: 50%;
+        transform: translateX(-50%);
+        background: rgba(10, 14, 10, 0.85);
+        border: 1px solid #3a5a3a;
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        padding: 8px 14px;
+        color: #e8f0e8;
+        font-family: system-ui, sans-serif;
+        z-index: 9;
+        min-width: 240px;
+        max-width: min(92vw, 480px);
+        pointer-events: auto;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #tribe-banner:empty { display: none; }
+      #tribe-banner .me {
+        display: flex; align-items: center; justify-content: center;
+        gap: 8px; font-size: 15px; font-weight: 600;
+        white-space: nowrap;
+      }
+      #tribe-banner .me .swatch {
+        width: 11px; height: 11px; border-radius: 3px; flex: 0 0 11px;
+      }
+      #tribe-banner .me.clickable {
+        cursor: pointer; padding: 2px 8px; margin: 0 -8px;
+        border-radius: 6px; transition: background 0.12s;
+      }
+      #tribe-banner .me.clickable:hover { background: rgba(255,255,255,0.08); }
+      #tribe-banner .me.active {
+        background: rgba(126,207,255,0.18);
+        outline: 1px solid rgba(126,207,255,0.4);
+      }
+      #tribe-banner .count {
+        display: inline-flex; align-items: center; gap: 3px;
+        padding: 1px 8px; border-radius: 9px;
+        background: rgba(255,255,255,0.08);
+        color: #d8e8d8; font-size: 12px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      #tribe-banner .clock {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 1px 8px; border-radius: 9px;
+        background: rgba(255, 220, 120, 0.12);
+        color: #ffe7b0; font-size: 12px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      #tribe-banner .growth {
+        margin-top: 6px;
+        font-size: 10px; line-height: 1.2;
+        color: #a8b8a8;
+      }
+      #tribe-banner .growth .label-row {
+        display: flex; justify-content: space-between;
+        align-items: baseline; gap: 8px; margin-bottom: 2px;
+      }
+      #tribe-banner .growth .lbl { color: #88a088; }
+      #tribe-banner .growth .state { color: #88a088; }
+      #tribe-banner .growth .state.active { color: #9cd99c; }
+      #tribe-banner .growth .state.imminent { color: #ffd84d; font-weight: 600; }
+      #tribe-banner .growth .state.full { color: #b8c8b8; }
+      #tribe-banner .growth .bar {
+        position: relative;
+        height: 3px; background: rgba(255,255,255,0.08);
+        border-radius: 2px; overflow: hidden;
+      }
+      #tribe-banner .growth .fill {
+        position: absolute; inset: 0 auto 0 0;
+        background: #4d8a4d;
+        border-radius: 2px;
+        transition: width 0.25s linear, background 0.2s linear;
+      }
+      #tribe-banner .growth.paused .fill { background: #6a7a6a; }
+      #tribe-banner .growth.imminent .fill {
+        background: #ffd84d;
+        animation: growthPulse 1s ease-in-out infinite;
+      }
+      @media (pointer: coarse) {
+        #tribe-banner {
+          top: 6px; padding: 5px 10px; border-radius: 8px;
+          min-width: 0; max-width: 96vw;
+        }
+        #tribe-banner .me { font-size: 12px; gap: 6px; }
+        #tribe-banner .me .swatch { width: 9px; height: 9px; flex-basis: 9px; }
+        #tribe-banner .count { padding: 0 6px; font-size: 10px; }
+        #tribe-banner .clock { padding: 0 6px; font-size: 10px; }
+        #tribe-banner .growth { margin-top: 3px; font-size: 9px; }
+        #tribe-banner .growth .bar { height: 2px; }
+      }
       #toasts {
-        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
         display: flex; flex-direction: column; gap: 6px;
         pointer-events: none; z-index: 8;
       }
@@ -470,6 +562,7 @@
       </div>
     </div>
     <div id="hud"><div class="hud-drag-handle"></div></div>
+    <div id="tribe-banner"></div>
     <div id="toasts"></div>
     <div id="minimap-wrap" style="display:none">
       <div id="minimap-label">Karte</div>
