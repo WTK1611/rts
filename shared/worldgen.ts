@@ -427,7 +427,7 @@ export function mushroomBerriesAt(seed: number, i: number, j: number): number {
 export function hasFishAt(seed: number, i: number, j: number): boolean {
   const b = biomeAt(seed, i, j);
   if (b !== "lake" && b !== "river") return false;
-  return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.04 : 0.05);
+  return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.10 : 0.13);
 }
 
 export function fishIdAt(i: number, j: number): string {

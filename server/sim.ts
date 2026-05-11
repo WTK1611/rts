@@ -31,6 +31,7 @@ import {
   RemovedObject,
   resourceCap,
   ResourceFlowEvent,
+  DamageEvent,
   Resources,
   RESOURCE_KEYS,
   TICK_RATE,
@@ -41,9 +42,12 @@ import {
   UnitSnapshot,
 } from "../shared/protocol";
 import { NameLanguage, languageForSlot, pickFirstName } from "../shared/names";
+import { AnimalSpec, ANIMAL_SPECS, kindHash } from "./animals";
+import { craftBetterWeapon, payWeaponCost } from "./weapons";
+import { SPATIAL_CELL, gridKey, pushBucket, updateBucketForId } from "./spatial";
+import { objKey } from "../shared/objectKey";
 import {
   artifactsFromSeed,
-  Biome,
   biomeAt,
   bushBerriesAt,
   cactusYieldAt,
@@ -156,59 +160,6 @@ const HP_GAIN_PILZE = 2;
 const HP_GAIN_WASSER = 1;
 const AUTOEAT_HP_THRESHOLD = 0.51;
 
-interface AnimalSpec {
-  hp: number;
-  speed: number;
-  meat: number;
-  biomes: Biome[];
-  density: number;
-  wanderRadius: number;
-  damage: number;
-  aggressive: boolean;
-  detectRange: number;
-  autoHuntable: boolean;
-  autoHuntRange: number;
-  attackRange: number;
-  aggroDurationSec: number;
-  predator: boolean;
-  preyDamage: number;
-  matureAgeSec: number;
-  gestationSec: number;
-  maxAgeSec: number;
-  aquatic: boolean;
-}
-
-const ANIMAL_SPECS: Record<AnimalKind, AnimalSpec> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  biomes: ["wiesen", "wald", "savanne"],          density: 0.0220, wanderRadius: 6,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, aquatic: false },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  biomes: ["wiesen", "wald"],                     density: 0.0040, wanderRadius: 10, damage: 3,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 6,  predator: false, preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, aquatic: false },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, biomes: ["wald", "wiesen"],                     density: 0.0025, wanderRadius: 8,  damage: 0,  aggressive: false, detectRange: 0, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300, aquatic: false },
-  bison:       { hp: 18, speed: 2.6, meat: 12, biomes: ["savanne", "wiesen", "wueste"],        density: 0.0035, wanderRadius: 8,  damage: 4,  aggressive: true,  detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  predator: false, preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, aquatic: false },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  biomes: ["felsen", "wueste", "savanne", "wiesen"], density: 0.0008, wanderRadius: 12, damage: 5,  aggressive: true,  detectRange: 5, autoHuntable: false, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 14, predator: true,  preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, aquatic: false },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, biomes: ["wiesen", "savanne", "wueste"],        density: 0.0014, wanderRadius: 6,  damage: 10, aggressive: false, detectRange: 4, autoHuntable: false, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 10, predator: false, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, aquatic: false },
-  alligator:   { hp: 14, speed: 2.6, meat: 8,  biomes: ["lake", "river"],                      density: 0.0070, wanderRadius: 5,  damage: 6,  aggressive: true,  detectRange: 5, autoHuntable: true,  autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, predator: true,  preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, aquatic: true  },
-  bear:        { hp: 22, speed: 3.0, meat: 14, biomes: ["wald", "felsen"],                     density: 0.0016, wanderRadius: 10, damage: 8,  aggressive: true,  detectRange: 6, autoHuntable: false, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, predator: true,  preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, aquatic: false },
-};
-
-function craftBetterWeapon(current: HuntWeapon, res: Resources): HuntWeapon | null {
-  if (current === "spear") return null;
-  if (res.holz >= 1 && res.stein >= 1) return "spear";
-  if (current === "club" || current === "stones") return null;
-  if (res.holz >= 1) return "club";
-  if (res.stein >= 1) return "stones";
-  return null;
-}
-
-function payWeaponCost(weapon: HuntWeapon, res: Resources): void {
-  if (weapon === "spear") {
-    res.holz -= 1;
-    res.stein -= 1;
-  } else if (weapon === "club") {
-    res.holz -= 1;
-  } else if (weapon === "stones") {
-    res.stein -= 1;
-  }
-}
-
 const ANIMAL_SPAWN_RADIUS = 200;
 const HUNT_INTERVAL = 0.9;
 const FIST_HUNT_DAMAGE = 2;
@@ -301,33 +252,6 @@ const FISH_BREED_SCAN_INTERVAL_SEC = 1.0;
 const FISH_BREED_RANGE_SQ = 1.6 * 1.6;
 const FISH_DENSITY_CAP_FACTOR = 1.8;
 
-function kindHash(kind: AnimalKind): number {
-  let h = 0x12345;
-  for (let i = 0; i < kind.length; i++) {
-    h = (Math.imul(h ^ kind.charCodeAt(i), 0x9e3779b1) >>> 0);
-  }
-  return h;
-}
-
-const SPATIAL_CELL = 8;
-const SPATIAL_BIAS = 32768;
-
-function gridKey(cx: number, cy: number): number {
-  return (cx + SPATIAL_BIAS) * 65536 + (cy + SPATIAL_BIAS);
-}
-
-function pushBucket<T>(m: Map<number, T[]>, key: number, value: T): void {
-  const arr = m.get(key);
-  if (arr) arr.push(value);
-  else m.set(key, [value]);
-}
-
-function updateBucketForId(id: string, buckets: number): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return Math.abs(h) % buckets;
-}
-
 interface SimDropPile {
   id: string;
   gx: number;
@@ -335,22 +259,6 @@ interface SimDropPile {
   resources: Resources;
   decaySec: number;
   pickupDelaySec: number;
-}
-
-function objKey(kind: ObjectKind, i: number, j: number): string {
-  const p =
-    kind === "tree"
-      ? "t"
-      : kind === "bush"
-        ? "b"
-        : kind === "mushroom"
-          ? "m"
-          : kind === "fish"
-            ? "f"
-            : kind === "cactus"
-              ? "c"
-              : "s";
-  return `${p}_${i}_${j}`;
 }
 
 export class Sim {
@@ -396,6 +304,7 @@ export class Sim {
   artifactFinds: ArtifactFindEvent[] = [];
   tribeSplits: TribeSplit[] = [];
   resourceFlows: ResourceFlowEvent[] = [];
+  damageEvents: DamageEvent[] = [];
   fishes: Map<string, SimFish> = new Map();
   removedFishIds: string[] = [];
   nextFishIdx = 0;
@@ -832,6 +741,17 @@ export class Sim {
     const out = this.resourceFlows;
     this.resourceFlows = [];
     return out;
+  }
+
+  consumeDamageEvents(): DamageEvent[] {
+    const out = this.damageEvents;
+    this.damageEvents = [];
+    return out;
+  }
+
+  private pushDamage(amount: number, gx: number, gy: number): void {
+    if (amount <= 0) return;
+    this.damageEvents.push({ amount, gx, gy });
   }
 
   private pushFlow(
@@ -1740,7 +1660,9 @@ export class Sim {
         a.attackTimer = 0;
         const dmg = this.animalDamage(spec);
         if (dmg > 0) {
+          const applied = Math.min(t.hp, dmg);
           t.hp = Math.max(0, t.hp - dmg);
+          this.pushDamage(applied, t.gx, t.gy);
           a.aggroExpireTick =
             this.tick + this.animalAggroDurationTicks(spec);
           this.callForHelp(t, a.id);
@@ -1809,7 +1731,9 @@ export class Sim {
       if (a.attackTimer >= ANIMAL_ATTACK_INTERVAL) {
         a.attackTimer = 0;
         if (spec.preyDamage > 0) {
+          const applied = Math.min(t.hp, spec.preyDamage);
           t.hp = Math.max(0, t.hp - spec.preyDamage);
+          this.pushDamage(applied, t.gx, t.gy);
           if (t.hp <= 0) {
             this.animals.delete(t.id);
             this.removedAnimalIds.push(t.id);
@@ -2010,7 +1934,9 @@ export class Sim {
         if (u.weapon === "spear") damage = SPEAR_HUNT_DAMAGE;
         else if (u.weapon === "club") damage = CLUB_HUNT_DAMAGE;
         else if (u.weapon === "stones") damage = STONE_HUNT_DAMAGE;
+        const applied = Math.min(a.hp, damage);
         a.hp -= damage;
+        this.pushDamage(applied, a.gx, a.gy);
         const spec = ANIMAL_SPECS[a.kind];
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
@@ -3203,25 +3129,30 @@ export class Sim {
     }
     if (activeWithUnits < 2) return;
 
+    const centers: ({ x: number; y: number } | null)[] = new Array(MAX_PLAYERS).fill(null);
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      const list = byPlayer[p];
+      if (!this.active[p] || list.length === 0) continue;
+      let sx = 0;
+      let sy = 0;
+      for (const u of list) { sx += u.gx; sy += u.gy; }
+      centers[p] = { x: sx / list.length, y: sy / list.length };
+    }
+
     const r2 = ENCOUNTER_RANGE * ENCOUNTER_RANGE;
     for (let a = 0; a < MAX_PLAYERS; a++) {
-      if (!this.active[a] || byPlayer[a].length === 0) continue;
+      const cA = centers[a];
+      if (!cA) continue;
       for (let b = a + 1; b < MAX_PLAYERS; b++) {
-        if (!this.active[b] || byPlayer[b].length === 0) continue;
+        const cB = centers[b];
+        if (!cB) continue;
         const key = `${a}_${b}`;
         const last = this.lastEncounterTick.get(key) ?? -ENCOUNTER_COOLDOWN_TICKS;
         if (this.tick - last < ENCOUNTER_COOLDOWN_TICKS) continue;
 
-        let met = false;
-        for (const ua of byPlayer[a]) {
-          for (const ub of byPlayer[b]) {
-            const dx = ua.gx - ub.gx;
-            const dy = ua.gy - ub.gy;
-            if (dx * dx + dy * dy <= r2) { met = true; break; }
-          }
-          if (met) break;
-        }
-        if (!met) continue;
+        const dx = cA.x - cB.x;
+        const dy = cA.y - cB.y;
+        if (dx * dx + dy * dy > r2) continue;
 
         this.lastEncounterTick.set(key, this.tick);
         const { aToB, bToA } = this.transferWomenForBalance(

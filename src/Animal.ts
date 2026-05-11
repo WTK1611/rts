@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
 import { AnimalKind, AnimalSnapshot } from "../shared/protocol";
 import { groundHeight } from "../shared/worldgen";
+import { shade } from "./colorUtils";
 
 interface AnimalLook {
   bodyW: number;
@@ -286,9 +287,3 @@ export class Animal {
   }
 }
 
-function shade(color: number, factor: number): number {
-  const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
-  const g = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
-  const b = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
-  return (r << 16) | (g << 8) | b;
-}

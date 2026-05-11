@@ -430,6 +430,7 @@ function tick(): void {
   const tribeCounts = world.sim.tribeCounts();
   const artifactFinds = world.sim.consumeArtifactFinds();
   const resourceFlows = world.sim.consumeResourceFlows();
+  const damageEvents = world.sim.consumeDamageEvents();
   const newDropPiles = world.sim.consumeNewDropPiles();
   const removedDropPileIds = world.sim.consumeRemovedDropPileIds();
   const treeGrowthEvents = world.sim.consumeTreeGrowthEvents();
@@ -515,6 +516,7 @@ function tick(): void {
       artifactFinds,
       tribeSplits,
       resourceFlows: resourceFlows.filter((f) => f.owner === slot.id),
+      damageEvents,
       dropPiles: newDropPiles,
       removedDropPileIds,
       serverTickMs: world.tickMsAvg,

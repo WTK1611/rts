@@ -12,7 +12,14 @@
       "Bash(curl -sI http://localhost:5173/src/main.ts)",
       "Bash(kill 91928 91997)",
       "Bash(git -C /Users/tobias/rts/rts ls-files)",
-      "Bash(grep -E \"^\\\\.env$\")"
+      "Bash(grep -E \"^\\\\.env$\")",
+      "Bash(echo \"---exit $?---\")",
+      "Bash(pkill -f \"vite\\\\|tsx\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8787)",
+      "Bash(curl -s http://localhost:5173/src/Cactus.ts)",
+      "Bash(curl -s http://localhost:5173/src/scenes/GameScene.ts)",
+      "Bash(curl -s -X POST http://localhost:5173/__vite/ping)"
     ]
   }
 }

@@ -244,6 +244,12 @@ export interface ResourceFlowEvent {
   gy: number;
 }
 
+export interface DamageEvent {
+  amount: number;
+  gx: number;
+  gy: number;
+}
+
 export interface StateMessage {
   type: "state";
   tick: number;
@@ -270,6 +276,7 @@ export interface StateMessage {
   artifactFinds: ArtifactFindEvent[];
   tribeSplits: TribeSplit[];
   resourceFlows: ResourceFlowEvent[];
+  damageEvents: DamageEvent[];
   dropPiles: DropPileSnapshot[];
   removedDropPileIds: string[];
   serverTickMs?: number;

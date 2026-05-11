@@ -12,6 +12,7 @@ import { Volcano } from "../Volcano";
 import { Animal } from "../Animal";
 import { Campfire } from "../Campfire";
 import { Artifact } from "../Artifact";
+import { DropPile } from "../DropPile";
 import { Net } from "../net";
 import {
   AFTERNOON_LEN_SEC,
@@ -20,6 +21,7 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CampfireSnapshot,
+  DropPileSnapshot,
   CAMPFIRE_RANGE,
   DAY_LENGTH_SEC,
   DayPhase,
@@ -33,12 +35,14 @@ import {
   MORNING_LEN_SEC,
   NIGHT_LEN_SEC,
   NOON_LEN_SEC,
-  ObjectKind,
   PlayerId,
   phaseAt,
   RemovedObject,
   RESOURCE_KEYS,
   Resources,
+  ResourceFlowEvent,
+  DamageEvent,
+  resourceCap,
   ScoreEntry,
   ServerMessage,
   StateMessage,
@@ -73,6 +77,8 @@ import {
 } from "../../shared/names";
 import { BIOME_MINI_COLOR } from "../biomeColors";
 import { getLanguage, t } from "../i18n";
+import { objKey } from "../../shared/objectKey";
+import { shade as shadeColor, lerpColor } from "../colorUtils";
 
 interface ClickState {
   startX: number;
@@ -153,22 +159,6 @@ const HELP_DURATION_MS = 2500;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
 
-function objKey(kind: ObjectKind, i: number, j: number): string {
-  const p =
-    kind === "tree"
-      ? "t"
-      : kind === "bush"
-        ? "b"
-        : kind === "mushroom"
-          ? "m"
-          : kind === "fish"
-            ? "f"
-            : kind === "cactus"
-              ? "c"
-              : "s";
-  return `${p}_${i}_${j}`;
-}
-
 export class GameScene extends Phaser.Scene {
   private net!: Net;
   private playerId: PlayerId = 0;
@@ -195,6 +185,8 @@ export class GameScene extends Phaser.Scene {
   private campfires: Map<string, Campfire> = new Map();
   private artifacts: Map<string, Artifact> = new Map();
   private pendingArtifacts: ArtifactSnapshot[] = [];
+  private dropPiles: Map<string, DropPile> = new Map();
+  private pendingDropPiles: DropPileSnapshot[] = [];
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -209,6 +201,8 @@ export class GameScene extends Phaser.Scene {
   private collectedTotals: Resources = emptyResources();
   private pendingScoreEntry: ScoreEntry | null = null;
   private hud: HTMLElement | null = null;
+  private tribeBanner: HTMLElement | null = null;
+  private tribesBar: HTMLElement | null = null;
   private minimapWrap: HTMLElement | null = null;
   private minimapCanvas: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -304,7 +298,7 @@ export class GameScene extends Phaser.Scene {
   private perfAnimalCount = 0;
   private perfUnitCount = 0;
   private perfFishCount = 0;
-  private perfVisible = true;
+  private perfVisible = false;
 
   private gameTimeSec = 0;
   private nightOverlay!: Phaser.GameObjects.RenderTexture;
@@ -339,6 +333,7 @@ export class GameScene extends Phaser.Scene {
     this.pendingFishes = data.init.fishes ?? [];
     this.pendingCampfires = data.init.campfires ?? [];
     this.pendingArtifacts = data.init.artifacts ?? [];
+    this.pendingDropPiles = data.init.dropPiles ?? [];
     this.tribeCounts = data.init.tribeCounts ?? [];
     this.gameTimeSec = data.init.gameTimeSec ?? 0;
     this.lastPhase = phaseAt(this.gameTimeSec);
@@ -382,6 +377,10 @@ export class GameScene extends Phaser.Scene {
       this.spawnArtifactLocal(snap);
     }
     this.pendingArtifacts = [];
+    for (const snap of this.pendingDropPiles) {
+      this.spawnDropPileLocal(snap);
+    }
+    this.pendingDropPiles = [];
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
@@ -428,7 +427,7 @@ export class GameScene extends Phaser.Scene {
     const spawn = initData.init.spawn;
     const spawnPx = gridToScreen(spawn.cx + 0.5, spawn.cy + 0.5);
     cam.centerOn(spawnPx.x, spawnPx.y);
-    cam.setZoom(1);
+    cam.setZoom(1.6);
     this.camTargetX = cam.scrollX;
     this.camTargetY = cam.scrollY;
 
@@ -490,11 +489,31 @@ export class GameScene extends Phaser.Scene {
     this.hud = document.getElementById("hud");
     if (this.hud) {
       this.hud.addEventListener("click", (e) => this.onHudClick(e));
-      this.setupHudDrag(this.hud);
+      this.setupPanelDrag(this.hud, "rts.hud.position");
+    }
+    this.tribeBanner = document.getElementById("tribe-banner");
+    if (this.tribeBanner) {
+      this.tribeBanner.addEventListener("click", (e) => this.onHudClick(e));
+      this.setupPanelDrag(this.tribeBanner, "rts.tribeBanner.position");
+    }
+    this.tribesBar = document.getElementById("tribes-bar");
+    if (this.tribesBar) {
+      this.tribesBar.addEventListener("click", (e) => this.onHudClick(e));
+      const isCoarse =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches;
+      if (!isCoarse) {
+        this.setupPanelDrag(this.tribesBar, "rts.tribesBar.position");
+      }
     }
     this.minimapWrap = document.getElementById("minimap-wrap");
     this.minimapVisible = false;
-    if (this.minimapWrap) this.minimapWrap.style.display = "none";
+    if (this.minimapWrap) {
+      this.minimapWrap.style.display = "none";
+      this.setupPanelDrag(this.minimapWrap, "rts.minimap.position", {
+        ignoreSelector: "canvas",
+      });
+    }
     this.perfEl = document.getElementById("perf");
     const storedPerf = localStorage.getItem("rts.perfVisible");
     if (storedPerf !== null) this.perfVisible = storedPerf === "1";
@@ -514,6 +533,7 @@ export class GameScene extends Phaser.Scene {
     if (this.helpEl) {
       this.helpEl.classList.remove("show");
       this.helpEl.setAttribute("aria-hidden", "true");
+      this.setupPanelDrag(this.helpEl, "rts.help.position");
     }
 
     this.updateChunks();
@@ -533,6 +553,7 @@ export class GameScene extends Phaser.Scene {
     for (const a of this.animals.values()) a.update(dt);
     for (const f of this.campfires.values()) f.update(dt);
     for (const ar of this.artifacts.values()) ar.update(dt);
+    for (const dp of this.dropPiles.values()) dp.update(dt);
     for (const v of this.volcanoes.values()) v.update(dt);
     this.updateSurf(time);
     this.updateWaterfalls(time);
@@ -1984,9 +2005,12 @@ export class GameScene extends Phaser.Scene {
       const moonAlpha = 0.18 + 0.12 * nightK;
       const moonPos = this.celestialScreenPos(t, this.scale.width, this.scale.height);
       if (moonPos) {
+        const z = cam.zoom;
+        const mx = (moonPos.x - (cam.width * (1 - z)) / 2) / z;
+        const my = (moonPos.y - (cam.height * (1 - z)) / 2) / z;
         er.clear();
         er.fillStyle(0xffffff, moonAlpha);
-        er.fillCircle(moonPos.x, moonPos.y, 90);
+        er.fillCircle(mx, my, 90 / z);
         this.nightOverlay.erase(er);
       }
     }
@@ -2012,6 +2036,10 @@ export class GameScene extends Phaser.Scene {
   private drawCelestial(t: number, w: number, h: number): void {
     const g = this.celestialGfx;
     g.clear();
+    const cam = this.cameras.main;
+    const z = cam.zoom;
+    g.setScale(1 / z);
+    g.setPosition((w * (z - 1)) / (2 * z), (h * (z - 1)) / (2 * z));
     const pos = this.celestialScreenPos(t, w, h);
     if (!pos) return;
     if (pos.isNight) {
@@ -2587,6 +2615,21 @@ export class GameScene extends Phaser.Scene {
     if (msg.artifactFinds && msg.artifactFinds.length > 0) {
       this.handleArtifactFinds(msg.artifactFinds);
     }
+    if (msg.dropPiles && msg.dropPiles.length > 0) {
+      for (const snap of msg.dropPiles) {
+        const existing = this.dropPiles.get(snap.id);
+        if (existing) existing.applySnap(snap);
+        else this.spawnDropPileLocal(snap);
+      }
+    }
+    if (msg.removedDropPileIds && msg.removedDropPileIds.length > 0) {
+      for (const id of msg.removedDropPileIds) {
+        const dp = this.dropPiles.get(id);
+        if (!dp) continue;
+        dp.destroy();
+        this.dropPiles.delete(id);
+      }
+    }
     let resChanged = msg.resources.length !== this.resources.length;
     if (!resChanged) {
       outer: for (let i = 0; i < msg.resources.length; i++) {
@@ -2618,6 +2661,22 @@ export class GameScene extends Phaser.Scene {
       }
       this.resources = msg.resources;
       this.updateHud();
+    }
+
+    if (msg.resourceFlows && msg.resourceFlows.length > 0) {
+      for (const ev of msg.resourceFlows) {
+        if (ev.owner !== this.playerId) continue;
+        this.spawnFloatingResource(ev);
+      }
+    }
+
+    if (msg.damageEvents && msg.damageEvents.length > 0) {
+      for (const ev of msg.damageEvents) {
+        const ti = Math.floor(ev.gx);
+        const tj = Math.floor(ev.gy);
+        if (!this.visible.has(`${ti},${tj}`)) continue;
+        this.spawnFloatingDamage(ev);
+      }
     }
 
     const myProgPrev = this.growthProgress[this.playerId] ?? 0;
@@ -2690,6 +2749,12 @@ export class GameScene extends Phaser.Scene {
           : s.toastOtherCampfire(name);
       this.showToast(text, "campfire", snap.owner);
     }
+  }
+
+  private spawnDropPileLocal(snap: DropPileSnapshot): void {
+    if (this.dropPiles.has(snap.id)) return;
+    const dp = new DropPile(this, snap, this.seed);
+    this.dropPiles.set(snap.id, dp);
   }
 
   private spawnArtifactLocal(snap: ArtifactSnapshot): void {
@@ -3141,11 +3206,15 @@ export class GameScene extends Phaser.Scene {
     this.hoverTile.strokePath();
   }
 
-  private setupHudDrag(hud: HTMLElement): void {
-    const STORAGE_KEY = "rts.hud.position";
+  private setupPanelDrag(
+    el: HTMLElement,
+    storageKey: string,
+    opts?: { ignoreSelector?: string },
+  ): void {
+    const ignoreSel = opts?.ignoreSelector;
     let stored: { x: number; y: number } | null = null;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (
@@ -3160,8 +3229,8 @@ export class GameScene extends Phaser.Scene {
       stored = null;
     }
     const clampPosition = (x: number, y: number): { x: number; y: number } => {
-      const w = hud.offsetWidth;
-      const h = hud.offsetHeight;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
       const mx = Math.max(0, window.innerWidth - w);
       const my = Math.max(0, window.innerHeight - h);
       return {
@@ -3171,10 +3240,11 @@ export class GameScene extends Phaser.Scene {
     };
     const setPosition = (x: number, y: number) => {
       const c = clampPosition(x, y);
-      hud.style.left = `${c.x}px`;
-      hud.style.top = `${c.y}px`;
-      hud.style.right = "auto";
-      hud.style.bottom = "auto";
+      el.style.left = `${c.x}px`;
+      el.style.top = `${c.y}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+      el.style.transform = "none";
     };
     if (stored) setPosition(stored.x, stored.y);
 
@@ -3189,10 +3259,9 @@ export class GameScene extends Phaser.Scene {
 
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as HTMLElement | null;
-      if (target && target.closest("[data-spectate-slot]")) {
-        return;
-      }
-      const rect = hud.getBoundingClientRect();
+      if (target && target.closest("[data-spectate-slot]")) return;
+      if (ignoreSel && target && target.closest(ignoreSel)) return;
+      const rect = el.getBoundingClientRect();
       drag = {
         pointerId: ev.pointerId,
         startX: ev.clientX,
@@ -3202,7 +3271,7 @@ export class GameScene extends Phaser.Scene {
         moved: false,
       };
       try {
-        hud.setPointerCapture(ev.pointerId);
+        el.setPointerCapture(ev.pointerId);
       } catch {
         // ignore
       }
@@ -3213,7 +3282,7 @@ export class GameScene extends Phaser.Scene {
       const dy = ev.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) > 5) {
         drag.moved = true;
-        hud.classList.add("dragging");
+        el.classList.add("dragging");
       }
       if (drag.moved) {
         setPosition(drag.baseX + dx, drag.baseY + dy);
@@ -3224,17 +3293,17 @@ export class GameScene extends Phaser.Scene {
       if (!drag || ev.pointerId !== drag.pointerId) return;
       const moved = drag.moved;
       drag = null;
-      hud.classList.remove("dragging");
+      el.classList.remove("dragging");
       try {
-        hud.releasePointerCapture(ev.pointerId);
+        el.releasePointerCapture(ev.pointerId);
       } catch {
         // ignore
       }
       if (moved) {
-        const rect = hud.getBoundingClientRect();
+        const rect = el.getBoundingClientRect();
         try {
           localStorage.setItem(
-            STORAGE_KEY,
+            storageKey,
             JSON.stringify({ x: rect.left, y: rect.top }),
           );
         } catch {
@@ -3244,17 +3313,17 @@ export class GameScene extends Phaser.Scene {
           e.stopPropagation();
           e.preventDefault();
         };
-        hud.addEventListener("click", stopper, { capture: true, once: true });
+        el.addEventListener("click", stopper, { capture: true, once: true });
       }
     };
 
-    hud.addEventListener("pointerdown", onDown);
-    hud.addEventListener("pointermove", onMove);
-    hud.addEventListener("pointerup", finish);
-    hud.addEventListener("pointercancel", finish);
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", finish);
+    el.addEventListener("pointercancel", finish);
 
     window.addEventListener("resize", () => {
-      const rect = hud.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
       setPosition(rect.left, rect.top);
     });
   }
@@ -3315,13 +3384,26 @@ export class GameScene extends Phaser.Scene {
       fisch: s.resFisch,
       stein: s.resStein,
     };
-    const resHtml = RESOURCE_KEYS.map(
-      (k) =>
-        `<div class="item"><span class="ico ${k}"></span>` +
-        `<span class="label">${labels[k]}:</span><b>${myRes[k]}</b></div>`,
-    ).join("");
-
     const tribeCounts = this.tribeCounts;
+    const myTribeSize = tribeCounts[this.playerId] ?? 0;
+    const resHtml = RESOURCE_KEYS.map((k) => {
+      const have = myRes[k];
+      const cap = resourceCap(k, myTribeSize);
+      const pct = cap > 0 ? Math.min(100, Math.round((have / cap) * 100)) : 0;
+      const full = cap > 0 && have >= cap ? " full" : "";
+      return (
+        `<div class="item">` +
+        `<span class="ico-wrap">` +
+        `<span class="ico ${k}"></span>` +
+        `<span class="cap-bar${full}" title="${have} / ${cap}">` +
+        `<span class="cap-fill" style="width:${pct}%"></span>` +
+        `</span>` +
+        `</span>` +
+        `<span class="label">${labels[k]}:</span>` +
+        `<b>${have}<span class="cap-max">/${cap}</span></b>` +
+        `</div>`
+      );
+    }).join("");
     const isNight = this.lastPhase === "night";
     const countChip = (n: number) =>
       `<span class="count" title="${s.hudTribeMembers}">👥 ${n}</span>`;
@@ -3342,32 +3424,42 @@ export class GameScene extends Phaser.Scene {
       const isBot = this.botSlots.includes(i);
       const active = this.spectatorTarget === i;
       const cls =
-        "row" +
+        "tribe-card" +
         (isBot ? " clickable" : "") +
         (active ? " active" : "");
       const attr = isBot ? ` data-spectate-slot="${i}"` : "";
-      const eye = isBot ? `<span class="eye">${active ? "◉" : "◎"}</span>` : "";
+      const count = tribeCounts[i] ?? 0;
+      const flagHtml = flag
+        ? `<span class="flag">${flag}</span> `
+        : "";
       otherRows.push(
-        `<div class="${cls}"${attr}><span class="swatch" style="background:${c}"></span>` +
-          `${flag ? `<span class="flag" title="${LANGUAGE_LABEL[this.tribeLanguages[i] as NameLanguage] ?? ""}">${flag}</span> ` : ""}` +
-          `${escapeHtml(n)} ${countChip(tribeCounts[i] ?? 0)}${eye}</div>`,
+        `<div class="${cls}"${attr}>` +
+          `<div class="tribe-square" style="background:${c}"></div>` +
+          `<div class="tribe-label">${flagHtml}${escapeHtml(n)}</div>` +
+          `<div class="tribe-count">👥 ${count}</div>` +
+          `</div>`,
       );
     }
-    const othersHtml = otherRows.length
-      ? `<div class="others">${otherRows.join("")}</div>`
-      : `<div class="others">${escapeHtml(s.hudWaitingForOthers)}</div>`;
-
     const myFlag = this.flagFor(this.playerId);
     const meActive = this.spectatorTarget === null ? " active" : "";
     this.hud.innerHTML =
       `<div class="hud-drag-handle"></div>` +
-      `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
-      `<span class="swatch" style="background:${myColor}"></span>` +
-      `${escapeHtml(s.hudTribeOf(myName))}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
-      `${ownCountChip} ${clockHtml}</div>` +
-      this.growthHudHtml() +
-      `<div class="res">${resHtml}</div>` +
-      othersHtml;
+      `<div class="res">${resHtml}</div>`;
+
+    if (this.tribesBar) {
+      this.tribesBar.innerHTML = otherRows.length
+        ? otherRows.join("")
+        : `<span style="font-size:11px;color:#88a088;padding:4px 8px">${escapeHtml(s.hudWaitingForOthers)}</span>`;
+    }
+
+    if (this.tribeBanner) {
+      this.tribeBanner.innerHTML =
+        `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
+        `<span class="swatch" style="background:${myColor}"></span>` +
+        `${escapeHtml(s.hudTribeOf(myName))}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
+        `${ownCountChip} ${clockHtml}</div>` +
+        this.growthHudHtml();
+    }
   }
 
   private togglePerf(): void {
@@ -3443,6 +3535,65 @@ export class GameScene extends Phaser.Scene {
   private onResourceGain(key: keyof Resources, amount: number): void {
     if (amount <= 0) return;
     if (key === "beeren") this.triggerHelp("berry");
+  }
+
+  private spawnFloatingResource(ev: ResourceFlowEvent): void {
+    if (ev.amount === 0) return;
+    let gx = ev.gx;
+    let gy = ev.gy;
+    let nearestD2 = 2.5 * 2.5;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      const dx = u.gx - ev.gx;
+      const dy = u.gy - ev.gy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < nearestD2) {
+        nearestD2 = d2;
+        gx = u.gx;
+        gy = u.gy;
+      }
+    }
+    const isGain = ev.amount > 0;
+    const txt = (isGain ? "+" : "") + String(ev.amount);
+    const color = isGain ? "#5eff70" : "#ff6e6e";
+    this.spawnFloatingText(gx, gy, txt, color);
+  }
+
+  private spawnFloatingDamage(ev: DamageEvent): void {
+    if (ev.amount <= 0) return;
+    const amt = Math.max(1, Math.round(ev.amount));
+    this.spawnFloatingText(ev.gx, ev.gy, `-${amt}`, "#ff5050");
+  }
+
+  private spawnFloatingText(
+    gx: number,
+    gy: number,
+    txt: string,
+    color: string,
+  ): void {
+    const sp = gridToScreen(gx, gy);
+    const gh = groundHeight(this.seed, gx, gy);
+    const x = sp.x;
+    const y = sp.y - gh - 42;
+    const label = this.add
+      .text(x, y, txt, {
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontSize: "13px",
+        fontStyle: "bold",
+        color,
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(1_900_000);
+    this.tweens.add({
+      targets: label,
+      y: y - 26,
+      alpha: 0,
+      duration: 900,
+      ease: "Cubic.Out",
+      onComplete: () => label.destroy(),
+    });
   }
 
   private checkHelpTriggers(dt: number): void {
@@ -3778,26 +3929,6 @@ export class GameScene extends Phaser.Scene {
     }
     return "#888888";
   }
-}
-
-function shadeColor(color: number, factor: number): number {
-  const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
-  const g = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
-  const b = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
-  return (r << 16) | (g << 8) | b;
-}
-
-function lerpColor(a: number, b: number, t: number): number {
-  const ar = (a >> 16) & 0xff;
-  const ag = (a >> 8) & 0xff;
-  const ab = a & 0xff;
-  const br = (b >> 16) & 0xff;
-  const bg = (b >> 8) & 0xff;
-  const bb = b & 0xff;
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bl = Math.round(ab + (bb - ab) * t);
-  return (r << 16) | (g << 8) | bl;
 }
 
 function computeScore(timeSec: number, collected: number, tribe: number): number {
