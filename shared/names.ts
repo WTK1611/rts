@@ -53,6 +53,76 @@ export const LANGUAGE_FLAG: Record<NameLanguage, string> = {
   br: "🇧🇷",
 };
 
+export const TRIBE_NAMES_BY_LANG: Record<NameLanguage, string[]> = {
+  de: [
+    "Wölfe", "Bären", "Adler", "Mammuts", "Falken",
+    "Wisente", "Luchse", "Raben", "Hirsche", "Eber",
+    "Füchse", "Steinböcke",
+  ],
+  en: [
+    "Wolves", "Bears", "Eagles", "Hawks", "Lions",
+    "Stags", "Ravens", "Bison", "Lynx", "Boars",
+    "Foxes", "Ibex",
+  ],
+  it: [
+    "Lupi", "Orsi", "Aquile", "Falchi", "Cervi",
+    "Corvi", "Linci", "Bisonti", "Cinghiali", "Volpi",
+    "Stambecchi", "Camosci",
+  ],
+  es: [
+    "Lobos", "Osos", "Águilas", "Halcones", "Ciervos",
+    "Cuervos", "Linces", "Bisontes", "Jabalíes", "Zorros",
+    "Íbices", "Sarrios",
+  ],
+  fr: [
+    "Loups", "Ours", "Aigles", "Faucons", "Cerfs",
+    "Corbeaux", "Lynx", "Bisons", "Sangliers", "Renards",
+    "Bouquetins", "Chamois",
+  ],
+  pt: [
+    "Lobos", "Ursos", "Águias", "Falcões", "Veados",
+    "Corvos", "Linces", "Bisontes", "Javalis", "Raposas",
+    "Cabras", "Camurças",
+  ],
+  sv: [
+    "Vargar", "Björnar", "Örnar", "Falkar", "Hjortar",
+    "Korpar", "Lodjur", "Visenter", "Vildsvin", "Rävar",
+    "Stenbockar", "Älgar",
+  ],
+  el: [
+    "Λύκοι", "Αρκούδες", "Αετοί", "Γεράκια", "Ελάφια",
+    "Κοράκια", "Λύγκες", "Βίσωνες", "Αγριόχοιροι", "Αλεπούδες",
+    "Λέοντες", "Ταύροι",
+  ],
+  ru: [
+    "Волки", "Медведи", "Орлы", "Соколы", "Олени",
+    "Вороны", "Рыси", "Зубры", "Кабаны", "Лисы",
+    "Туры", "Лоси",
+  ],
+  pl: [
+    "Wilki", "Niedźwiedzie", "Orły", "Sokoły", "Jelenie",
+    "Kruki", "Rysie", "Żubry", "Dziki", "Lisy",
+    "Tury", "Łosie",
+  ],
+  us: [
+    "Grizzlies", "Coyotes", "Mustangs", "Buffalos", "Cougars",
+    "Bobcats", "Wolverines", "Rattlers", "Pronghorns", "Alligators",
+    "Pumas", "Roadrunners",
+  ],
+  br: [
+    "Onças", "Araras", "Tucanos", "Jacarés", "Capivaras",
+    "Sucuris", "Jaguatiricas", "Tatus", "Piranhas", "Tamanduás",
+    "Lobos-Guará", "Anhumas",
+  ],
+};
+
+export const TRIBE_NAME_POOL_SIZE = 12;
+
+export function tribeNameAt(lang: NameLanguage, index: number): string {
+  const pool = TRIBE_NAMES_BY_LANG[lang] ?? TRIBE_NAMES_BY_LANG.de;
+  return pool[((index % pool.length) + pool.length) % pool.length];
+}
+
 interface NamePool {
   m: string[];
   f: string[];

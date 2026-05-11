@@ -17,7 +17,9 @@ import {
   LANGUAGES,
   NameLanguage,
   NAME_LANGUAGES,
+  TRIBE_NAME_POOL_SIZE,
   languageForSlot,
+  tribeNameAt,
 } from "../shared/names";
 import { addScore, rankFor, topScores } from "./db";
 
@@ -41,6 +43,7 @@ interface PlayerSlot {
   name: string;
   id: PlayerId;
   language: NameLanguage;
+  tribeNameIndex: number; // -1 for human players (use typed name)
   bot?: AIBot;
 }
 
@@ -48,97 +51,35 @@ const BOT_COUNT = Number(process.env.RTS_BOT_COUNT ?? 5);
 const BOT_RESPAWN_DELAY_MS = 12000;
 const pendingBotRespawns: Map<PlayerId, number> = new Map();
 
-const TRIBE_NAMES_BY_LANG: Record<NameLanguage, string[]> = {
-  de: [
-    "Wölfe", "Bären", "Adler", "Mammuts", "Falken",
-    "Wisente", "Luchse", "Raben", "Hirsche", "Eber",
-    "Füchse", "Steinböcke",
-  ],
-  en: [
-    "Wolves", "Bears", "Eagles", "Hawks", "Lions",
-    "Stags", "Ravens", "Bison", "Lynx", "Boars",
-    "Foxes", "Ibex",
-  ],
-  it: [
-    "Lupi", "Orsi", "Aquile", "Falchi", "Cervi",
-    "Corvi", "Linci", "Bisonti", "Cinghiali", "Volpi",
-    "Stambecchi", "Camosci",
-  ],
-  es: [
-    "Lobos", "Osos", "Águilas", "Halcones", "Ciervos",
-    "Cuervos", "Linces", "Bisontes", "Jabalíes", "Zorros",
-    "Íbices", "Sarrios",
-  ],
-  fr: [
-    "Loups", "Ours", "Aigles", "Faucons", "Cerfs",
-    "Corbeaux", "Lynx", "Bisons", "Sangliers", "Renards",
-    "Bouquetins", "Chamois",
-  ],
-  pt: [
-    "Lobos", "Ursos", "Águias", "Falcões", "Veados",
-    "Corvos", "Linces", "Bisontes", "Javalis", "Raposas",
-    "Cabras", "Camurças",
-  ],
-  sv: [
-    "Vargar", "Björnar", "Örnar", "Falkar", "Hjortar",
-    "Korpar", "Lodjur", "Visenter", "Vildsvin", "Rävar",
-    "Stenbockar", "Älgar",
-  ],
-  el: [
-    "Λύκοι", "Αρκούδες", "Αετοί", "Γεράκια", "Ελάφια",
-    "Κοράκια", "Λύγκες", "Βίσωνες", "Αγριόχοιροι", "Αλεπούδες",
-    "Λέοντες", "Ταύροι",
-  ],
-  ru: [
-    "Волки", "Медведи", "Орлы", "Соколы", "Олени",
-    "Вороны", "Рыси", "Зубры", "Кабаны", "Лисы",
-    "Туры", "Лоси",
-  ],
-  pl: [
-    "Wilki", "Niedźwiedzie", "Orły", "Sokoły", "Jelenie",
-    "Kruki", "Rysie", "Żubry", "Dziki", "Lisy",
-    "Tury", "Łosie",
-  ],
-  us: [
-    "Grizzlies", "Coyotes", "Mustangs", "Buffalos", "Cougars",
-    "Bobcats", "Wolverines", "Rattlers", "Pronghorns", "Alligators",
-    "Pumas", "Roadrunners",
-  ],
-  br: [
-    "Onças", "Araras", "Tucanos", "Jacarés", "Capivaras",
-    "Sucuris", "Jaguatiricas", "Tatus", "Piranhas", "Tamanduás",
-    "Lobos-Guará", "Anhumas",
-  ],
-};
-
-function pickBotNames(
+function pickBotTribes(
   count: number,
-): Array<{ name: string; language: NameLanguage }> {
-  const pool: Array<{ name: string; language: NameLanguage }> = [];
-  for (const lang of NAME_LANGUAGES) {
-    for (const name of TRIBE_NAMES_BY_LANG[lang]) {
-      pool.push({ name, language: lang });
-    }
-  }
-  for (let i = pool.length - 1; i > 0; i--) {
+): Array<{ tribeNameIndex: number; language: NameLanguage }> {
+  const indices = Array.from({ length: TRIBE_NAME_POOL_SIZE }, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+    [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  return pool.slice(0, count);
+  const out: Array<{ tribeNameIndex: number; language: NameLanguage }> = [];
+  for (let i = 0; i < count; i++) {
+    const tribeNameIndex = indices[i % indices.length];
+    const language =
+      NAME_LANGUAGES[Math.floor(Math.random() * NAME_LANGUAGES.length)];
+    out.push({ tribeNameIndex, language });
+  }
+  return out;
 }
 
-function pickFreshTribeName(language: NameLanguage): string {
-  const used = new Set<string>();
-  for (const p of world.players) if (p) used.add(p.name);
-  const pool = TRIBE_NAMES_BY_LANG[language] ?? TRIBE_NAMES_BY_LANG.de;
-  const free = pool.filter((n) => !used.has(n));
-  if (free.length > 0) return free[Math.floor(Math.random() * free.length)];
-  for (const lang of NAME_LANGUAGES) {
-    for (const n of TRIBE_NAMES_BY_LANG[lang]) {
-      if (!used.has(n)) return n;
-    }
+function pickFreshTribeNameIndex(): number {
+  const used = new Set<number>();
+  for (const p of world.players) {
+    if (p && p.tribeNameIndex >= 0) used.add(p.tribeNameIndex);
   }
-  return `Stamm ${world.players.findIndex((p) => p === null)}`;
+  const free: number[] = [];
+  for (let i = 0; i < TRIBE_NAME_POOL_SIZE; i++) {
+    if (!used.has(i)) free.push(i);
+  }
+  if (free.length > 0) return free[Math.floor(Math.random() * free.length)];
+  return Math.floor(Math.random() * TRIBE_NAME_POOL_SIZE);
 }
 
 const ANIMAL_VIEW_RADIUS = 10;
@@ -185,7 +126,7 @@ function broadcast(msg: ServerMessage): void {
 }
 
 function spawnBots(): void {
-  const picks = pickBotNames(BOT_COUNT);
+  const picks = pickBotTribes(BOT_COUNT);
   for (const pick of picks) {
     let slotId = -1;
     for (let i = MAX_PLAYERS - 1; i >= 0; i--) {
@@ -200,9 +141,10 @@ function spawnBots(): void {
     const bot = new AIBot(world.sim, slotId);
     world.players[slotId] = {
       ws: null,
-      name: pick.name,
+      name: tribeNameAt(pick.language, pick.tribeNameIndex),
       id: slotId,
       language: pick.language,
+      tribeNameIndex: pick.tribeNameIndex,
       bot,
     };
     world.bots.push(bot);
@@ -215,6 +157,10 @@ function namesOf(): string[] {
 
 function languagesOf(): string[] {
   return world.players.map((p) => p?.language ?? "");
+}
+
+function tribeNameIndicesOf(): number[] {
+  return world.players.map((p) => p?.tribeNameIndex ?? -1);
 }
 
 function visibleAnimalsFor(
@@ -334,7 +280,13 @@ function joinPlayer(
     (LANGUAGES as readonly string[]).includes(requestedLanguage)
       ? (requestedLanguage as Language)
       : languageForSlot(world.sim.seed, slotId);
-  const slot: PlayerSlot = { ws, name, id: slotId, language };
+  const slot: PlayerSlot = {
+    ws,
+    name,
+    id: slotId,
+    language,
+    tribeNameIndex: -1,
+  };
   world.players[slotId] = slot;
   slots.set(ws, slot);
   world.sim.addPlayer(slotId, language);
@@ -371,6 +323,7 @@ function joinPlayer(
     resources: world.sim.resources.map((r) => ({ ...r })),
     names: namesOf(),
     languages: languagesOf(),
+    tribeNameIndices: tribeNameIndicesOf(),
     botSlots: botSlotIds(),
     footprints: [...world.sim.footprints],
     animals: visibleAnimals,
@@ -433,17 +386,20 @@ function tick(): void {
     playerId: PlayerId;
     name: string;
     language: NameLanguage;
+    tribeNameIndex: number;
     splitFrom: PlayerId;
   }> = [];
   for (const sp of tribeSplits) {
     const language = world.sim.tribeLanguage[sp.to];
-    const name = pickFreshTribeName(language);
+    const tribeNameIndex = pickFreshTribeNameIndex();
+    const name = tribeNameAt(language, tribeNameIndex);
     const bot = new AIBot(world.sim, sp.to);
     world.players[sp.to] = {
       ws: null,
       name,
       id: sp.to,
       language,
+      tribeNameIndex,
       bot,
     };
     world.bots.push(bot);
@@ -451,6 +407,7 @@ function tick(): void {
       playerId: sp.to,
       name,
       language,
+      tribeNameIndex,
       splitFrom: sp.from,
     });
   }
@@ -581,6 +538,7 @@ function tick(): void {
         playerId: sp.playerId,
         name: sp.name,
         language: sp.language,
+        tribeNameIndex: sp.tribeNameIndex,
         units: splitUnits,
         isBot: true,
         splitFrom: sp.splitFrom,
