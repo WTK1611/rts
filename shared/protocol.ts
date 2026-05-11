@@ -69,6 +69,23 @@ export const RESOURCE_KEYS: Array<keyof Resources> = [
   "stein",
 ];
 
+export const RESOURCE_CAP_PER_PERSON: Resources = {
+  holz: 10,
+  wasser: 4,
+  beeren: 5,
+  pilze: 4,
+  fleisch: 8,
+  fisch: 4,
+  stein: 5,
+};
+
+export function resourceCap(
+  key: keyof Resources,
+  tribeSize: number,
+): number {
+  return RESOURCE_CAP_PER_PERSON[key] * Math.max(0, tribeSize);
+}
+
 export function emptyResources(): Resources {
   return {
     holz: 0, wasser: 0, beeren: 0, pilze: 0,
@@ -76,7 +93,7 @@ export function emptyResources(): Resources {
   };
 }
 
-export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone";
+export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone" | "cactus";
 
 export type AnimalKind =
   | "hare"
@@ -181,6 +198,7 @@ export interface InitMessage {
   resources: Resources[];
   names: string[];
   languages: string[];
+  tribeNameIndices: number[];
   botSlots: PlayerId[];
   footprints: Footprint[];
   animals: AnimalSnapshot[];
@@ -254,6 +272,7 @@ export interface OpponentJoinedMessage {
   playerId: PlayerId;
   name: string;
   language: string;
+  tribeNameIndex?: number;
   units: UnitSnapshot[];
   isBot?: boolean;
   splitFrom?: PlayerId;

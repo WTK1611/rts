@@ -25,6 +25,7 @@ import {
   ObjectKind,
   PlayerId,
   RemovedObject,
+  resourceCap,
   ResourceFlowEvent,
   Resources,
   TICK_RATE,
@@ -498,11 +499,11 @@ export class Sim {
       if (count < MAX_TRIBE_SIZE) {
         this.spawnNewTribeMember(p, gx, gy);
       } else {
-        this.resources[p].fleisch += 50;
+        this.gainResource(p, "fleisch", 50, gx, gy);
       }
       return;
     }
-    this.resources[p][reward.kind] += reward.amount;
+    this.gainResource(p, reward.kind, reward.amount, gx, gy);
   }
 
   private spawnAnimals(): void {
@@ -812,6 +813,35 @@ export class Sim {
       if (u.owner >= 0 && u.owner < out.length) out[u.owner]++;
     }
     return out;
+  }
+
+  private tribeSizeOf(p: PlayerId): number {
+    let n = 0;
+    for (const u of this.units.values()) if (u.owner === p) n++;
+    return n;
+  }
+
+  private resourceRoom(p: PlayerId, key: keyof Resources): number {
+    const cap = resourceCap(key, this.tribeSizeOf(p));
+    const have = this.resources[p][key];
+    return Math.max(0, cap - have);
+  }
+
+  private gainResource(
+    owner: PlayerId,
+    key: keyof Resources,
+    amount: number,
+    gx: number,
+    gy: number,
+    pushFlow = true,
+  ): number {
+    if (amount <= 0) return 0;
+    const room = this.resourceRoom(owner, key);
+    const actual = Math.min(amount, room);
+    if (actual <= 0) return 0;
+    this.resources[owner][key] += actual;
+    if (pushFlow) this.pushFlow(owner, key, actual, gx, gy);
+    return actual;
   }
 
   consumeNewUnits(): UnitSnapshot[] {
@@ -1919,7 +1949,7 @@ export class Sim {
         }
         this.rallyAlliesToHunt(u, a);
         if (a.hp <= 0) {
-          this.resources[u.owner].fleisch += spec.meat;
+          this.gainResource(u.owner, "fleisch", spec.meat, a.gx, a.gy);
           this.animals.delete(a.id);
           this.removedAnimalIds.push(a.id);
           u.huntTarget = null;
@@ -2467,7 +2497,10 @@ export class Sim {
   private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
     if (hasTreeAt(this.seed, ti, tj)) {
       const k = objKey("tree", ti, tj);
-      if (!this.removedKeys.has(k)) {
+      if (
+        !this.removedKeys.has(k) &&
+        this.resourceRoom(u.owner, "holz") >= TREE_AUTOPICK_GAIN
+      ) {
         this.autoPickAndRegrow(
           u, "tree", ti, tj, "holz",
           TREE_AUTOPICK_GAIN, TREE_REGROW_TICKS,
@@ -2477,7 +2510,10 @@ export class Sim {
     }
     if (hasBushAt(this.seed, ti, tj)) {
       const k = objKey("bush", ti, tj);
-      if (!this.removedKeys.has(k)) {
+      if (
+        !this.removedKeys.has(k) &&
+        this.resourceRoom(u.owner, "beeren") >= BUSH_AUTOPICK_GAIN
+      ) {
         this.autoPickAndRegrow(
           u, "bush", ti, tj, "beeren",
           BUSH_AUTOPICK_GAIN, BUSH_REGROW_TICKS,
@@ -2487,7 +2523,10 @@ export class Sim {
     }
     if (hasMushroomAt(this.seed, ti, tj)) {
       const k = objKey("mushroom", ti, tj);
-      if (!this.removedKeys.has(k)) {
+      if (
+        !this.removedKeys.has(k) &&
+        this.resourceRoom(u.owner, "pilze") >= MUSHROOM_AUTOPICK_GAIN
+      ) {
         this.autoPickAndRegrow(
           u, "mushroom", ti, tj, "pilze",
           MUSHROOM_AUTOPICK_GAIN, MUSHROOM_REGROW_TICKS,
@@ -2497,7 +2536,10 @@ export class Sim {
     }
     if (hasStoneAt(this.seed, ti, tj)) {
       const k = objKey("stone", ti, tj);
-      if (!this.removedKeys.has(k)) {
+      if (
+        !this.removedKeys.has(k) &&
+        this.resourceRoom(u.owner, "stein") >= STONE_AUTOPICK_GAIN
+      ) {
         this.autoPickAndRegrow(
           u, "stone", ti, tj, "stein",
           STONE_AUTOPICK_GAIN, 0,
@@ -2509,6 +2551,7 @@ export class Sim {
   }
 
   private tryAutoPickWater(u: SimUnit, ti: number, tj: number): void {
+    if (this.resourceRoom(u.owner, "wasser") <= 0) return;
     const adj: Array<[number, number]> = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
@@ -2516,14 +2559,14 @@ export class Sim {
     for (const [di, dj] of adj) {
       const b = biomeAt(this.seed, ti + di, tj + dj);
       if (b === "lake" || b === "river") {
-        this.resources[u.owner].wasser += WATER_AUTOPICK_GAIN;
-        this.pushFlow(u.owner, "wasser", WATER_AUTOPICK_GAIN, u.gx, u.gy);
+        this.gainResource(u.owner, "wasser", WATER_AUTOPICK_GAIN, u.gx, u.gy);
         return;
       }
     }
   }
 
   private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
+    if (this.resourceRoom(u.owner, "fisch") <= 0) return;
     const cx = ti + 0.5;
     const cy = tj + 0.5;
     const r2 = FISH_CATCH_RADIUS * FISH_CATCH_RADIUS;
@@ -2546,8 +2589,7 @@ export class Sim {
     if (!caught) return;
     this.fishes.delete(caught.id);
     this.removedFishIds.push(caught.id);
-    this.resources[u.owner].fisch += FISH_AUTOPICK_GAIN;
-    this.pushFlow(u.owner, "fisch", FISH_AUTOPICK_GAIN, caught.gx, caught.gy);
+    this.gainResource(u.owner, "fisch", FISH_AUTOPICK_GAIN, caught.gx, caught.gy);
   }
 
   private autoPickAndRegrow(
@@ -2577,8 +2619,7 @@ export class Sim {
         this.regrow.set(k, this.tick + regrowTicks);
       }
     }
-    this.resources[u.owner][resKey] += gain;
-    this.pushFlow(u.owner, resKey, gain, ti + 0.5, tj + 0.5);
+    this.gainResource(u.owner, resKey, gain, ti + 0.5, tj + 0.5);
   }
 
   private hpGainForResource(resKey: keyof Resources): number {
@@ -3608,8 +3649,15 @@ export class Sim {
       resKey = "stein";
       baseTotal = stoneAmountAt(this.seed, t.i, t.j);
     }
-    const remaining = (this.remaining.get(k) ?? baseTotal) - amount;
-    this.resources[u.owner][resKey] += amount;
+    const gained = this.gainResource(
+      u.owner, resKey, amount, t.i + 0.5, t.j + 0.5, false,
+    );
+    if (gained <= 0) {
+      u.harvestTarget = null;
+      u.state = "idle";
+      return;
+    }
+    const remaining = (this.remaining.get(k) ?? baseTotal) - gained;
     if (remaining <= 0) {
       this.removedKeys.add(k);
       this.remaining.delete(k);
