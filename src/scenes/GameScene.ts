@@ -1340,19 +1340,47 @@ export class GameScene extends Phaser.Scene {
       }
       g.fillStyle(0xd28a58, 0.4);
       g.fillCircle(x + dx + 1, cy + dy - 1.4, 1.2);
-    } else {
-      if ((decor >> 3) % 7 === 0) {
-        g.fillStyle(0x6cbf6c, 0.45);
-        g.fillCircle(x + dx, cy + dy, 1.6);
-        g.fillCircle(x + dx + 2, cy + dy + 1, 1.2);
-      } else if ((decor >> 3) % 23 === 0) {
-        g.fillStyle(0xf2e07a, 0.85);
-        g.fillCircle(x + dx, cy + dy, 1.4);
-      } else if ((decor >> 3) % 31 === 0) {
-        g.fillStyle(0x7e7466, 0.8);
-        g.fillCircle(x + dx, cy + dy, 2);
-        g.fillStyle(0x5a5345, 0.7);
-        g.fillCircle(x + dx + 1, cy + dy + 1, 1.2);
+    } else if (biome === "wiesen") {
+      const bladeShades = [0x6cbf6c, 0x4d8a4d, 0x2e5a2e, 0x83cc83];
+      const bladeCount = 4 + ((decor >> 7) & 0x3);
+      const cxR = Math.round(x);
+      const cyR = Math.round(cy);
+      for (let k = 0; k < bladeCount; k++) {
+        const bx = Math.round(((((decor >> (3 + k * 5)) & 0x1f) / 31) - 0.5) * TILE_W * 0.55);
+        const by = Math.round(((((decor >> (8 + k * 5)) & 0xf) / 15) - 0.5) * TILE_H * 0.55);
+        const shade = bladeShades[(decor >> (11 + k * 2)) & 0x3];
+        const tall = 2 + ((decor >> (13 + k)) & 0x1);
+        g.fillStyle(shade, 0.9);
+        g.fillRect(cxR + bx, cyR + by - tall, 1, tall);
+      }
+      const fx = Math.round(x + dx);
+      const fy = Math.round(cy + dy);
+      if ((decor >> 17) % 13 === 0) {
+        g.fillStyle(0x3d6e3d, 0.9);
+        g.fillRect(fx, fy - 2, 1, 3);
+        g.fillStyle(0xf2e07a, 1);
+        g.fillRect(fx - 1, fy - 3, 3, 1);
+        g.fillRect(fx, fy - 4, 1, 1);
+        g.fillStyle(0xffffff, 1);
+        g.fillRect(fx, fy - 3, 1, 1);
+      } else if ((decor >> 19) % 11 === 0) {
+        g.fillStyle(0xd47ab0, 1);
+        g.fillRect(fx - 1, fy - 2, 1, 1);
+        g.fillRect(fx + 1, fy - 2, 1, 1);
+        g.fillRect(fx, fy - 3, 1, 1);
+        g.fillStyle(0x4d8a4d, 0.9);
+        g.fillRect(fx, fy - 1, 1, 2);
+      } else if ((decor >> 21) % 17 === 0) {
+        g.fillStyle(0x4d8a4d, 0.95);
+        g.fillRect(fx - 1, fy, 1, 1);
+        g.fillRect(fx + 1, fy, 1, 1);
+        g.fillRect(fx, fy - 1, 1, 1);
+        g.fillRect(fx, fy + 1, 1, 1);
+      } else if ((decor >> 23) % 23 === 0) {
+        g.fillStyle(0x9a9690, 0.95);
+        g.fillRect(fx, fy, 2, 1);
+        g.fillStyle(0x6c6864, 0.95);
+        g.fillRect(fx + 2, fy + 1, 1, 1);
       }
     }
   }
