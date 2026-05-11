@@ -3,6 +3,7 @@ import { gridToScreen, screenToGrid, TILE_W, TILE_H } from "../iso";
 import { Unit } from "../Unit";
 import { Tree, TreeStage } from "../Tree";
 import { Bush } from "../Bush";
+import { Cactus } from "../Cactus";
 import { Fish } from "../Fish";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
@@ -50,6 +51,7 @@ import {
   BIOME_PALETTES,
   groundHeight,
   hasBushAt,
+  hasCactusAt,
   hasFishAt,
   hasMushroomAt,
   hasSequoiaAt,
@@ -98,6 +100,7 @@ interface Chunk {
   rt: Phaser.GameObjects.RenderTexture;
   trees: Map<string, Tree>;
   bushes: Map<string, Bush>;
+  cacti: Map<string, Cactus>;
   mushrooms: Map<string, Mushroom>;
   fishes: Map<string, Fish>;
   stones: Map<string, Stone>;
@@ -123,7 +126,7 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
-type HelpKey = "berry" | "water" | "birth";
+type HelpKey = "berry" | "water" | "birth" | "volcano";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
@@ -138,9 +141,14 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
     img: "/image/stamm-baby-300.webp",
     text: (s) => s.helpTipBirth,
   },
+  volcano: {
+    img: "/image/vulkan-300.webp",
+    text: (s) => s.helpTipVolcano,
+  },
 };
 
 const HELP_WATER_RADIUS = 2;
+const HELP_VOLCANO_RADIUS = 4;
 const HELP_DURATION_MS = 2500;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
@@ -155,7 +163,9 @@ function objKey(kind: ObjectKind, i: number, j: number): string {
           ? "m"
           : kind === "fish"
             ? "f"
-            : "s";
+            : kind === "cactus"
+              ? "c"
+              : "s";
   return `${p}_${i}_${j}`;
 }
 
@@ -175,6 +185,7 @@ export class GameScene extends Phaser.Scene {
   private trees: Map<string, Tree> = new Map();
   private treeGrowthMap: Map<string, TreeStage> = new Map();
   private bushes: Map<string, Bush> = new Map();
+  private cacti: Map<string, Cactus> = new Map();
   private mushrooms: Map<string, Mushroom> = new Map();
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
@@ -932,6 +943,7 @@ export class GameScene extends Phaser.Scene {
     const g = this.make.graphics({ x: 0, y: 0 }, false);
     const trees = new Map<string, Tree>();
     const bushes = new Map<string, Bush>();
+    const cacti = new Map<string, Cactus>();
     const mushrooms = new Map<string, Mushroom>();
     const fishes = new Map<string, Fish>();
     const stones = new Map<string, Stone>();
@@ -1004,6 +1016,13 @@ export class GameScene extends Phaser.Scene {
             stones.set(id, s);
             this.stones.set(id, s);
           }
+        } else if (hasCactusAt(this.seed, i, j)) {
+          const id = objKey("cactus", i, j);
+          if (!this.removedKeys.has(id) && !this.cacti.has(id)) {
+            const c = new Cactus(this, i, j, this.seed);
+            cacti.set(id, c);
+            this.cacti.set(id, c);
+          }
         }
       }
     }
@@ -1019,7 +1038,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
-      trees, bushes, mushrooms, fishes, stones, sequoias, volcanoes,
+      trees, bushes, cacti, mushrooms, fishes, stones, sequoias, volcanoes,
       surfSegments,
       waterfalls,
       bbox: { x: ofx, y: ofy, w, h },
@@ -1128,6 +1147,11 @@ export class GameScene extends Phaser.Scene {
       b.container.destroy();
       b.shadow.destroy();
       this.bushes.delete(bid);
+    }
+    for (const [cid, c] of chunk.cacti) {
+      c.container.destroy();
+      c.shadow.destroy();
+      this.cacti.delete(cid);
     }
     for (const [mid, m] of chunk.mushrooms) {
       m.container.destroy();
@@ -1709,6 +1733,14 @@ export class GameScene extends Phaser.Scene {
       cache.set(key, v);
       s.container.setVisible(v);
       s.shadow.setVisible(v);
+    }
+    for (const c of this.cacti.values()) {
+      const key = `c:${c.i},${c.j}`;
+      const v = this.visible.has(`${c.i},${c.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      c.container.setVisible(v);
+      c.shadow.setVisible(v);
     }
     for (const a of this.artifacts.values()) {
       const key = `ar:${a.id}`;
@@ -2719,6 +2751,13 @@ export class GameScene extends Phaser.Scene {
         this.fishes.delete(k);
         for (const c of this.chunks.values()) c.fishes.delete(k);
       }
+    } else if (ro.kind === "cactus") {
+      const cact = this.cacti.get(k);
+      if (cact) {
+        cact.remove();
+        this.cacti.delete(k);
+        for (const c of this.chunks.values()) c.cacti.delete(k);
+      }
     } else {
       const s = this.stones.get(k);
       if (s) {
@@ -2795,6 +2834,13 @@ export class GameScene extends Phaser.Scene {
       this.stones.set(k, s);
       s.container.setVisible(v);
       s.shadow.setVisible(v);
+    } else if (ro.kind === "cactus") {
+      if (this.cacti.has(k)) return;
+      const c = new Cactus(this, ro.i, ro.j, this.seed);
+      chunk.cacti.set(k, c);
+      this.cacti.set(k, c);
+      c.container.setVisible(v);
+      c.shadow.setVisible(v);
     }
   }
 
@@ -3041,6 +3087,10 @@ export class GameScene extends Phaser.Scene {
       hasStoneAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("stone", i, j))
     ) return true;
+    if (
+      hasCactusAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("cactus", i, j))
+    ) return true;
     return false;
   }
 
@@ -3228,7 +3278,7 @@ export class GameScene extends Phaser.Scene {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
       fleisch: 0, fisch: 0, stein: 0,
     };
-    const titles: Record<keyof Resources, string> = {
+    const labels: Record<keyof Resources, string> = {
       holz: s.resHolz,
       wasser: s.resWasser,
       beeren: s.resBeeren,
@@ -3239,8 +3289,8 @@ export class GameScene extends Phaser.Scene {
     };
     const resHtml = RESOURCE_KEYS.map(
       (k) =>
-        `<div class="item" title="${titles[k]}">` +
-        `<span class="ico ${k}"></span><b>${myRes[k]}</b></div>`,
+        `<div class="item"><span class="ico ${k}"></span>` +
+        `<span class="label">${labels[k]}:</span><b>${myRes[k]}</b></div>`,
     ).join("");
 
     const tribeCounts = this.tribeCounts;
@@ -3372,15 +3422,35 @@ export class GameScene extends Phaser.Scene {
     if (this.helpCheckAccum < 0.3) return;
     this.helpCheckAccum = 0;
     if (!this.helpVisible) return;
-    if (this.helpSeen.has("water")) return;
+
+    const needWater = !this.helpSeen.has("water");
+    const needVolcano = !this.helpSeen.has("volcano");
+    if (!needWater && !needVolcano) return;
+
+    const volcRadiusSq = HELP_VOLCANO_RADIUS * HELP_VOLCANO_RADIUS;
+
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
       const ci = Math.floor(u.gx);
       const cj = Math.floor(u.gy);
-      for (let dj = -HELP_WATER_RADIUS; dj <= HELP_WATER_RADIUS; dj++) {
-        for (let di = -HELP_WATER_RADIUS; di <= HELP_WATER_RADIUS; di++) {
-          if (!isLandTile(this.seed, ci + di, cj + dj)) {
-            this.triggerHelp("water");
+
+      if (needWater) {
+        for (let dj = -HELP_WATER_RADIUS; dj <= HELP_WATER_RADIUS; dj++) {
+          for (let di = -HELP_WATER_RADIUS; di <= HELP_WATER_RADIUS; di++) {
+            if (!isLandTile(this.seed, ci + di, cj + dj)) {
+              this.triggerHelp("water");
+              return;
+            }
+          }
+        }
+      }
+
+      if (needVolcano) {
+        for (const v of this.volcanoes.values()) {
+          const dx = v.i - ci;
+          const dy = v.j - cj;
+          if (dx * dx + dy * dy <= volcRadiusSq) {
+            this.triggerHelp("volcano");
             return;
           }
         }
