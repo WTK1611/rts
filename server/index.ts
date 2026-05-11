@@ -220,29 +220,21 @@ function languagesOf(): string[] {
 function visibleAnimalsFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
-  allAnimals: AnimalSnapshot[],
 ): AnimalSnapshot[] {
   const myUnits: UnitSnapshot[] = [];
   for (const u of units) if (u.owner === ownerId) myUnits.push(u);
   if (myUnits.length === 0) return [];
-  const ids = world.sim.visibleAnimalIds(myUnits, ANIMAL_VIEW_RADIUS);
-  const out: AnimalSnapshot[] = [];
-  for (const a of allAnimals) if (ids.has(a.id)) out.push(a);
-  return out;
+  return world.sim.visibleAnimalSnapshots(myUnits, ANIMAL_VIEW_RADIUS);
 }
 
 function visibleFishesFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
-  allFishes: FishSnapshot[],
 ): FishSnapshot[] {
   const myUnits: UnitSnapshot[] = [];
   for (const u of units) if (u.owner === ownerId) myUnits.push(u);
   if (myUnits.length === 0) return [];
-  const ids = world.sim.visibleFishIds(myUnits, ANIMAL_VIEW_RADIUS);
-  const out: FishSnapshot[] = [];
-  for (const f of allFishes) if (ids.has(f.id)) out.push(f);
-  return out;
+  return world.sim.visibleFishSnapshots(myUnits, ANIMAL_VIEW_RADIUS);
 }
 
 function botSlotIds(): PlayerId[] {
@@ -349,11 +341,9 @@ function joinPlayer(
   world.sim.followChiefEnabled[slotId] = true;
 
   const allUnits = world.sim.unitsSnapshot();
-  const allAnimals = world.sim.animalsSnapshot();
-  const allFishes = world.sim.fishesSnapshot();
   const allCampfires = world.sim.campfiresSnapshot();
-  const visibleAnimals = visibleAnimalsFor(slotId, allUnits, allAnimals);
-  const visibleFishes = visibleFishesFor(slotId, allUnits, allFishes);
+  const visibleAnimals = visibleAnimalsFor(slotId, allUnits);
+  const visibleFishes = visibleFishesFor(slotId, allUnits);
   const known = world.knownAnimals[slotId];
   known.clear();
   for (const a of visibleAnimals) known.add(a.id);
@@ -466,8 +456,6 @@ function tick(): void {
   }
 
   const units = world.sim.unitsSnapshot();
-  const allAnimals = world.sim.animalsSnapshot();
-  const allFishes = world.sim.fishesSnapshot();
   world.sim.consumeRemovedFishIds();
   const allCampfires = world.sim.campfiresSnapshot();
   const diedCampfireIds = world.sim.consumeRemovedCampfireIds();
@@ -494,7 +482,7 @@ function tick(): void {
     if (!slot.ws) continue;
     if (slot.ws.readyState !== slot.ws.OPEN) continue;
 
-    const visible = visibleAnimalsFor(slot.id, units, allAnimals);
+    const visible = visibleAnimalsFor(slot.id, units);
     const visibleIds = new Set<string>();
     for (const a of visible) visibleIds.add(a.id);
 
@@ -531,7 +519,7 @@ function tick(): void {
     const removedCampfireIds: string[] = [...diedCampfireIds];
     world.knownCampfires[slot.id] = visibleCampfireIds;
 
-    const visibleFishes = visibleFishesFor(slot.id, units, allFishes);
+    const visibleFishes = visibleFishesFor(slot.id, units);
     const visibleFishIds = new Set<string>();
     for (const f of visibleFishes) visibleFishIds.add(f.id);
     const knownFi = world.knownFishes[slot.id];

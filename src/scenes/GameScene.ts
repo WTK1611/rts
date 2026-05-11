@@ -3251,8 +3251,8 @@ export class GameScene extends Phaser.Scene {
       `world A:${this.perfAnimalCount} U:${this.perfUnitCount} F:${this.perfFishCount}\n` +
       `local A:${localAnimals} U:${localUnits} F:${localFishes} chk:${chunks}`;
     let cls = "good";
-    if (fps < 30 || stick > tickBudget * 0.9) cls = "bad";
-    else if (fps < 50 || stick > tickBudget * 0.6) cls = "warn";
+    if (fps < 30 || stick > tickBudget * 1.2) cls = "bad";
+    else if (fps < 50 || stick > tickBudget) cls = "warn";
     this.perfEl.className = cls;
   }
 

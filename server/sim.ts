@@ -214,6 +214,8 @@ const ANIMAL_RESPAWN_INTERVAL = 0.5;
 const ANIMAL_RESPAWN_PER_TICK = 140;
 const ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ = 12 * 12;
 const ANIMAL_RESPAWN_TILE_ATTEMPTS = 60;
+const ANIMAL_FULL_STEP_RADIUS = 12;
+const ANIMAL_PASSIVE_STEP_BUCKETS = 10;
 const TRIBE_COHESION_IDLE_SEC = 2.0;
 const FOLLOW_CHIEF_NEAR = 5;
 const FOLLOW_CHIEF_SCAN_INTERVAL = 0.5;
@@ -282,6 +284,7 @@ const FISH_SHORE_BIAS = 0.35;
 const FISH_CATCH_RADIUS = 1.4;
 const FISH_MATURE_AGE_SEC = 30;
 const FISH_BREED_INTERVAL_SEC = 55;
+const FISH_BREED_SCAN_INTERVAL_SEC = 1.0;
 const FISH_BREED_RANGE_SQ = 1.6 * 1.6;
 const FISH_DENSITY_CAP_FACTOR = 1.8;
 
@@ -304,6 +307,12 @@ function pushBucket<T>(m: Map<number, T[]>, key: number, value: T): void {
   const arr = m.get(key);
   if (arr) arr.push(value);
   else m.set(key, [value]);
+}
+
+function updateBucketForId(id: string, buckets: number): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h) % buckets;
 }
 
 function objKey(kind: ObjectKind, i: number, j: number): string {
@@ -367,6 +376,7 @@ export class Sim {
   removedFishIds: string[] = [];
   nextFishIdx = 0;
   fishCap = 0;
+  fishBreedScanTimer = 0;
   tick = 0;
   gameTimeSec = 30;
   private lastPhase: DayPhase = "morning";
@@ -376,6 +386,7 @@ export class Sim {
   private preyGrid: Map<number, SimAnimal[]> = new Map();
   private unitGrid: Map<number, SimUnit[]> = new Map();
   private fishGrid: Map<number, SimFish[]> = new Map();
+  private activeAnimalIds = new Set<string>();
 
   constructor(seed: number) {
     this.seed = seed;
@@ -554,6 +565,15 @@ export class Sim {
     return out;
   }
 
+  animalSnapshotsForIds(ids: Set<string>): AnimalSnapshot[] {
+    const out: AnimalSnapshot[] = [];
+    for (const id of ids) {
+      const a = this.animals.get(id);
+      if (a && a.hp > 0) out.push(this.animalSnap(a));
+    }
+    return out;
+  }
+
   consumeRemovedAnimalIds(): string[] {
     const out = this.removedAnimalIds;
     this.removedAnimalIds = [];
@@ -593,6 +613,15 @@ export class Sim {
     const out: FishSnapshot[] = [];
     for (const f of this.fishes.values()) {
       out.push({ id: f.id, gx: f.gx, gy: f.gy });
+    }
+    return out;
+  }
+
+  fishSnapshotsForIds(ids: Set<string>): FishSnapshot[] {
+    const out: FishSnapshot[] = [];
+    for (const id of ids) {
+      const f = this.fishes.get(id);
+      if (f) out.push({ id: f.id, gx: f.gx, gy: f.gy });
     }
     return out;
   }
@@ -637,7 +666,6 @@ export class Sim {
   }
 
   private stepFishes(dt: number): void {
-    const newborns: SimFish[] = [];
     for (const f of this.fishes.values()) {
       f.ageSec += dt;
       f.turnTimer -= dt;
@@ -665,23 +693,48 @@ export class Sim {
       }
     }
 
+    this.fishBreedScanTimer -= dt;
+    if (this.fishBreedScanTimer > 0) return;
+    const stepDt = FISH_BREED_SCAN_INTERVAL_SEC;
+    this.fishBreedScanTimer = stepDt;
+
+    const newborns: SimFish[] = [];
     if (this.fishes.size < this.fishCap) {
+      const cellSize = 2;
+      const buckets: Map<string, SimFish[]> = new Map();
       for (const f of this.fishes.values()) {
         if (f.ageSec < FISH_MATURE_AGE_SEC) continue;
+        const ci = Math.floor(f.gx / cellSize);
+        const cj = Math.floor(f.gy / cellSize);
+        const key = `${ci}|${cj}`;
+        const arr = buckets.get(key);
+        if (arr) arr.push(f);
+        else buckets.set(key, [f]);
+      }
+
+      for (const f of this.fishes.values()) {
+        if (f.ageSec < FISH_MATURE_AGE_SEC) continue;
+        const ci = Math.floor(f.gx / cellSize);
+        const cj = Math.floor(f.gy / cellSize);
         let mate: SimFish | null = null;
-        for (const g of this.fishes.values()) {
-          if (g === f) continue;
-          if (g.id <= f.id) continue;
-          if (g.ageSec < FISH_MATURE_AGE_SEC) continue;
-          const dx = g.gx - f.gx;
-          const dy = g.gy - f.gy;
-          if (dx * dx + dy * dy < FISH_BREED_RANGE_SQ) {
-            mate = g;
-            break;
+        outer: for (let dj = -1; dj <= 1 && !mate; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            const arr = buckets.get(`${ci + di}|${cj + dj}`);
+            if (!arr) continue;
+            for (const g of arr) {
+              if (g === f) continue;
+              if (g.id <= f.id) continue;
+              const dx = g.gx - f.gx;
+              const dy = g.gy - f.gy;
+              if (dx * dx + dy * dy < FISH_BREED_RANGE_SQ) {
+                mate = g;
+                break outer;
+              }
+            }
           }
         }
         if (mate) {
-          f.breedTimer += dt;
+          f.breedTimer += stepDt;
           if (f.breedTimer >= FISH_BREED_INTERVAL_SEC) {
             f.breedTimer = -FISH_BREED_INTERVAL_SEC * 0.6;
             const ti = Math.floor(f.gx);
@@ -705,7 +758,7 @@ export class Sim {
             }
           }
         } else if (f.breedTimer > 0) {
-          f.breedTimer = Math.max(0, f.breedTimer - dt * 0.5);
+          f.breedTimer = Math.max(0, f.breedTimer - stepDt * 0.5);
         }
       }
     }
@@ -947,6 +1000,33 @@ export class Sim {
     }
   }
 
+  private rebuildActiveAnimalSet(): void {
+    this.activeAnimalIds.clear();
+    const radius = ANIMAL_FULL_STEP_RADIUS;
+    const r2 = radius * radius;
+    const cs = SPATIAL_CELL;
+    const rr = Math.ceil(radius / cs);
+    const markNear = (gx: number, gy: number): void => {
+      const ux = Math.floor(gx / cs);
+      const uy = Math.floor(gy / cs);
+      for (let cy = uy - rr; cy <= uy + rr; cy++) {
+        for (let cx = ux - rr; cx <= ux + rr; cx++) {
+          const arr = this.animalGrid.get(gridKey(cx, cy));
+          if (!arr) continue;
+          for (const a of arr) {
+            const dx = a.gx - gx;
+            const dy = a.gy - gy;
+            if (dx * dx + dy * dy <= r2) this.activeAnimalIds.add(a.id);
+          }
+        }
+      }
+    };
+    for (const u of this.units.values()) {
+      if (u.hp > 0) markNear(u.gx, u.gy);
+    }
+    for (const f of this.campfires.values()) markNear(f.gx, f.gy);
+  }
+
   visibleAnimalIds(
     viewers: Array<{ gx: number; gy: number }>,
     radius: number,
@@ -973,6 +1053,13 @@ export class Sim {
       }
     }
     return out;
+  }
+
+  visibleAnimalSnapshots(
+    viewers: Array<{ gx: number; gy: number }>,
+    radius: number,
+  ): AnimalSnapshot[] {
+    return this.animalSnapshotsForIds(this.visibleAnimalIds(viewers, radius));
   }
 
   visibleFishIds(
@@ -1003,6 +1090,13 @@ export class Sim {
     return out;
   }
 
+  visibleFishSnapshots(
+    viewers: Array<{ gx: number; gy: number }>,
+    radius: number,
+  ): FishSnapshot[] {
+    return this.fishSnapshotsForIds(this.visibleFishIds(viewers, radius));
+  }
+
   forEachAnimalInRadius(
     gx: number,
     gy: number,
@@ -1030,6 +1124,7 @@ export class Sim {
 
   private stepAnimals(dt: number): void {
     const dead: string[] = [];
+    const passiveBucket = this.tick % ANIMAL_PASSIVE_STEP_BUCKETS;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) {
         dead.push(a.id);
@@ -1042,6 +1137,15 @@ export class Sim {
         continue;
       }
       const spec = ANIMAL_SPECS[a.kind];
+      const fullStep =
+        this.activeAnimalIds.has(a.id) ||
+        a.attackTargetUnitId !== null;
+      if (
+        !fullStep &&
+        updateBucketForId(a.id, ANIMAL_PASSIVE_STEP_BUCKETS) !== passiveBucket
+      ) {
+        continue;
+      }
 
       if (spec.aggressive || spec.predator) {
         const nearestRepel = this.nearestRepellent(a.gx, a.gy);
@@ -2582,6 +2686,7 @@ export class Sim {
     this.gameTimeSec += dt;
     this.lastPhase = phaseAt(this.gameTimeSec);
     this.rebuildSpatialIndex();
+    this.rebuildActiveAnimalSet();
     this.stepAnimals(dt);
     this.stepAnimalReproduction(dt);
     this.stepAnimalRespawn(dt);
