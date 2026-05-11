@@ -106,6 +106,7 @@ export interface Strings {
 
   // help / tips
   helpTipBerry: string;
+  helpTipWater: string;
   helpEnabled: string;
   helpDisabled: string;
 }
@@ -220,7 +221,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Noch keine Einträge.",
     lbYourRank: (r) => `Dein Platz: #${r}`,
 
-    helpTipBerry: "Sammele Beeren als Energiequelle, um deine Kraft durch Verzehr aufzuladen",
+    helpTipBerry: "Beeren ernten: Klicke auf einen Beerenstrauch, damit dein Stamm ihn pflückt. Beeren sind eine wichtige Nahrungs- und Energiequelle.",
+    helpTipWater: "Im Wasser kannst du Fische jagen, aber Vorsicht vor den Alligatoren.",
     helpEnabled: "Hilfetexte: An (i)",
     helpDisabled: "Hilfetexte: Aus (i)",
   },
@@ -330,7 +332,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "No entries yet.",
     lbYourRank: (r) => `Your rank: #${r}`,
 
-    helpTipBerry: "Gather berries as an energy source — eating them recharges your strength",
+    helpTipBerry: "Harvest berries: click on a berry bush so your tribe picks it. Berries are an important source of food and energy.",
+    helpTipWater: "You can hunt fish in the water — but watch out for alligators.",
     helpEnabled: "Help tips: On (i)",
     helpDisabled: "Help tips: Off (i)",
   },
@@ -441,7 +444,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Ancora nessuna voce.",
     lbYourRank: (r) => `La tua posizione: #${r}`,
 
-    helpTipBerry: "Raccogli bacche come fonte di energia: mangiandole ricarichi le forze",
+    helpTipBerry: "Raccogli bacche: clicca su un cespuglio per farlo raccogliere alla tua tribù. Le bacche sono un'importante fonte di cibo ed energia.",
+    helpTipWater: "Nell'acqua puoi pescare, ma attento agli alligatori.",
     helpEnabled: "Suggerimenti: Attivi (i)",
     helpDisabled: "Suggerimenti: Disattivati (i)",
   },
@@ -552,7 +556,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Aún no hay entradas.",
     lbYourRank: (r) => `Tu posición: #${r}`,
 
-    helpTipBerry: "Recolecta bayas como fuente de energía: comerlas recarga tus fuerzas",
+    helpTipBerry: "Recolecta bayas: haz clic en un arbusto para que tu tribu lo recoja. Las bayas son una importante fuente de alimento y energía.",
+    helpTipWater: "En el agua puedes pescar, pero cuidado con los caimanes.",
     helpEnabled: "Consejos: Activados (i)",
     helpDisabled: "Consejos: Desactivados (i)",
   },
@@ -663,7 +668,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Ainda sem entradas.",
     lbYourRank: (r) => `A tua posição: #${r}`,
 
-    helpTipBerry: "Recolhe bagas como fonte de energia: comê-las recarrega as tuas forças",
+    helpTipBerry: "Colhe bagas: clica num arbusto para a tua tribo o apanhar. As bagas são uma importante fonte de alimento e energia.",
+    helpTipWater: "Na água podes pescar, mas cuidado com os jacarés.",
     helpEnabled: "Sugestões: Ativadas (i)",
     helpDisabled: "Sugestões: Desativadas (i)",
   },
@@ -774,7 +780,8 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Aucune entrée pour l'instant.",
     lbYourRank: (r) => `Ta position : #${r}`,
 
-    helpTipBerry: "Récolte des baies comme source d'énergie : les manger restaure tes forces",
+    helpTipBerry: "Récolter des baies : clique sur un buisson pour que ta tribu le cueille. Les baies sont une importante source de nourriture et d'énergie.",
+    helpTipWater: "Dans l'eau, tu peux pêcher des poissons — mais attention aux alligators.",
     helpEnabled: "Astuces : Activées (i)",
     helpDisabled: "Astuces : Désactivées (i)",
   },

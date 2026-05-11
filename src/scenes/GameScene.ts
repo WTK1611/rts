@@ -63,9 +63,14 @@ import {
   tileVariant,
   tileDecor,
 } from "../../shared/worldgen";
-import { LANGUAGE_FLAG, LANGUAGE_LABEL, NameLanguage } from "../../shared/names";
+import {
+  LANGUAGE_FLAG,
+  LANGUAGE_LABEL,
+  NameLanguage,
+  tribeNameAt,
+} from "../../shared/names";
 import { BIOME_MINI_COLOR } from "../biomeColors";
-import { t } from "../i18n";
+import { getLanguage, t } from "../i18n";
 
 interface ClickState {
   startX: number;
@@ -118,15 +123,20 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
-type HelpKey = "berry";
+type HelpKey = "berry" | "water";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
-    img: "/image/sammlerin-beeren-300.webp",
+    img: "/image/beeren-300.webp",
     text: (s) => s.helpTipBerry,
+  },
+  water: {
+    img: "/image/fische-alligatoren-300.webp",
+    text: (s) => s.helpTipWater,
   },
 };
 
+const HELP_WATER_RADIUS = 2;
 const HELP_DURATION_MS = 2500;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
@@ -151,6 +161,7 @@ export class GameScene extends Phaser.Scene {
   private seed = 0;
   private names: string[] = [];
   private tribeLanguages: string[] = [];
+  private tribeNameIndices: number[] = [];
   private botSlots: PlayerId[] = [];
   private spectatorTarget: PlayerId | null = null;
   private removedKeys = new Set<string>();
@@ -303,6 +314,7 @@ export class GameScene extends Phaser.Scene {
     this.collectedTotals = { ...(this.resources[this.playerId] ?? emptyResources()) };
     this.names = data.init.names;
     this.tribeLanguages = data.init.languages ?? [];
+    this.tribeNameIndices = data.init.tribeNameIndices ?? [];
     this.botSlots = data.init.botSlots ?? [];
     this.removedKeys = new Set(
       data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
@@ -707,7 +719,7 @@ export class GameScene extends Phaser.Scene {
     this.userPanned = false;
     this.visObjectCache.clear();
     this.visSourceHash = -1;
-    const name = this.names[slot] || t().hudTribeFallback(slot);
+    const name = this.displayName(slot);
     this.showToast(t().toastSpectating(name), "join");
     this.updateHud();
   }
@@ -2174,12 +2186,15 @@ export class GameScene extends Phaser.Scene {
     playerId: PlayerId;
     name: string;
     language?: string;
+    tribeNameIndex?: number;
     units: import("../../shared/protocol").UnitSnapshot[];
     isBot?: boolean;
     splitFrom?: PlayerId;
   }): void {
     this.names[msg.playerId] = msg.name;
     if (msg.language) this.tribeLanguages[msg.playerId] = msg.language;
+    this.tribeNameIndices[msg.playerId] =
+      typeof msg.tribeNameIndex === "number" ? msg.tribeNameIndex : -1;
     if (msg.isBot && !this.botSlots.includes(msg.playerId)) {
       this.botSlots.push(msg.playerId);
     }
@@ -2194,15 +2209,17 @@ export class GameScene extends Phaser.Scene {
     }
     this.updateHud();
     if (msg.splitFrom !== undefined) {
-      const parentName =
-        this.names[msg.splitFrom] || t().hudTribeFallback(msg.splitFrom);
+      const parentName = this.displayName(msg.splitFrom);
       this.showToast(
-        t().toastTribeSplit(parentName, msg.name),
+        t().toastTribeSplit(parentName, this.displayName(msg.playerId)),
         "join",
         [msg.splitFrom, msg.playerId],
       );
     } else {
-      this.showToast(t().toastJoinedTribe(msg.name), "join");
+      this.showToast(
+        t().toastJoinedTribe(this.displayName(msg.playerId)),
+        "join",
+      );
     }
   }
 
@@ -2210,9 +2227,9 @@ export class GameScene extends Phaser.Scene {
     playerId: PlayerId;
     removedUnitIds: string[];
   }): void {
-    const goneName =
-      this.names[msg.playerId] || t().hudTribeFallback(msg.playerId);
+    const goneName = this.displayName(msg.playerId);
     this.names[msg.playerId] = "";
+    this.tribeNameIndices[msg.playerId] = -1;
     for (const id of msg.removedUnitIds) {
       const u = this.units.get(id);
       if (u) {
@@ -2278,7 +2295,7 @@ export class GameScene extends Phaser.Scene {
           const myLoss =
             ev.a === this.playerId ? ev.transfersAtoB : ev.transfersBtoA;
           const s = t();
-          const name = this.names[otherId] || s.hudTribeFallback(otherId);
+          const name = this.displayName(otherId);
           const parts: string[] = [s.toastEncounterWith(name)];
           if (myGain > 0) {
             parts.push(
@@ -2298,8 +2315,8 @@ export class GameScene extends Phaser.Scene {
           continue;
         }
         const s = t();
-        const aName = this.names[ev.a] || s.hudTribeFallback(ev.a);
-        const bName = this.names[ev.b] || s.hudTribeFallback(ev.b);
+        const aName = this.displayName(ev.a);
+        const bName = this.displayName(ev.b);
         const moves: string[] = [];
         if (ev.transfersAtoB > 0) {
           moves.push(
@@ -2344,7 +2361,7 @@ export class GameScene extends Phaser.Scene {
         const owner = Number(ownerStr);
         const n = otherGrew[owner];
         const s = t();
-        const name = this.names[owner] || s.hudTribeFallback(owner);
+        const name = this.displayName(owner);
         const txt =
           n === 1 ? s.toastOtherGrewSing(name) : s.toastOtherGrew(name, n);
         this.showToast(txt, "grow");
@@ -2437,7 +2454,7 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       const s = t();
-      const name = this.names[owner] || s.hudTribeFallback(owner);
+      const name = this.displayName(owner);
       const txt =
         n === 1 ? s.toastOtherDiedSing(name) : s.toastOtherDied(name, n);
       this.showToast(txt, "death");
@@ -2450,7 +2467,7 @@ export class GameScene extends Phaser.Scene {
           this.nightExtinctOthers.push(owner);
           continue;
         }
-        const name = this.names[owner] || s.hudTribeFallback(owner);
+        const name = this.displayName(owner);
         this.showToast(s.toastExtinct(name), "extinct");
       }
     }
@@ -2458,7 +2475,7 @@ export class GameScene extends Phaser.Scene {
       const s = t();
       for (const owner of msg.respawnedTribes) {
         if (owner === this.playerId) continue;
-        const name = this.names[owner] || s.hudTribeFallback(owner);
+        const name = this.displayName(owner);
         this.showToast(s.toastTribeFounded(name), "join", owner);
       }
     }
@@ -2528,7 +2545,10 @@ export class GameScene extends Phaser.Scene {
       if (myPrev && myNew) {
         for (const k of RESOURCE_KEYS) {
           const delta = myNew[k] - myPrev[k];
-          if (delta > 0) this.collectedTotals[k] += delta;
+          if (delta > 0) {
+            this.collectedTotals[k] += delta;
+            this.onResourceGain(k, delta);
+          }
         }
       }
       this.resources = msg.resources;
@@ -2598,7 +2618,7 @@ export class GameScene extends Phaser.Scene {
     this.campfires.set(snap.id, f);
     if (notify) {
       const s = t();
-      const name = this.names[snap.owner] || s.hudTribeFallback(snap.owner);
+      const name = this.displayName(snap.owner);
       const text =
         snap.owner === this.playerId
           ? s.toastOwnCampfire
@@ -2640,7 +2660,7 @@ export class GameScene extends Phaser.Scene {
       if (ev.finder === this.playerId) {
         this.showToast(s.toastArtifactOwn(rewardText), "artifact", ev.finder);
       } else {
-        const name = this.names[ev.finder] || s.hudTribeFallback(ev.finder);
+        const name = this.displayName(ev.finder);
         this.showToast(
           s.toastArtifactOther(name, rewardText),
           "artifact",
@@ -3181,12 +3201,12 @@ export class GameScene extends Phaser.Scene {
     for (const ownerStr of Object.keys(this.nightDeathOther)) {
       const owner = Number(ownerStr);
       const n = this.nightDeathOther[owner];
-      const name = this.names[owner] || s.hudTribeFallback(owner);
+      const name = this.displayName(owner);
       const txt = n === 1 ? s.toastOtherDiedSing(name) : s.toastOtherDied(name, n);
       this.showToast(txt, "death");
     }
     for (const owner of this.nightExtinctOthers) {
-      const name = this.names[owner] || s.hudTribeFallback(owner);
+      const name = this.displayName(owner);
       this.showToast(s.toastExtinct(name), "extinct");
     }
     this.nightDeathOwn = 0;
@@ -3231,8 +3251,9 @@ export class GameScene extends Phaser.Scene {
     const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
       if (i === this.playerId) continue;
-      const n = this.names[i];
-      if (!n) continue;
+      const rawName = this.names[i];
+      if (!rawName && (this.tribeNameIndices[i] ?? -1) < 0) continue;
+      const n = this.displayName(i);
       const c = this.playerColorCss(i);
       const flag = this.flagFor(i);
       const isBot = this.botSlots.includes(i);
@@ -3336,19 +3357,27 @@ export class GameScene extends Phaser.Scene {
     this.helpCurrentKey = null;
   }
 
+  private onResourceGain(key: keyof Resources, amount: number): void {
+    if (amount <= 0) return;
+    if (key === "beeren") this.triggerHelp("berry");
+  }
+
   private checkHelpTriggers(dt: number): void {
     this.helpCheckAccum += dt;
-    if (this.helpCheckAccum < 0.15) return;
+    if (this.helpCheckAccum < 0.3) return;
     this.helpCheckAccum = 0;
     if (!this.helpVisible) return;
-    if (!this.helpSeen.has("berry")) {
-      for (const u of this.units.values()) {
-        if (u.owner !== this.playerId) continue;
-        const i = Math.floor(u.gx);
-        const j = Math.floor(u.gy);
-        if (this.bushes.has(objKey("bush", i, j))) {
-          this.triggerHelp("berry");
-          break;
+    if (this.helpSeen.has("water")) return;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      const ci = Math.floor(u.gx);
+      const cj = Math.floor(u.gy);
+      for (let dj = -HELP_WATER_RADIUS; dj <= HELP_WATER_RADIUS; dj++) {
+        for (let di = -HELP_WATER_RADIUS; di <= HELP_WATER_RADIUS; di++) {
+          if (!isLandTile(this.seed, ci + di, cj + dj)) {
+            this.triggerHelp("water");
+            return;
+          }
         }
       }
     }
@@ -3381,6 +3410,14 @@ export class GameScene extends Phaser.Scene {
     const lang = this.tribeLanguages[playerId] as NameLanguage | undefined;
     if (!lang) return "";
     return LANGUAGE_FLAG[lang] ?? "";
+  }
+
+  private displayName(playerId: PlayerId): string {
+    const idx = this.tribeNameIndices[playerId];
+    if (typeof idx === "number" && idx >= 0) {
+      return tribeNameAt(getLanguage() as NameLanguage, idx);
+    }
+    return this.names[playerId] || t().hudTribeFallback(playerId);
   }
 
   private growthHudHtml(): string {
@@ -3486,7 +3523,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const winnerName =
-      this.names[winnerOrigin] || tr.hudTribeFallback(winnerOrigin);
+      this.displayName(winnerOrigin);
     const title = wonByMe ? tr.victoryTitle : tr.victoryOtherTitle(winnerName);
     const subtitle = wonByMe ? tr.victorySubtitle : tr.victoryOtherSubtitle(winnerName);
 
