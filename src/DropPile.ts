@@ -11,6 +11,7 @@ const RESOURCE_COLORS: Record<keyof Resources, number> = {
   fleisch: 0xb04a3a,
   fisch: 0x6abad6,
   stein: 0x8a8a8a,
+  kreuter: 0x8fd06a,
 };
 
 export class DropPile {

@@ -135,6 +135,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "harvest.stoneAmount",  group: "ernte", label: "Stein: Stein/Hieb",        defaultValue: 2, min: 1, max: 50, step: 1 },
   { key: "harvest.cactusHolz",   group: "ernte", label: "Kaktus: Holz/Hieb",        defaultValue: 1, min: 1, max: 20, step: 1 },
   { key: "harvest.cactusWasser", group: "ernte", label: "Kaktus: Wasser/Hieb",      defaultValue: 1, min: 0, max: 20, step: 1 },
+  { key: "harvest.kreuterAmount", group: "ernte", label: "Kräuter: Kräuter/Hieb",   defaultValue: 1, min: 1, max: 20, step: 1 },
   { key: "harvest.treeAutopick",     group: "ernte", label: "Auto-Pickup: Baum",     defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.bushAutopick",     group: "ernte", label: "Auto-Pickup: Busch",    defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.mushAutopick",     group: "ernte", label: "Auto-Pickup: Pilz",     defaultValue: 1, min: 0, max: 20, step: 1 },
@@ -143,12 +144,14 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "harvest.waterAutopick",    group: "ernte", label: "Auto-Pickup: Wasser",   defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.cactusAutopickHolz",   group: "ernte", label: "Auto-Pickup: Kaktus Holz",   defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.cactusAutopickWasser", group: "ernte", label: "Auto-Pickup: Kaktus Wasser", defaultValue: 1, min: 0, max: 20, step: 1 },
+  { key: "harvest.kreuterAutopick",  group: "ernte", label: "Auto-Pickup: Kräuter",  defaultValue: 1, min: 0, max: 20, step: 1 },
 
   // === Nachwuchs (Regrow) ===
   { key: "regrow.treeSec",     group: "regrow", label: "Baum: Regrow (s)",        defaultValue: 240 * 5, min: 10, max: 10000, step: 10 },
   { key: "regrow.bushSec",     group: "regrow", label: "Busch: Regrow (s)",       defaultValue: 120, min: 5, max: 3600, step: 5 },
   { key: "regrow.mushroomSec", group: "regrow", label: "Pilz: Regrow (s)",        defaultValue: 60, min: 5, max: 3600, step: 5 },
   { key: "regrow.cactusSec",   group: "regrow", label: "Kaktus: Regrow (s)",      defaultValue: 180, min: 5, max: 3600, step: 5 },
+  { key: "regrow.kreuterSec",  group: "regrow", label: "Kräuter: Regrow (s)",     defaultValue: 300, min: 5, max: 7200, step: 5 },
 
   // === Einheiten ===
   { key: "unit.hpMax",            group: "einheiten", label: "Max. HP",                    defaultValue: 100, min: 1, max: 500, step: 1 },
@@ -161,6 +164,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "eat.hpGainFisch",    group: "essen", label: "HP-Gewinn Fisch",         defaultValue: 12, min: 0, max: 100, step: 1 },
   { key: "eat.hpGainBeeren",   group: "essen", label: "HP-Gewinn Beeren",        defaultValue: 3,  min: 0, max: 100, step: 1 },
   { key: "eat.hpGainPilze",    group: "essen", label: "HP-Gewinn Pilze",         defaultValue: 2,  min: 0, max: 100, step: 1 },
+  { key: "eat.hpGainKreuter",  group: "essen", label: "HP-Gewinn Kräuter (Heilung)", defaultValue: 35, min: 0, max: 200, step: 1 },
   { key: "eat.waterPerUnitPerDay", group: "essen", label: "Wasser/Person/Tag",    defaultValue: 1, min: 0, max: 20, step: 0.1 },
   { key: "eat.autoeatHpThreshold", group: "essen", label: "Auto-Eat HP-Schwelle", defaultValue: 0.51, min: 0, max: 1, step: 0.01 },
 
@@ -236,6 +240,7 @@ const CAP_FIELD_META: Array<{ key: keyof Resources; label: string }> = [
   { key: "fleisch", label: "Fleisch/Person" },
   { key: "fisch",   label: "Fisch/Person" },
   { key: "stein",   label: "Stein/Person" },
+  { key: "kreuter", label: "Kräuter/Person" },
 ];
 
 for (const m of CAP_FIELD_META) {
@@ -296,6 +301,7 @@ export interface BalDerived {
   bushRegrowTicks: number;
   mushroomRegrowTicks: number;
   cactusRegrowTicks: number;
+  kreuterRegrowTicks: number;
   // Other
   encounterCooldownTicks: number;
   footprintLifetimeTicks: number;
@@ -316,6 +322,7 @@ export const D: BalDerived = {
   bushRegrowTicks: 0,
   mushroomRegrowTicks: 0,
   cactusRegrowTicks: 0,
+  kreuterRegrowTicks: 0,
   encounterCooldownTicks: 0,
   footprintLifetimeTicks: 0,
   campfireBurnPerFuelSec: 0,
@@ -340,6 +347,7 @@ function recomputeDerived(): void {
   D.bushRegrowTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.bushSec"]));
   D.mushroomRegrowTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.mushroomSec"]));
   D.cactusRegrowTicks   = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.cactusSec"]));
+  D.kreuterRegrowTicks  = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.kreuterSec"]));
 
   D.encounterCooldownTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["growth.encounterCooldownSec"]));
   D.footprintLifetimeTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["world.footprintLifetimeSec"]));
@@ -402,6 +410,7 @@ export const BAL = {
   get stoneHarvestAmount()   { return SCALAR["harvest.stoneAmount"]; },
   get cactusHarvestHolz()    { return SCALAR["harvest.cactusHolz"]; },
   get cactusHarvestWasser()  { return SCALAR["harvest.cactusWasser"]; },
+  get kreuterHarvestAmount() { return SCALAR["harvest.kreuterAmount"]; },
   get treeAutopickGain()     { return SCALAR["harvest.treeAutopick"]; },
   get bushAutopickGain()     { return SCALAR["harvest.bushAutopick"]; },
   get mushroomAutopickGain() { return SCALAR["harvest.mushAutopick"]; },
@@ -410,6 +419,7 @@ export const BAL = {
   get waterAutopickGain()    { return SCALAR["harvest.waterAutopick"]; },
   get cactusAutopickHolz()   { return SCALAR["harvest.cactusAutopickHolz"]; },
   get cactusAutopickWasser() { return SCALAR["harvest.cactusAutopickWasser"]; },
+  get kreuterAutopickGain()  { return SCALAR["harvest.kreuterAutopick"]; },
 
   // einheiten / essen
   get unitHpMax()           { return SCALAR["unit.hpMax"]; },
@@ -420,6 +430,7 @@ export const BAL = {
   get hpGainFisch()         { return SCALAR["eat.hpGainFisch"]; },
   get hpGainBeeren()        { return SCALAR["eat.hpGainBeeren"]; },
   get hpGainPilze()         { return SCALAR["eat.hpGainPilze"]; },
+  get hpGainKreuter()       { return SCALAR["eat.hpGainKreuter"]; },
   get waterPerUnitPerDay()  { return SCALAR["eat.waterPerUnitPerDay"]; },
   get autoeatHpThreshold()  { return SCALAR["eat.autoeatHpThreshold"]; },
 

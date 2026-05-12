@@ -424,6 +424,31 @@ export function mushroomBerriesAt(seed: number, i: number, j: number): number {
   return 2 + (hash3(seed ^ 0x70b, i, j) % 3);
 }
 
+export function hasKreuterAt(seed: number, i: number, j: number): boolean {
+  if (isInsideSpawnGuard(seed, i, j)) return false;
+  if (hasSequoiaAt(seed, i, j)) return false;
+  if (hasTreeAt(seed, i, j)) return false;
+  if (hasBushAt(seed, i, j)) return false;
+  if (hasMushroomAt(seed, i, j)) return false;
+  const b = biomeAt(seed, i, j);
+  if (b !== "wiesen" && b !== "wald") return false;
+  return rand01(seed ^ 0xc4eb, i, j) < (b === "wald" ? 0.008 : 0.004);
+}
+
+export function kreuterIdAt(i: number, j: number): string {
+  return `k_${i}_${j}`;
+}
+
+export function parseKreuterId(id: string): { i: number; j: number } | null {
+  const m = id.match(/^k_(-?\d+)_(-?\d+)$/);
+  if (!m) return null;
+  return { i: Number(m[1]), j: Number(m[2]) };
+}
+
+export function kreuterAmountAt(seed: number, i: number, j: number): number {
+  return 2 + (hash3(seed ^ 0xc4eb, i, j) % 2);
+}
+
 export function hasFishAt(seed: number, i: number, j: number): boolean {
   const b = biomeAt(seed, i, j);
   if (b !== "lake" && b !== "river") return false;
@@ -451,6 +476,7 @@ export function hasStoneAt(seed: number, i: number, j: number): boolean {
   if (hasTreeAt(seed, i, j)) return false;
   if (hasBushAt(seed, i, j)) return false;
   if (hasMushroomAt(seed, i, j)) return false;
+  if (hasKreuterAt(seed, i, j)) return false;
   if (!isLandTile(seed, i, j)) return false;
   const b = biomeAt(seed, i, j);
   const base =
@@ -535,6 +561,7 @@ export function artifactsFromSeed(seed: number): ArtifactSpec[] {
     if (hasTreeAt(seed, i, j)) continue;
     if (hasBushAt(seed, i, j)) continue;
     if (hasMushroomAt(seed, i, j)) continue;
+    if (hasKreuterAt(seed, i, j)) continue;
     if (hasStoneAt(seed, i, j)) continue;
     if (hasCactusAt(seed, i, j)) continue;
     let tooNearSpawn = false;

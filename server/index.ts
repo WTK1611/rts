@@ -74,6 +74,7 @@ function resourceCapsSnapshot(): Resources {
     fleisch: RESOURCE_CAP_PER_PERSON.fleisch,
     fisch: RESOURCE_CAP_PER_PERSON.fisch,
     stein: RESOURCE_CAP_PER_PERSON.stein,
+    kreuter: RESOURCE_CAP_PER_PERSON.kreuter,
   };
 }
 
