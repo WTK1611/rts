@@ -134,6 +134,7 @@ export interface SimUnit {
   // When true, the unit follows an explicit player command and is exempt
   // from the campfire auto-gather pull until the path completes.
   manualOrder: boolean;
+  shoreFishTimer: number;
 }
 
 
@@ -2252,6 +2253,7 @@ export class Sim {
         autoFollowScanTimer: 0,
         idleSec: 0,
         manualOrder: false,
+        shoreFishTimer: rand01(this.seed ^ 0xc44, k, p) * BAL.fishShoreCatchInterval,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -2321,6 +2323,7 @@ export class Sim {
         autoFollowing: false,
         autoFollowScanTimer: 0,
         manualOrder: false,
+        shoreFishTimer: rand01(this.seed ^ 0xc44, idx, p) * BAL.fishShoreCatchInterval,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -2915,6 +2918,21 @@ export class Sim {
     }
   }
 
+  private tryShoreFish(u: SimUnit): void {
+    if (this.resourceRoom(u.owner, "fisch") <= 0) return;
+    const ti = Math.floor(u.gx);
+    const tj = Math.floor(u.gy);
+    let nearWater = false;
+    for (let di = -1; di <= 1 && !nearWater; di++) {
+      for (let dj = -1; dj <= 1 && !nearWater; dj++) {
+        if (di === 0 && dj === 0) continue;
+        if (this.isWaterTileAt(ti + di, tj + dj)) nearWater = true;
+      }
+    }
+    if (!nearWater) return;
+    this.tryAutoPickShallowFish(u, ti, tj);
+  }
+
   private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
     if (this.resourceRoom(u.owner, "fisch") <= 0) return;
     const catchProb = seasonFishCatchMultiplier(seasonAt(this.gameTimeSec));
@@ -3215,8 +3233,14 @@ export class Sim {
       ) {
         u.idleSec += dt;
         u.manualOrder = false;
+        u.shoreFishTimer += dt;
+        if (u.shoreFishTimer >= BAL.fishShoreCatchInterval) {
+          u.shoreFishTimer = 0;
+          this.tryShoreFish(u);
+        }
       } else {
         u.idleSec = 0;
+        u.shoreFishTimer = 0;
       }
     }
     this.consumeWater(dt);
@@ -3812,23 +3836,26 @@ export class Sim {
     return true;
   }
 
-  growthSnapshot(): { progress: number[]; active: boolean[] } {
+  growthSnapshot(): { progress: number[]; active: boolean[]; pregnant: number[] } {
     const progress: number[] = new Array(MAX_PLAYERS).fill(0);
     const active: boolean[] = new Array(MAX_PLAYERS).fill(false);
+    const pregnant: number[] = new Array(MAX_PLAYERS).fill(0);
     for (const [id, t] of this.pregnancyTimer) {
       const u = this.units.get(id);
       if (!u) continue;
       const frac = Math.min(1, t / BAL.growthRequiredSec);
       if (frac > progress[u.owner]) progress[u.owner] = frac;
       active[u.owner] = true;
+      pregnant[u.owner]++;
     }
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!this.active[p]) {
         progress[p] = 0;
         active[p] = false;
+        pregnant[p] = 0;
       }
     }
-    return { progress, active };
+    return { progress, active, pregnant };
   }
 
   private spawnNewTribeMember(p: PlayerId, ax: number, ay: number): void {
@@ -3894,6 +3921,7 @@ export class Sim {
       autoFollowing: false,
       autoFollowScanTimer: 0,
       manualOrder: false,
+      shoreFishTimer: rand01(this.seed ^ 0xc44, k, p) * BAL.fishShoreCatchInterval,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));

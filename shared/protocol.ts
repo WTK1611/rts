@@ -536,6 +536,7 @@ export interface StateMessage {
   encounters: EncounterEvent[];
   growthProgress: number[];
   growthActive: boolean[];
+  growthPregnant: number[];
   extinctTribes: PlayerId[];
   respawnedTribes: PlayerId[];
   campfires: CampfireSnapshot[];

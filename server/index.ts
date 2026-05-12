@@ -596,6 +596,7 @@ function tick(): void {
       encounters,
       growthProgress: growth.progress,
       growthActive: growth.active,
+      growthPregnant: growth.pregnant,
       extinctTribes,
       respawnedTribes,
       campfires: allCampfires,

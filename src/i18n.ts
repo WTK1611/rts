@@ -43,6 +43,7 @@ export interface Strings {
   growthNoWoman: string;
   growthImminent: string;
   growthPaused: string;
+  growthPregnant: string;
 
   // toasts
   toastBackToTribe: string;
@@ -196,6 +197,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "keine Frau im Stamm",
     growthImminent: "Geburt steht bevor",
     growthPaused: "pausiert",
+    growthPregnant: "schwanger",
 
     toastBackToTribe: "Zurück zu deinem Stamm",
     toastSpectating: (n) => `Beobachte: ${n}`,
@@ -386,6 +388,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "no woman in the tribe",
     growthImminent: "birth imminent",
     growthPaused: "paused",
+    growthPregnant: "pregnant",
 
     toastBackToTribe: "Back to your tribe",
     toastSpectating: (n) => `Spectating: ${n}`,
@@ -572,6 +575,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "nessuna donna nella tribù",
     growthImminent: "nascita imminente",
     growthPaused: "in pausa",
+    growthPregnant: "incinta",
 
     toastBackToTribe: "Torna alla tua tribù",
     toastSpectating: (n) => `Osservi: ${n}`,
@@ -753,6 +757,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "ninguna mujer en la tribu",
     growthImminent: "nacimiento inminente",
     growthPaused: "pausado",
+    growthPregnant: "embarazada",
 
     toastBackToTribe: "Vuelve a tu tribu",
     toastSpectating: (n) => `Observas: ${n}`,
@@ -934,6 +939,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "nenhuma mulher na tribo",
     growthImminent: "nascimento iminente",
     growthPaused: "em pausa",
+    growthPregnant: "grávida",
 
     toastBackToTribe: "Voltar à tua tribo",
     toastSpectating: (n) => `A observar: ${n}`,
@@ -1115,6 +1121,7 @@ const STRINGS: Record<Language, Strings> = {
     growthNoWoman: "aucune femme dans la tribu",
     growthImminent: "naissance imminente",
     growthPaused: "en pause",
+    growthPregnant: "enceinte",
 
     toastBackToTribe: "Retour à ta tribu",
     toastSpectating: (n) => `Tu observes : ${n}`,

@@ -128,14 +128,15 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   // === Wachstum / Bevölkerung ===
   // Lebenszyklus-Sekunden sind absolut (nicht an DAY_LENGTH_SEC gekoppelt),
   // damit Tageslängen-Änderungen nicht ungewollt jeden Lifecycle-Wert
-  // mitskaliert. childAgeSec=240, oldThresholdSec=720, maxAgeSec=960,
-  // requiredSec=288 ≙ alte Werte 240*1, 240*3, 240*4, 240*1.2.
+  // mitskaliert. Kindheit + Schwangerschaft bleiben bei 240/288 s, das
+  // Fertilitätsfenster (240→1440) und Maximalalter (1920 s ≈ 32 min) sind
+  // gegenüber den ursprünglichen Werten verdoppelt.
   { key: "growth.maxTribeSize",        group: "wachstum", label: "Max. Stammgröße",        defaultValue: 12, min: 1, max: 64, step: 1 },
   { key: "growth.requiredSec",         group: "wachstum", label: "Wachstumszeit (s)",      defaultValue: 288, min: 10, max: 1200, step: 1 },
   { key: "growth.pregnancyHealthMinFrac", group: "wachstum", label: "Min. HP-Anteil für Schwangerschaft", defaultValue: 0.30, min: 0.0, max: 1.0, step: 0.01 },
-  { key: "growth.maxAgeSec",           group: "wachstum", label: "Max. Lebensalter (s)",    defaultValue: 960, min: 30, max: 5000, step: 10 },
+  { key: "growth.maxAgeSec",           group: "wachstum", label: "Max. Lebensalter (s)",    defaultValue: 1920, min: 30, max: 5000, step: 10 },
   { key: "growth.childAgeSec",         group: "wachstum", label: "Kindheit (s)",            defaultValue: 240, min: 5, max: 1200, step: 1 },
-  { key: "growth.oldThresholdSec",     group: "wachstum", label: "Altersgrenze (s)",        defaultValue: 720, min: 30, max: 4000, step: 10 },
+  { key: "growth.oldThresholdSec",     group: "wachstum", label: "Altersgrenze (s)",        defaultValue: 1440, min: 30, max: 4000, step: 10 },
   { key: "growth.encounterRange",      group: "wachstum", label: "Begegnung-Range",          defaultValue: 5, min: 1, max: 30, step: 0.5 },
   { key: "growth.encounterCooldownSec", group: "wachstum", label: "Begegnung-Cooldown (s)", defaultValue: 60, min: 1, max: 600, step: 1 },
 
@@ -235,6 +236,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "fish.homeRadius",        group: "fische", label: "Home-Radius",           defaultValue: 4.5, min: 0.5, max: 30, step: 0.5 },
   { key: "fish.shoreBias",         group: "fische", label: "Ufer-Bias",             defaultValue: 0.35, min: 0, max: 1, step: 0.05 },
   { key: "fish.catchRadius",       group: "fische", label: "Fang-Radius",           defaultValue: 1.4, min: 0.1, max: 5, step: 0.1 },
+  { key: "fish.shoreCatchInterval", group: "fische", label: "Ufer-Fang-Intervall (s)", defaultValue: 2.0, min: 0.2, max: 30, step: 0.1 },
   { key: "fish.matureAgeSec",      group: "fische", label: "Reife (s)",             defaultValue: 30, min: 1, max: 600, step: 1 },
   { key: "fish.breedIntervalSec",  group: "fische", label: "Paarungsintervall (s)", defaultValue: 55, min: 1, max: 600, step: 1 },
   { key: "fish.breedScanIntervalSec", group: "fische", label: "Paarungs-Scan (s)", defaultValue: 1.0, min: 0.1, max: 10, step: 0.1 },
@@ -505,6 +507,7 @@ export const BAL = {
   get fishHomeRadius()             { return SCALAR["fish.homeRadius"]; },
   get fishShoreBias()              { return SCALAR["fish.shoreBias"]; },
   get fishCatchRadius()            { return SCALAR["fish.catchRadius"]; },
+  get fishShoreCatchInterval()     { return SCALAR["fish.shoreCatchInterval"]; },
   get fishMatureAgeSec()           { return SCALAR["fish.matureAgeSec"]; },
   get fishBreedIntervalSec()       { return SCALAR["fish.breedIntervalSec"]; },
   get fishBreedScanIntervalSec()   { return SCALAR["fish.breedScanIntervalSec"]; },

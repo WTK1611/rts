@@ -383,6 +383,7 @@ export class GameScene extends Phaser.Scene {
 
   private growthProgress: number[] = [];
   private growthActive: boolean[] = [];
+  private growthPregnant: number[] = [];
   private tribeCounts: number[] = [];
   private growthBeacon!: Phaser.GameObjects.Graphics;
   private growthBeaconPhase = 0;
@@ -3349,6 +3350,7 @@ export class GameScene extends Phaser.Scene {
     const myActivePrev = this.growthActive[this.playerId] ?? false;
     if (msg.growthProgress) this.growthProgress = msg.growthProgress;
     if (msg.growthActive) this.growthActive = msg.growthActive;
+    if (msg.growthPregnant) this.growthPregnant = msg.growthPregnant;
     const myProg = this.growthProgress[this.playerId] ?? 0;
     const myActive = this.growthActive[this.playerId] ?? false;
 
@@ -4853,9 +4855,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     const fillPct = count >= MAX_TRIBE_SIZE ? 100 : Math.round(progress * 100);
+    const pregnant = this.growthPregnant[this.playerId] ?? 0;
+    const pregHtml = pregnant > 0
+      ? ` <span class="preg" title="${escapeHtml(s.growthPregnant)}">🤰 ${pregnant}</span>`
+      : "";
     return (
       `<div class="${cls}">` +
-      `<div class="label-row"><span class="lbl">${escapeHtml(s.growthLabel)}</span>` +
+      `<div class="label-row"><span class="lbl">${escapeHtml(s.growthLabel)}${pregHtml}</span>` +
       `<span class="${stateCls}">${escapeHtml(stateLabel)}</span></div>` +
       `<div class="bar"><div class="fill" style="width:${fillPct}%"></div></div>` +
       `</div>`
