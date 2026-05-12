@@ -27,8 +27,6 @@ import {
   Season,
   seasonAt,
   seasonAllowsBush,
-  seasonAllowsKreuter,
-  seasonAllowsMushroom,
   seasonAnimalSpawnMultiplier,
   seasonFishCatchMultiplier,
   seasonKreuterYieldMultiplier,
@@ -2816,21 +2814,25 @@ export class Sim {
     }
     const season = seasonAt(this.gameTimeSec);
     const regrowMult = seasonRegrowMultiplier(season);
-    if (hasBushAt(this.seed, ti, tj) && seasonAllowsBush(season)) {
+    if (hasBushAt(this.seed, ti, tj)) {
       const k = objKey("bush", ti, tj);
+      // Bushes carry no berries in spring/winter; yield reduced rather than blocked
+      const bushGain = seasonAllowsBush(season)
+        ? BAL.bushAutopickGain
+        : Math.max(1, Math.round(BAL.bushAutopickGain * 0.3));
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "beeren") >= BAL.bushAutopickGain
+        this.resourceRoom(u.owner, "beeren") >= bushGain
       ) {
         this.autoPickAndRegrow(
           u, "bush", ti, tj, "beeren",
-          BAL.bushAutopickGain,
+          bushGain,
           Math.max(1, Math.round(D.bushRegrowTicks * regrowMult)),
         );
         return;
       }
     }
-    if (hasMushroomAt(this.seed, ti, tj) && seasonAllowsMushroom(season)) {
+    if (hasMushroomAt(this.seed, ti, tj)) {
       const k = objKey("mushroom", ti, tj);
       const gain = Math.max(
         1,
@@ -2875,7 +2877,7 @@ export class Sim {
         return;
       }
     }
-    if (hasKreuterAt(this.seed, ti, tj) && seasonAllowsKreuter(season)) {
+    if (hasKreuterAt(this.seed, ti, tj)) {
       const k = objKey("kreuter", ti, tj);
       const gain = Math.max(
         1,
