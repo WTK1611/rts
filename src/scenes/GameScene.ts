@@ -334,7 +334,6 @@ export class GameScene extends Phaser.Scene {
   private pendingScoreEntry: ScoreEntry | null = null;
   private hud: HTMLElement | null = null;
   private tribeBanner: HTMLElement | null = null;
-  private tribesBar: HTMLElement | null = null;
   private minimapWrap: HTMLElement | null = null;
   private minimapCanvas: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -670,16 +669,6 @@ export class GameScene extends Phaser.Scene {
       this.tribeBanner.addEventListener("click", (e) => this.onHudClick(e));
       this.setupPanelDrag(this.tribeBanner, "rts.tribeBanner.position");
     }
-    this.tribesBar = document.getElementById("tribes-bar");
-    if (this.tribesBar) {
-      this.tribesBar.addEventListener("click", (e) => this.onHudClick(e));
-      const isCoarse =
-        typeof window.matchMedia === "function" &&
-        window.matchMedia("(pointer: coarse)").matches;
-      if (!isCoarse) {
-        this.setupPanelDrag(this.tribesBar, "rts.tribesBar.position");
-      }
-    }
     this.minimapWrap = document.getElementById("minimap-wrap");
     this.minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement | null;
     this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext("2d") : null;
@@ -960,6 +949,20 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
+  private cycleSpectator(): void {
+    const cycle: (PlayerId | null)[] = [null, ...this.botSlots];
+    if (cycle.length <= 1) return;
+    const current = this.spectatorTarget;
+    let idx = cycle.indexOf(current);
+    if (idx < 0) idx = 0;
+    const next = cycle[(idx + 1) % cycle.length];
+    if (next === null) {
+      this.stopSpectating();
+    } else {
+      this.spectateSlot(next);
+    }
+  }
+
   private cameraFollowOwner(): PlayerId {
     return this.spectatorTarget ?? this.playerId;
   }
@@ -974,6 +977,10 @@ export class GameScene extends Phaser.Scene {
     e.stopPropagation();
     const slot = Number(raw);
     if (!Number.isFinite(slot)) return;
+    if (slot === this.playerId) {
+      this.cycleSpectator();
+      return;
+    }
     this.spectateSlot(slot);
   }
 
@@ -1211,8 +1218,9 @@ export class GameScene extends Phaser.Scene {
           }
         } else if (hasBushAt(this.seed, i, j)) {
           const id = objKey("bush", i, j);
-          if (!this.removedKeys.has(id) && !this.bushes.has(id)) {
-            const b = new Bush(this, i, j, this.seed);
+          if (!this.bushes.has(id)) {
+            const picked = this.removedKeys.has(id);
+            const b = new Bush(this, i, j, this.seed, picked);
             bushes.set(id, b);
             this.bushes.set(id, b);
           }
@@ -3251,11 +3259,7 @@ export class GameScene extends Phaser.Scene {
       }
     } else if (ro.kind === "bush") {
       const b = this.bushes.get(k);
-      if (b) {
-        b.remove();
-        this.bushes.delete(k);
-        for (const c of this.chunks.values()) c.bushes.delete(k);
-      }
+      if (b) b.pickBerries();
     } else if (ro.kind === "mushroom") {
       const m = this.mushrooms.get(k);
       if (m) {
@@ -3336,12 +3340,16 @@ export class GameScene extends Phaser.Scene {
       m.container.setVisible(v);
       m.shadow.setVisible(v);
     } else if (ro.kind === "bush") {
-      if (this.bushes.has(k)) return;
-      const b = new Bush(this, ro.i, ro.j, this.seed);
-      chunk.bushes.set(k, b);
-      this.bushes.set(k, b);
-      b.container.setVisible(v);
-      b.shadow.setVisible(v);
+      const existing = this.bushes.get(k);
+      if (existing) {
+        existing.growBerries();
+      } else {
+        const b = new Bush(this, ro.i, ro.j, this.seed);
+        chunk.bushes.set(k, b);
+        this.bushes.set(k, b);
+        b.container.setVisible(v);
+        b.shadow.setVisible(v);
+      }
     } else if (ro.kind === "tree") {
       this.treeGrowthMap.delete(`${ro.i},${ro.j}`);
       const existing = this.trees.get(k);
@@ -3565,6 +3573,11 @@ export class GameScene extends Phaser.Scene {
     const j = Math.floor(gy);
     const k = `${i},${j}`;
     const visibleHere = this.visible.has(k);
+    const foreignChiefId = this.foreignChiefNearScreenPoint(p);
+    if (foreignChiefId) {
+      this.net.send({ type: "greetTribe", targetUnitId: foreignChiefId });
+      return;
+    }
     const directAnimalId = this.animalNearScreenPoint(p);
     if (directAnimalId) {
       const animal = this.animals.get(directAnimalId);
@@ -3581,6 +3594,26 @@ export class GameScene extends Phaser.Scene {
     }
     this.net.send({ type: "move", unitIds: ids, i, j });
     this.setMoveTarget(i, j, "move");
+  }
+
+  private foreignChiefNearScreenPoint(p: Phaser.Input.Pointer): string | null {
+    const wx = p.worldX;
+    const wy = p.worldY;
+    let best: { id: string; d: number } | null = null;
+    for (const u of this.units.values()) {
+      if (u.owner === this.playerId) continue;
+      if (!u.isChief) continue;
+      if (!u.container.visible) continue;
+      const i = Math.floor(u.gx);
+      const j = Math.floor(u.gy);
+      if (!this.visible.has(`${i},${j}`)) continue;
+      const dx = u.container.x - wx;
+      const dy = u.container.y - wy;
+      const d = Math.hypot(dx, dy);
+      if (d > 22) continue;
+      if (!best || d < best.d) best = { id: u.id, d };
+    }
+    return best?.id ?? null;
   }
 
   private animalNearScreenPoint(p: Phaser.Input.Pointer): string | null {
@@ -3861,12 +3894,12 @@ export class GameScene extends Phaser.Scene {
       return (
         `<div class="item">` +
         `<span class="ico-wrap">` +
+        `<span class="label">${labels[k]}</span>` +
         `<span class="ico ${k}"></span>` +
         `<span class="cap-bar${full}" title="${have} / ${cap}">` +
         `<span class="cap-fill${fillTone}" style="width:${pct}%"></span>` +
         `</span>` +
         `</span>` +
-        `<span class="label">${labels[k]}:</span>` +
         `<b>${have}<span class="cap-max">/${cap}</span></b>${gainHtml}` +
         `</div>`
       );
@@ -3874,9 +3907,6 @@ export class GameScene extends Phaser.Scene {
     const isNight = this.lastPhase === "night";
     const countChip = (n: number) =>
       `<span class="count" title="${s.hudTribeMembers}">👥 ${n}</span>`;
-    const ownCountChip = isNight
-      ? `<span class="count" title="${s.hudTribeMembers}">👥 ?</span>`
-      : countChip(tribeCounts[this.playerId] ?? 0);
     const phaseLabel = s.phaseLabel(this.lastPhase);
     const seasonLabel = s.seasonLabel(this.lastSeason);
     const seasonIcon = s.seasonIcon(this.lastSeason);
@@ -3884,51 +3914,35 @@ export class GameScene extends Phaser.Scene {
     const clockTitle = `${seasonLabel} ${dayOfSeason}/${SEASON_LEN_DAYS} · ${phaseLabel}`;
     const clockHtml = `<span class="clock" title="${clockTitle}">${seasonIcon} ${this.clockString()} ${s.phaseIcon(this.lastPhase)}</span>`;
 
-    const otherRows: string[] = [];
-    for (let i = 0; i < this.names.length; i++) {
-      if (i === this.playerId) continue;
-      const rawName = this.names[i];
-      if (!rawName && (this.tribeNameIndices[i] ?? -1) < 0) continue;
-      const n = this.displayName(i);
-      const c = this.playerColorCss(i);
-      const flag = this.flagFor(i);
-      const isBot = this.botSlots.includes(i);
-      const active = this.spectatorTarget === i;
-      const cls =
-        "tribe-card" +
-        (isBot ? " clickable" : "") +
-        (active ? " active" : "");
-      const attr = isBot ? ` data-spectate-slot="${i}"` : "";
-      const count = tribeCounts[i] ?? 0;
-      const flagHtml = flag
-        ? `<span class="flag">${flag}</span> `
-        : "";
-      otherRows.push(
-        `<div class="${cls}"${attr}>` +
-          `<div class="tribe-square" style="background:${c}"></div>` +
-          `<div class="tribe-label">${flagHtml}${escapeHtml(n)}</div>` +
-          `<div class="tribe-count">👥 ${count}</div>` +
-          `</div>`,
-      );
-    }
-    const myFlag = this.flagFor(this.playerId);
-    const meActive = this.spectatorTarget === null ? " active" : "";
     this.hud.innerHTML =
       `<div class="hud-drag-handle"></div>` +
       `<div class="res">${resHtml}</div>`;
 
-    if (this.tribesBar) {
-      this.tribesBar.innerHTML = otherRows.length
-        ? otherRows.join("")
-        : `<span style="font-size:11px;color:#88a088;padding:4px 8px">${escapeHtml(s.hudWaitingForOthers)}</span>`;
-    }
-
     if (this.tribeBanner) {
+      const watching =
+        this.spectatorTarget !== null && this.spectatorTarget !== this.playerId;
+      const watchedId = watching
+        ? (this.spectatorTarget as PlayerId)
+        : this.playerId;
+      const banName = watching ? this.displayName(watchedId) : myName;
+      const banColor = watching
+        ? this.playerColorCss(watchedId)
+        : myColor;
+      const banFlag = watching ? this.flagFor(watchedId) : this.flagFor(this.playerId);
+      const banCount = tribeCounts[watchedId] ?? 0;
+      const banCountChip =
+        !watching && isNight
+          ? `<span class="count" title="${s.hudTribeMembers}">👥 ?</span>`
+          : countChip(banCount);
+      const banTitle = watching
+        ? s.hudSpectatingTribeOf(banName)
+        : s.hudTribeOf(myName);
+      const meActive = watching ? " active" : "";
       this.tribeBanner.innerHTML =
         `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
-        `<span class="swatch" style="background:${myColor}"></span>` +
-        `${escapeHtml(s.hudTribeOf(myName))}${myFlag ? ` <span class="flag">${myFlag}</span>` : ""} ` +
-        `${ownCountChip} ${clockHtml}</div>` +
+        `<span class="swatch" style="background:${banColor}"></span>` +
+        `${escapeHtml(banTitle)}${banFlag ? ` <span class="flag">${banFlag}</span>` : ""} ` +
+        `${banCountChip} ${clockHtml}</div>` +
         this.growthHudHtml();
     }
   }

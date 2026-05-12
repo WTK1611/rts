@@ -196,7 +196,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "hunt.nightPredatorDamageMult", group: "jagd", label: "Nacht-Räuber Schaden-Mult", defaultValue: 1.25, min: 1.0, max: 5.0, step: 0.05 },
 
   // === Lagerfeuer ===
-  { key: "fire.range",                group: "campfire", label: "Lagerfeuer-Reichweite",   defaultValue: 2.5, min: 0.5, max: 10, step: 0.1 },
+  { key: "fire.range",                group: "campfire", label: "Lagerfeuer-Reichweite",   defaultValue: 3.5, min: 0.5, max: 10, step: 0.1 },
   { key: "fire.igniteMinUnits",       group: "campfire", label: "Min. Einheiten z. Anzünden", defaultValue: 2, min: 2, max: 12, step: 1 },
   { key: "fire.igniteHolzCost",       group: "campfire", label: "Holz-Kosten Anzünden",    defaultValue: 5, min: 0, max: 100, step: 1 },
   { key: "fire.igniteSteinCost",      group: "campfire", label: "Stein-Kosten Anzünden",   defaultValue: 1, min: 0, max: 100, step: 1 },
@@ -220,7 +220,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "animals.passiveStepBuckets",  group: "tier_spawn", label: "Passiv-Buckets",          defaultValue: 10, min: 1, max: 100, step: 1 },
   { key: "animals.followChiefNear",     group: "tier_spawn", label: "Häuptlings-Nähe",          defaultValue: 5, min: 1, max: 20, step: 0.5 },
   { key: "animals.followChiefScanSec",  group: "tier_spawn", label: "Häuptlings-Scan (s)",      defaultValue: 0.3, min: 0.1, max: 5, step: 0.1 },
-  { key: "animals.chiefVisionRadius",   group: "tier_spawn", label: "Häuptlings-Sicht",         defaultValue: 9, min: 1, max: 30, step: 0.5 },
+  { key: "animals.chiefVisionRadius",   group: "tier_spawn", label: "Häuptlings-Sicht",         defaultValue: 5, min: 1, max: 30, step: 0.5 },
 
   // === Fische ===
   { key: "fish.speed",             group: "fische", label: "Geschwindigkeit",       defaultValue: 0.6, min: 0.05, max: 5, step: 0.05 },

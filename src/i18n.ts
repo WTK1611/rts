@@ -32,6 +32,7 @@ export interface Strings {
   hudWaitingForOthers: string;
   hudYou: string;
   hudTribeOf: (name: string) => string;
+  hudSpectatingTribeOf: (name: string) => string;
   hudTribeFallback: (id: number) => string;
 
   // growth
@@ -184,6 +185,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "Warte auf weitere Stämme …",
     hudYou: "Du",
     hudTribeOf: (n) => `Stamm von ${n}`,
+    hudSpectatingTribeOf: (n) => `Beobachte Stamm von ${n}`,
     hudTribeFallback: (id) => `Stamm ${id}`,
 
     growthLabel: "Wachstum",
@@ -372,6 +374,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "Waiting for more tribes …",
     hudYou: "You",
     hudTribeOf: (n) => `${n}'s tribe`,
+    hudSpectatingTribeOf: (n) => `Watching ${n}'s tribe`,
     hudTribeFallback: (id) => `Tribe ${id}`,
 
     growthLabel: "Growth",
@@ -556,6 +559,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "In attesa di altre tribù …",
     hudYou: "Tu",
     hudTribeOf: (n) => `Tribù di ${n}`,
+    hudSpectatingTribeOf: (n) => `Osservi la tribù di ${n}`,
     hudTribeFallback: (id) => `Tribù ${id}`,
 
     growthLabel: "Crescita",
@@ -735,6 +739,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "Esperando a más tribus …",
     hudYou: "Tú",
     hudTribeOf: (n) => `Tribu de ${n}`,
+    hudSpectatingTribeOf: (n) => `Observas la tribu de ${n}`,
     hudTribeFallback: (id) => `Tribu ${id}`,
 
     growthLabel: "Crecimiento",
@@ -914,6 +919,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "À espera de mais tribos …",
     hudYou: "Tu",
     hudTribeOf: (n) => `Tribo de ${n}`,
+    hudSpectatingTribeOf: (n) => `A observar a tribo de ${n}`,
     hudTribeFallback: (id) => `Tribo ${id}`,
 
     growthLabel: "Crescimento",
@@ -1093,6 +1099,7 @@ const STRINGS: Record<Language, Strings> = {
     hudWaitingForOthers: "En attente d'autres tribus …",
     hudYou: "Toi",
     hudTribeOf: (n) => `Tribu de ${n}`,
+    hudSpectatingTribeOf: (n) => `Tu observes la tribu de ${n}`,
     hudTribeFallback: (id) => `Tribu ${id}`,
 
     growthLabel: "Croissance",

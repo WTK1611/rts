@@ -70,16 +70,21 @@
         background: none; border: none; padding: 0;
       }
       #hud .res .item { display: inline-flex; align-items: center; gap: 8px; }
-      #hud .res .label { color: #c8d8c8; }
+      #hud .res .label {
+        color: #c8d8c8; font-size: 10px; line-height: 1;
+        letter-spacing: 0.3px;
+        text-align: center; white-space: nowrap;
+      }
       #hud .res .ico-wrap {
-        display: inline-flex; flex-direction: column; align-items: stretch;
-        gap: 2px; flex: 0 0 60px; width: 60px;
+        display: inline-flex; flex-direction: column; align-items: center;
+        gap: 2px; flex: 0 0 48px; width: 48px;
       }
       #hud .res .ico {
-        width: 60px; height: 60px; flex: 0 0 60px;
+        width: 40px; height: 40px; flex: 0 0 40px;
         background-size: contain; background-repeat: no-repeat;
         background-position: center;
       }
+      #hud .res .cap-bar { width: 100%; }
       #hud .res .cap-bar {
         position: relative; display: block;
         height: 4px; background: rgba(255,255,255,0.1);
@@ -154,49 +159,7 @@
         0%, 100% { box-shadow: 0 0 4px rgba(255, 216, 77, 0.5); }
         50% { box-shadow: 0 0 8px rgba(255, 216, 77, 1); }
       }
-      #tribes-bar {
-        position: fixed; bottom: 12px; left: 50%;
-        transform: translateX(-50%);
-        display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px;
-        align-items: flex-start; justify-content: center;
-        padding: 8px 12px; border-radius: 10px;
-        background: rgba(10, 14, 10, 0.55);
-        font-family: system-ui, sans-serif;
-        font-size: 13px; color: #d8e8d8;
-        pointer-events: auto;
-        cursor: grab; touch-action: none;
-        user-select: none; -webkit-user-select: none;
-        z-index: 5;
-      }
-      #tribes-bar.dragging { cursor: grabbing; }
-      #tribes-bar:empty { display: none; }
-      #tribes-bar .tribe-card {
-        display: flex; flex-direction: column; align-items: center;
-        gap: 3px; min-width: 60px;
-        transition: transform 0.12s;
-      }
-      #tribes-bar .tribe-card.clickable {
-        pointer-events: auto; cursor: pointer;
-      }
-      #tribes-bar .tribe-card.clickable:hover { transform: scale(1.06); }
-      #tribes-bar .tribe-square {
-        width: 60px; height: 60px; border-radius: 6px;
-        box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.6);
-        transition: box-shadow 0.12s;
-      }
-      #tribes-bar .tribe-card.active .tribe-square {
-        box-shadow: 0 0 0 2px #7ecfff, 0 0 10px rgba(126,207,255,0.7);
-      }
-      #tribes-bar .tribe-label {
-        font-size: 12px; font-weight: 600; color: #f0f5f0;
-        max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        text-align: center;
-      }
-      #tribes-bar .tribe-count {
-        font-size: 11px; color: #b8c8b8;
-        font-variant-numeric: tabular-nums;
-      }
-      #hud .me.clickable {
+#hud .me.clickable {
         pointer-events: auto; cursor: pointer;
         padding: 2px 6px; margin: 0 -6px; border-radius: 4px;
         transition: background 0.12s;
@@ -242,35 +205,14 @@
           gap: 3px; font-size: 13px;
         }
         #hud .res .item { gap: 6px; }
-        #hud .res .ico-wrap { flex-basis: 40px; width: 40px; gap: 1px; }
-        #hud .res .ico { width: 40px; height: 40px; flex-basis: 40px; }
+        #hud .res .ico-wrap { flex-basis: 38px; width: 38px; gap: 1px; }
+        #hud .res .ico { width: 30px; height: 30px; flex-basis: 30px; }
+        #hud .res .label { font-size: 9px; }
         #hud .res .cap-bar { height: 3px; }
         #hud .growth {
           margin: -2px 0 4px; font-size: 9px;
         }
         #hud .growth .bar { height: 2px; }
-        #tribes-bar {
-          left: 0 !important;
-          right: 0 !important;
-          top: auto !important;
-          bottom: 6px !important;
-          transform: none !important;
-          width: 100vw;
-          max-width: 100vw;
-          padding: 5px 8px;
-          gap: 6px;
-          flex-wrap: nowrap;
-          justify-content: flex-start;
-          overflow-x: auto;
-          overflow-y: hidden;
-          border-radius: 0;
-          cursor: default;
-          -webkit-overflow-scrolling: touch;
-        }
-        #tribes-bar .tribe-card { min-width: 40px; flex: 0 0 auto; gap: 2px; }
-        #tribes-bar .tribe-square { width: 40px; height: 40px; border-radius: 4px; }
-        #tribes-bar .tribe-label { font-size: 10px; max-width: 60px; }
-        #tribes-bar .tribe-count { font-size: 9px; }
         #hud .count { padding: 0 5px; font-size: 9px; }
         #hud .me .count { font-size: 10px; padding: 0 6px; }
       }
@@ -289,8 +231,8 @@
         color: #e8f0e8;
         font-family: system-ui, sans-serif;
         z-index: 9;
-        min-width: 420px;
-        max-width: min(92vw, 640px);
+        width: min(640px, calc(100vw - 16px));
+        box-sizing: border-box;
         pointer-events: auto;
         cursor: grab; touch-action: none;
         user-select: none;
@@ -385,16 +327,33 @@
       }
       @media (pointer: coarse) {
         #tribe-banner {
-          top: 10px; padding: 12px 20px 0; border-radius: 14px;
-          min-width: 0; max-width: 96vw;
+          top: auto;
+          bottom: max(10px, env(safe-area-inset-bottom, 10px));
+          left: 6px;
+          transform: none;
+          padding: 10px 16px 0; border-radius: 14px;
+          width: calc(100vw - 12px);
         }
-        #tribe-banner .me { font-size: 17px; gap: 11px; }
+        #tribe-banner .me { font-size: 16px; gap: 10px; }
         #tribe-banner .me .swatch { width: 12px; height: 12px; flex-basis: 12px; }
         #tribe-banner .count,
-        #tribe-banner .clock { padding: 4px 12px; font-size: 13px; }
-        #tribe-banner .growth { margin: 10px -20px 0; }
+        #tribe-banner .clock { padding: 3px 10px; font-size: 12px; }
+        #tribe-banner .growth { margin: 8px -16px 0; }
         #tribe-banner .growth .bar { height: 5px; }
-        #tribe-banner .growth .label-row { padding: 0 20px 7px; font-size: 10px; }
+        #tribe-banner .growth .label-row { padding: 0 16px 6px; font-size: 10px; }
+      }
+      @media (pointer: coarse) and (orientation: landscape) {
+        #tribe-banner {
+          left: 50%;
+          transform: translateX(-50%);
+          width: min(560px, calc(100vw - 24px));
+        }
+        #help-stack {
+          left: auto;
+          right: 10px;
+          width: min(320px, calc(100vw - 20px));
+          max-width: calc(100vw - 20px);
+        }
       }
       #toasts {
         position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
@@ -483,6 +442,21 @@
       .help-card.show {
         opacity: 1;
         transform: translateX(0);
+      }
+      @media (pointer: coarse) {
+        #help-stack {
+          top: auto;
+          bottom: calc(max(10px, env(safe-area-inset-bottom, 10px)) + 96px);
+          right: 6px; left: 6px;
+          width: auto; max-width: none;
+          flex-direction: column;
+        }
+        .help-card {
+          transform: translateY(8px);
+        }
+        .help-card.show {
+          transform: translateY(0);
+        }
       }
       .help-card img {
         display: block;
@@ -858,7 +832,6 @@
     </div>
     <div id="hud"><div class="hud-drag-handle"></div></div>
     <div id="tribe-banner"></div>
-    <div id="tribes-bar"></div>
     <div id="toasts"></div>
     <div id="minimap-wrap" style="display:none">
       <div id="minimap-label">Karte</div>
