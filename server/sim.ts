@@ -8,8 +8,6 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
-  TENT_FELLE_THRESHOLD,
-  TENT_FELLE_PER_NIGHT,
   CATASTROPHE_DAILY_CHANCE,
   CatastropheEvent,
   CatastropheKind,
@@ -23,6 +21,7 @@ import {
   DayPhase,
   EncounterEvent,
   phaseAt,
+  phaseLengthsAt,
   TileOverride,
   TileOverrideEvent,
   Season,
@@ -123,6 +122,9 @@ export interface SimUnit {
   gender: UnitGender;
   firstName: string;
   isChief: boolean;
+  // Unit wears its own pelt (Fell). Starting tribe spawns equipped; new
+  // births consume 1 felle from the player's pool when available.
+  hasFell: boolean;
   idleSec: number;
   autoFollowing: boolean;
   autoFollowScanTimer: number;
@@ -138,6 +140,10 @@ export interface SimCampfire {
   gx: number;
   gy: number;
   fuelTimer: number;
+  // Fuel duration assigned at the last ignite/refuel — depends on the
+  // seasonal night length at that moment. Used as the divisor for the
+  // 0..1 fuel ratio so summer/winter night-length scaling stays correct.
+  fuelMax: number;
   size: number;
   hasTent: boolean;
 }
@@ -799,7 +805,7 @@ export class Sim {
         owner: f.owner,
         gx: f.gx,
         gy: f.gy,
-        fuel: Math.max(0, Math.min(1, f.fuelTimer / D.campfireBurnPerFuelSec)),
+        fuel: Math.max(0, Math.min(1, f.fuelTimer / Math.max(0.001, f.fuelMax))),
         size: f.size,
         hasTent: f.hasTent,
       });
@@ -809,6 +815,13 @@ export class Sim {
 
   isNight(): boolean {
     return this.lastPhase === "night";
+  }
+
+  // Burn duration per wood unit at the *current* seasonal night length.
+  // Honors the configured "X Holz pro Nacht" across summer/winter scaling.
+  private campfireBurnPerFuelSec(): number {
+    const night = phaseLengthsAt(this.gameTimeSec).night;
+    return night / Math.max(1, BAL.nightCampfireHolzPerNight);
   }
 
   winnerOrigin(): PlayerId | null {
@@ -1964,8 +1977,9 @@ export class Sim {
         this.rallyAlliesToHunt(u, a);
         if (a.hp <= 0) {
           this.gainResource(u.owner, "fleisch", spec.meat, a.gx, a.gy);
-          const felleYield = Math.max(1, Math.round(spec.meat / 3));
-          this.gainResource(u.owner, "felle", felleYield, a.gx, a.gy);
+          if (spec.felle > 0) {
+            this.gainResource(u.owner, "felle", spec.felle, a.gx, a.gy);
+          }
           this.animals.delete(a.id);
           this.removedAnimalIds.push(a.id);
           u.huntTarget = null;
@@ -2067,6 +2081,7 @@ export class Sim {
         gender,
         firstName,
         isChief: false,
+        hasFell: true,
         autoFollowing: false,
         autoFollowScanTimer: 0,
         idleSec: 0,
@@ -2135,6 +2150,7 @@ export class Sim {
         gender,
         firstName,
         isChief: false,
+        hasFell: true,
         idleSec: 0,
         autoFollowing: false,
         autoFollowScanTimer: 0,
@@ -2291,6 +2307,7 @@ export class Sim {
       gender: u.gender,
       firstName: u.firstName,
       isChief: u.isChief,
+      hasFell: u.hasFell,
     };
     if (u.state === "hunting" && u.huntWeapon) {
       out.huntWeapon = u.huntWeapon;
@@ -2397,7 +2414,8 @@ export class Sim {
         this.pushFlow(owner, "holz", -1, existing.gx, existing.gy);
         this.pushFlow(owner, "stein", -1, existing.gx, existing.gy);
         existing.size += 1;
-        existing.fuelTimer = D.campfireBurnPerFuelSec;
+        existing.fuelTimer = this.campfireBurnPerFuelSec();
+        existing.fuelMax = existing.fuelTimer;
         return;
       }
       this.campfires.delete(id);
@@ -2407,13 +2425,15 @@ export class Sim {
     r.stein -= 1;
     this.pushFlow(owner, "holz", -1, cx, cy);
     this.pushFlow(owner, "stein", -1, cx, cy);
-    const hasTent = r.felle >= TENT_FELLE_THRESHOLD;
+    const hasTent = r.felle >= BAL.tentFelleThreshold;
+    const burn = this.campfireBurnPerFuelSec();
     this.campfires.set(id, {
       id,
       owner,
       gx: cx,
       gy: cy,
-      fuelTimer: D.campfireBurnPerFuelSec,
+      fuelTimer: burn,
+      fuelMax: burn,
       size: 1,
       hasTent,
     });
@@ -2559,7 +2579,7 @@ export class Sim {
     this.footprints.push(fp);
     this.newFootprints.push(fp);
     if (!this.unitAtAnyFire(u)) {
-      u.hp = Math.max(0, u.hp - BAL.unitHpLossPerTile);
+      u.hp = Math.max(0, u.hp - u.hpMax * BAL.unitHpLossPercentPerTile / 100);
     }
     this.tryAutoPick(u, ti, tj);
     this.tryEngageAnimalOnTile(u, ti, tj);
@@ -2636,7 +2656,7 @@ export class Sim {
       ) {
         this.autoPickAndRegrow(
           u, "stone", ti, tj, "stein",
-          BAL.stoneAutopickGain, 0,
+          BAL.stoneAutopickGain, D.stoneRegrowTicks,
         );
       }
     }
@@ -2918,6 +2938,22 @@ export class Sim {
         u.hp = Math.min(u.hpMax, u.hp + BAL.campfireHpRegenPerSec * 1.5 * dt);
       } else {
         u.hp = Math.max(0, u.hp - BAL.unitHpLossPerSecIdle * dt);
+      }
+      // Cold penalty: at night, units without a fell suffer extra HP loss
+      // unless sheltered (own campfire range or tent).
+      if (
+        !u.hasFell &&
+        this.isNight() &&
+        !this.unitAtAnyFire(u) &&
+        !this.unitNearTent(u)
+      ) {
+        u.hp = Math.max(0, u.hp - BAL.unitColdHpLossPerSecAtNight * dt);
+      }
+      // Auto-equip a fell from the pool when standing near own campfire.
+      if (!u.hasFell && this.resources[u.owner]?.felle >= 1 && this.unitAtAnyFire(u)) {
+        this.resources[u.owner].felle -= 1;
+        this.pushFlow(u.owner, "felle", -1, u.gx, u.gy);
+        u.hasFell = true;
       }
       u.ageSec += dt;
       if (u.ageSec >= BAL.maxAgeSec) u.hp = 0;
@@ -3224,7 +3260,8 @@ export class Sim {
       if (r.holz >= cost) {
         r.holz -= cost;
         this.pushFlow(f.owner, "holz", -cost, f.gx, f.gy);
-        f.fuelTimer = D.campfireBurnPerFuelSec;
+        f.fuelTimer = this.campfireBurnPerFuelSec();
+        f.fuelMax = f.fuelTimer;
       } else {
         this.campfires.delete(f.id);
         this.removedCampfireIds.push(f.id);
@@ -3275,13 +3312,15 @@ export class Sim {
     this.pushFlow(p, "holz", -BAL.campfireIgniteHolzCost, cx, cy);
     this.pushFlow(p, "stein", -BAL.campfireIgniteSteinCost, cx, cy);
     const id = this.campfireIdFor(p);
-    const hasTent = r.felle >= TENT_FELLE_THRESHOLD;
+    const hasTent = r.felle >= BAL.tentFelleThreshold;
+    const burn = this.campfireBurnPerFuelSec();
     this.campfires.set(id, {
       id,
       owner: p,
       gx: cx,
       gy: cy,
-      fuelTimer: D.campfireBurnPerFuelSec,
+      fuelTimer: burn,
+      fuelMax: burn,
       size: 1,
       hasTent,
     });
@@ -3347,10 +3386,13 @@ export class Sim {
     listA: SimUnit[],
     listB: SimUnit[],
   ): { aToB: number; bToA: number } {
+    // Kinder werden bei Geschlechter-Bilanz ignoriert und auch nie übergeben —
+    // sie wachsen mit dem Stamm auf, in dem sie geboren wurden.
     const surplus = (list: SimUnit[]) => {
       let m = 0;
       let f = 0;
       for (const u of list) {
+        if (u.ageSec < BAL.childAgeSec) continue;
         if (u.gender === "m") m++;
         else f++;
       }
@@ -3389,6 +3431,7 @@ export class Sim {
     for (const u of srcList) {
       if (moved >= count) break;
       if (u.gender !== "f") continue;
+      if (u.ageSec < BAL.childAgeSec) continue;
       u.owner = targetOwner;
       u.color = newColor;
       u.isChief = false;
@@ -3449,7 +3492,7 @@ export class Sim {
 
       for (const u of list) {
         if (u.gender !== "f") continue;
-        if (u.ageSec < BAL.childAgeSec) {
+        if (u.ageSec < BAL.childAgeSec || u.ageSec >= BAL.oldThresholdSec) {
           this.pregnancyTimer.delete(u.id);
           continue;
         }
@@ -3606,6 +3649,14 @@ export class Sim {
     const lang = this.tribeLanguage[p];
     const usedNames = this.collectTribeNames(p);
     const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
+    // Newborn gets a fell from the pool if one is in stock — else cold-vulnerable.
+    const pool = this.resources[p];
+    let hasFell = false;
+    if (pool && pool.felle >= 1) {
+      pool.felle -= 1;
+      this.pushFlow(p, "felle", -1, spot.i + 0.5, spot.j + 0.5);
+      hasFell = true;
+    }
     const u: SimUnit = {
       id: `u_p${p}_${k}`,
       owner: p,
@@ -3632,6 +3683,7 @@ export class Sim {
       gender,
       firstName,
       isChief: false,
+      hasFell,
       idleSec: 0,
       autoFollowing: false,
       autoFollowScanTimer: 0,
@@ -3975,15 +4027,15 @@ export class Sim {
   }
 
   private onNightfall(): void {
-    // Tents require a stockpile of felle (≥ TENT_FELLE_THRESHOLD) at nightfall
-    // and consume TENT_FELLE_PER_NIGHT per night to stay up.
+    // Tents require a stockpile of felle (≥ BAL.tentFelleThreshold) at nightfall
+    // and consume BAL.tentFellePerNight per night to stay up.
     for (const f of this.campfires.values()) {
       const r = this.resources[f.owner];
       if (!r) continue;
-      if (r.felle >= TENT_FELLE_THRESHOLD) {
+      if (r.felle >= BAL.tentFelleThreshold) {
         f.hasTent = true;
-        r.felle -= TENT_FELLE_PER_NIGHT;
-        this.pushFlow(f.owner, "felle", -TENT_FELLE_PER_NIGHT, f.gx, f.gy);
+        r.felle -= BAL.tentFellePerNight;
+        this.pushFlow(f.owner, "felle", -BAL.tentFellePerNight, f.gx, f.gy);
       } else {
         f.hasTent = false;
       }
@@ -4157,6 +4209,11 @@ export class Sim {
       const ro: RemovedObject = { kind: t.kind, i: t.i, j: t.j };
       this.removedObjects.push(ro);
       this.newRemovedObjects.push(ro);
+      // Stein-Regrow: nur via aktive Ernte gilt (Tile bleibt sonst „leer"),
+      // sodass abgebaute Felsbrocken nach D.stoneRegrowTicks zurückkommen.
+      if (t.kind === "stone" && D.stoneRegrowTicks > 0) {
+        this.regrow.set(k, this.tick + D.stoneRegrowTicks);
+      }
       u.harvestTarget = null;
       u.state = "idle";
     } else {
@@ -4472,18 +4529,41 @@ export class Sim {
     const dayIdx = Math.floor(this.gameTimeSec / DAY_LENGTH_SEC);
     if (dayIdx === this.lastCatastropheDayIdx) return;
     this.lastCatastropheDayIdx = dayIdx;
-    // Skip catastrophes during the very first in-game day.
-    if (dayIdx < 1) return;
+    // Schonzeit: erste 3 In-Game-Tage komplett katastrophenfrei, damit ein
+    // frischer Stamm Zeit zum Hochlaufen bekommt.
+    if (dayIdx < 3) return;
     const season = seasonAt(this.gameTimeSec);
+    // Pro Tag wird höchstens EINE Katastrophe ausgelöst. Wir sammeln alle
+    // Kandidaten mit positiver Tageschance und ziehen gewichtet einen Typ.
+    // So bleibt das Verhältnis der Katastrophen-Typen erhalten, aber kein
+    // Tag bekommt mehr als ein Ereignis.
+    let totalChance = 0;
+    const candidates: Array<{ kind: CatastropheKind; chance: number }> = [];
     for (const [kindStr, byS] of Object.entries(CATASTROPHE_DAILY_CHANCE)) {
       const kind = kindStr as CatastropheKind;
       const chance = byS[season];
       if (chance <= 0) continue;
-      if (this.nextRand() > chance) continue;
-      const sevRoll = this.nextRand();
-      const severity: CatastropheSeverity = sevRoll > 0.92 ? 3 : sevRoll > 0.65 ? 2 : 1;
-      this.triggerCatastrophe(kind, undefined, undefined, severity);
+      candidates.push({ kind, chance });
+      totalChance += chance;
     }
+    if (candidates.length === 0) return;
+    // Wahrscheinlichkeit für "überhaupt etwas heute" entspricht 1 −
+    // ∏(1 − p_i); approximation via Summe (alle p sehr klein), aber durch
+    // Min(totalChance, 0.95) geclampt damit dauer-Trigger-Tage selten bleiben.
+    const trigger = Math.min(totalChance, 0.95);
+    if (this.nextRand() > trigger) return;
+    let roll = this.nextRand() * totalChance;
+    let pickedKind: CatastropheKind = candidates[0].kind;
+    for (const c of candidates) {
+      roll -= c.chance;
+      if (roll <= 0) {
+        pickedKind = c.kind;
+        break;
+      }
+    }
+    const sevRoll = this.nextRand();
+    const severity: CatastropheSeverity = sevRoll > 0.92 ? 3 : sevRoll > 0.65 ? 2 : 1;
+    this.triggerCatastrophe(pickedKind, undefined, undefined, severity);
   }
 
   /** Start a catastrophe with all kind-specific initial side effects. */

@@ -43,6 +43,8 @@ export class Unit {
   gender: UnitGender;
   firstName: string;
   isChief: boolean;
+  hasFell: boolean;
+  private fellCape: Phaser.GameObjects.Ellipse | null = null;
 
   private bobPhase: number;
   private harvestSwingTween: Phaser.Tweens.Tween | null = null;
@@ -73,6 +75,7 @@ export class Unit {
     this.gender = snap.gender;
     this.firstName = snap.firstName;
     this.isChief = snap.isChief;
+    this.hasFell = snap.hasFell;
     this.bobPhase = Math.random() * Math.PI * 2;
     const { x, y } = gridToScreen(this.gx, this.gy);
     const h = groundHeight(worldSeed, this.gx, this.gy);
@@ -89,6 +92,9 @@ export class Unit {
     this.bodyShadow = scene.add.ellipse(1, -12, 16, 20, dark, 0.6);
     this.body = scene.add.ellipse(0, -13, 16, 20, snap.color).setStrokeStyle(1.5, 0x141414);
     this.bodyHighlight = scene.add.ellipse(-3, -16, 6, 9, light, 0.85);
+    this.fellCape = scene.add.ellipse(0, -19, 14, 6, 0x6a4a26, 0.9)
+      .setStrokeStyle(0.8, 0x141414, 0.6);
+    this.fellCape.setVisible(snap.hasFell);
 
     if (snap.gender === "f") {
       this.hairBack = scene.add.ellipse(0, -20, 14, 18, HAIR_BASE_COLOR);
@@ -128,6 +134,7 @@ export class Unit {
       this.body,
       this.bodyHighlight,
     ];
+    if (this.fellCape) layers.push(this.fellCape);
     if (this.hairBack) layers.push(this.hairBack);
     layers.push(this.head, this.hair);
     if (this.beard) layers.push(this.beard);
@@ -179,6 +186,10 @@ export class Unit {
     if (this.isChief !== snap.isChief) {
       this.isChief = snap.isChief;
       this.crown.setVisible(snap.isChief);
+    }
+    if (this.hasFell !== snap.hasFell) {
+      this.hasFell = snap.hasFell;
+      if (this.fellCape) this.fellCape.setVisible(snap.hasFell);
     }
   }
 

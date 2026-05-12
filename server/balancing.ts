@@ -59,6 +59,7 @@ export interface AnimalTunable {
   hp: number;
   speed: number;
   meat: number;
+  felle: number;
   density: number;
   wanderRadius: number;
   damage: number;
@@ -74,14 +75,14 @@ export interface AnimalTunable {
 }
 
 export const ANIMAL_DEFAULTS: Record<AnimalKind, AnimalTunable> = {
-  hare:        { hp: 3,  speed: 4.0, meat: 2,  density: 0.0220, wanderRadius: 6,  damage: 0,  detectRange: 0, autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, amphibianRange: 0 },
-  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  density: 0.0040, wanderRadius: 10, damage: 3,  detectRange: 0, autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 6,  preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, amphibianRange: 0 },
-  megaloceros: { hp: 15, speed: 3.4, meat: 10, density: 0.0025, wanderRadius: 8,  damage: 0,  detectRange: 0, autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300, amphibianRange: 0 },
-  bison:       { hp: 18, speed: 2.6, meat: 12, density: 0.0035, wanderRadius: 8,  damage: 4,  detectRange: 4, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, amphibianRange: 0 },
-  caveLion:    { hp: 12, speed: 4.0, meat: 6,  density: 0.0008, wanderRadius: 12, damage: 5,  detectRange: 5, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 14, preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, amphibianRange: 0 },
-  mammoth:     { hp: 30, speed: 1.8, meat: 25, density: 0.0014, wanderRadius: 6,  damage: 10, detectRange: 4, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 10, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, amphibianRange: 0 },
-  alligator:   { hp: 14, speed: 2.6, meat: 8,  density: 0.0070, wanderRadius: 5,  damage: 6,  detectRange: 5, autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, amphibianRange: 3 },
-  bear:        { hp: 22, speed: 3.0, meat: 14, density: 0.0016, wanderRadius: 10, damage: 8,  detectRange: 6, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, amphibianRange: 0 },
+  hare:        { hp: 3,  speed: 4.0, meat: 2,  felle: 1, density: 0.0220, wanderRadius: 6,  damage: 0,  detectRange: 0, autoHuntRange: 6, attackRange: 1.5, aggroDurationSec: 0,  preyDamage: 0, matureAgeSec: 25, gestationSec: 30,  maxAgeSec: 140, amphibianRange: 0 },
+  reindeer:    { hp: 8,  speed: 3.0, meat: 6,  felle: 2, density: 0.0040, wanderRadius: 10, damage: 0,  detectRange: 0, autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  preyDamage: 0, matureAgeSec: 50, gestationSec: 55,  maxAgeSec: 260, amphibianRange: 0 },
+  megaloceros: { hp: 15, speed: 3.4, meat: 10, felle: 3, density: 0.0025, wanderRadius: 8,  damage: 0,  detectRange: 0, autoHuntRange: 5, attackRange: 1.5, aggroDurationSec: 0,  preyDamage: 0, matureAgeSec: 60, gestationSec: 65,  maxAgeSec: 300, amphibianRange: 0 },
+  bison:       { hp: 18, speed: 2.6, meat: 12, felle: 4, density: 0.0035, wanderRadius: 8,  damage: 4,  detectRange: 4, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 8,  preyDamage: 0, matureAgeSec: 60, gestationSec: 70,  maxAgeSec: 320, amphibianRange: 0 },
+  caveLion:    { hp: 12, speed: 4.0, meat: 6,  felle: 2, density: 0.0008, wanderRadius: 12, damage: 5,  detectRange: 5, autoHuntRange: 0, attackRange: 1.5, aggroDurationSec: 14, preyDamage: 5, matureAgeSec: 55, gestationSec: 60,  maxAgeSec: 280, amphibianRange: 0 },
+  mammoth:     { hp: 30, speed: 1.8, meat: 25, felle: 8, density: 0.0014, wanderRadius: 6,  damage: 10, detectRange: 4, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 10, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, amphibianRange: 0 },
+  alligator:   { hp: 14, speed: 2.6, meat: 8,  felle: 3, density: 0.0070, wanderRadius: 5,  damage: 6,  detectRange: 5, autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, amphibianRange: 3 },
+  bear:        { hp: 22, speed: 3.0, meat: 14, felle: 5, density: 0.0016, wanderRadius: 10, damage: 8,  detectRange: 6, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, amphibianRange: 0 },
 };
 
 const ANIMAL_FIELD_META: Array<{
@@ -94,6 +95,7 @@ const ANIMAL_FIELD_META: Array<{
   { key: "hp",                 label: "HP",                 min: 1,    max: 500,  step: 1 },
   { key: "speed",              label: "Geschw.",            min: 0.1,  max: 12,   step: 0.1 },
   { key: "meat",               label: "Fleisch",            min: 0,    max: 100,  step: 1 },
+  { key: "felle",              label: "Felle",              min: 0,    max: 30,   step: 1 },
   { key: "damage",             label: "Schaden",            min: 0,    max: 50,   step: 1 },
   { key: "detectRange",        label: "Aggro-Reichweite",   min: 0,    max: 20,   step: 0.5 },
   { key: "preyDamage",         label: "Beute-Schaden",      min: 0,    max: 50,   step: 1 },
@@ -118,12 +120,16 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "day.nightCampfireHolzPerNight", group: "tageszyklus", label: "Holz/Lagerfeuer-Nacht", defaultValue: 40, min: 1, max: 500, step: 1 },
 
   // === Wachstum / Bevölkerung ===
+  // Lebenszyklus-Sekunden sind absolut (nicht an DAY_LENGTH_SEC gekoppelt),
+  // damit Tageslängen-Änderungen nicht ungewollt jeden Lifecycle-Wert
+  // mitskaliert. childAgeSec=240, oldThresholdSec=720, maxAgeSec=960,
+  // requiredSec=288 ≙ alte Werte 240*1, 240*3, 240*4, 240*1.2.
   { key: "growth.maxTribeSize",        group: "wachstum", label: "Max. Stammgröße",        defaultValue: 12, min: 1, max: 64, step: 1 },
-  { key: "growth.requiredSec",         group: "wachstum", label: "Wachstumszeit (s)",      defaultValue: 240 * 1.2, min: 10, max: 1200, step: 1 },
+  { key: "growth.requiredSec",         group: "wachstum", label: "Wachstumszeit (s)",      defaultValue: 288, min: 10, max: 1200, step: 1 },
   { key: "growth.pregnancyHealthMinFrac", group: "wachstum", label: "Min. HP-Anteil für Schwangerschaft", defaultValue: 0.30, min: 0.0, max: 1.0, step: 0.01 },
-  { key: "growth.maxAgeSec",           group: "wachstum", label: "Max. Lebensalter (s)",    defaultValue: 240 * 4, min: 30, max: 5000, step: 10 },
+  { key: "growth.maxAgeSec",           group: "wachstum", label: "Max. Lebensalter (s)",    defaultValue: 960, min: 30, max: 5000, step: 10 },
   { key: "growth.childAgeSec",         group: "wachstum", label: "Kindheit (s)",            defaultValue: 240, min: 5, max: 1200, step: 1 },
-  { key: "growth.oldThresholdSec",     group: "wachstum", label: "Altersgrenze (s)",        defaultValue: 240 * 3, min: 30, max: 4000, step: 10 },
+  { key: "growth.oldThresholdSec",     group: "wachstum", label: "Altersgrenze (s)",        defaultValue: 720, min: 30, max: 4000, step: 10 },
   { key: "growth.encounterRange",      group: "wachstum", label: "Begegnung-Range",          defaultValue: 5, min: 1, max: 30, step: 0.5 },
   { key: "growth.encounterCooldownSec", group: "wachstum", label: "Begegnung-Cooldown (s)", defaultValue: 60, min: 1, max: 600, step: 1 },
 
@@ -136,7 +142,6 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "harvest.cactusHolz",   group: "ernte", label: "Kaktus: Holz/Hieb",        defaultValue: 1, min: 1, max: 20, step: 1 },
   { key: "harvest.cactusWasser", group: "ernte", label: "Kaktus: Wasser/Hieb",      defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.kreuterAmount", group: "ernte", label: "Kräuter: Kräuter/Hieb",   defaultValue: 1, min: 1, max: 20, step: 1 },
-  { key: "harvest.treeAutopick",     group: "ernte", label: "Auto-Pickup: Baum",     defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.bushAutopick",     group: "ernte", label: "Auto-Pickup: Busch",    defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.mushAutopick",     group: "ernte", label: "Auto-Pickup: Pilz",     defaultValue: 1, min: 0, max: 20, step: 1 },
   { key: "harvest.stoneAutopick",    group: "ernte", label: "Auto-Pickup: Stein",    defaultValue: 1, min: 0, max: 20, step: 1 },
@@ -147,16 +152,21 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "harvest.kreuterAutopick",  group: "ernte", label: "Auto-Pickup: Kräuter",  defaultValue: 1, min: 0, max: 20, step: 1 },
 
   // === Nachwuchs (Regrow) ===
-  { key: "regrow.treeSec",     group: "regrow", label: "Baum: Regrow (s)",        defaultValue: 240 * 5, min: 10, max: 10000, step: 10 },
+  { key: "regrow.treeSec",     group: "regrow", label: "Baum: Regrow (s)",        defaultValue: 1200, min: 10, max: 10000, step: 10 },
   { key: "regrow.bushSec",     group: "regrow", label: "Busch: Regrow (s)",       defaultValue: 120, min: 5, max: 3600, step: 5 },
   { key: "regrow.mushroomSec", group: "regrow", label: "Pilz: Regrow (s)",        defaultValue: 60, min: 5, max: 3600, step: 5 },
   { key: "regrow.cactusSec",   group: "regrow", label: "Kaktus: Regrow (s)",      defaultValue: 180, min: 5, max: 3600, step: 5 },
   { key: "regrow.kreuterSec",  group: "regrow", label: "Kräuter: Regrow (s)",     defaultValue: 300, min: 5, max: 7200, step: 5 },
+  // Stein wuchs früher nie nach — mit endlichem Stein-Vorrat war das Spiel
+  // langfristig deterministisch verloren. 0 lässt sich setzen, um das alte
+  // "nie respawn" Verhalten wiederherzustellen.
+  { key: "regrow.stoneSec",    group: "regrow", label: "Stein: Regrow (s)",       defaultValue: 600, min: 0, max: 7200, step: 5 },
 
   // === Einheiten ===
-  { key: "unit.hpMax",            group: "einheiten", label: "Max. HP",                    defaultValue: 100, min: 1, max: 500, step: 1 },
-  { key: "unit.hpLossPerTile",    group: "einheiten", label: "HP-Verlust/Tile (laufen)",   defaultValue: 0.4, min: 0, max: 5, step: 0.05 },
-  { key: "unit.hpLossPerSecIdle", group: "einheiten", label: "HP-Verlust/s (idle)",        defaultValue: 0.12, min: 0, max: 5, step: 0.01 },
+  { key: "unit.hpMax",                   group: "einheiten", label: "Max. HP",                      defaultValue: 100,  min: 1, max: 500, step: 1 },
+  { key: "unit.hpLossPercentPerTile",    group: "einheiten", label: "HP-Verlust/Tile (% von Max)",  defaultValue: 0.4,  min: 0, max: 5,   step: 0.05 },
+  { key: "unit.hpLossPerSecIdle",        group: "einheiten", label: "HP-Verlust/s (idle)",          defaultValue: 0.12, min: 0, max: 5,   step: 0.01 },
+  { key: "unit.coldHpLossPerSecAtNight", group: "einheiten", label: "Kälte-HP/s ohne Fell (Nacht)", defaultValue: 0.5,  min: 0, max: 10,  step: 0.05 },
 
   // === Essen ===
   { key: "eat.intervalSec",    group: "essen", label: "Ess-Intervall (s)",       defaultValue: 1.0, min: 0.1, max: 10, step: 0.1 },
@@ -187,7 +197,7 @@ export const SCALAR_DEFS: BalFieldDef[] = [
 
   // === Lagerfeuer ===
   { key: "fire.range",                group: "campfire", label: "Lagerfeuer-Reichweite",   defaultValue: 2.5, min: 0.5, max: 10, step: 0.1 },
-  { key: "fire.igniteMinUnits",       group: "campfire", label: "Min. Einheiten z. Anzünden", defaultValue: 2, min: 1, max: 12, step: 1 },
+  { key: "fire.igniteMinUnits",       group: "campfire", label: "Min. Einheiten z. Anzünden", defaultValue: 2, min: 2, max: 12, step: 1 },
   { key: "fire.igniteHolzCost",       group: "campfire", label: "Holz-Kosten Anzünden",    defaultValue: 5, min: 0, max: 100, step: 1 },
   { key: "fire.igniteSteinCost",      group: "campfire", label: "Stein-Kosten Anzünden",   defaultValue: 1, min: 0, max: 100, step: 1 },
   { key: "fire.igniteClusterRadius",  group: "campfire", label: "Cluster-Radius",          defaultValue: 2.5, min: 0.5, max: 10, step: 0.1 },
@@ -195,13 +205,15 @@ export const SCALAR_DEFS: BalFieldDef[] = [
   { key: "fire.maxSize",              group: "campfire", label: "Max. Größe",              defaultValue: 6, min: 1, max: 20, step: 1 },
   { key: "fire.hpRegenPerSec",        group: "campfire", label: "HP-Regen/s",              defaultValue: 1.2, min: 0, max: 20, step: 0.1 },
   { key: "fire.repelRadiusBonus",     group: "campfire", label: "Räuber-Abwehr-Bonus",     defaultValue: 2.5, min: 0, max: 20, step: 0.1 },
+  { key: "tent.felleThreshold",       group: "campfire", label: "Zelt: Min. Felle (Aufbau)", defaultValue: 3, min: 1, max: 50, step: 1 },
+  { key: "tent.fellePerNight",        group: "campfire", label: "Zelt: Felle/Nacht",       defaultValue: 1, min: 0, max: 20, step: 1 },
 
   // === Tier-Welt (Spawn) ===
   { key: "animals.spawnRadius",         group: "tier_spawn", label: "Spawn-Radius (Tiles)",   defaultValue: 200, min: 20, max: 600, step: 10 },
   { key: "animals.breedRange",          group: "tier_spawn", label: "Tier-Paarungsreichweite", defaultValue: 2.5, min: 0.5, max: 10, step: 0.1 },
   { key: "animals.kindCapFactor",       group: "tier_spawn", label: "Tier-Cap-Faktor",         defaultValue: 2.0, min: 1.0, max: 10.0, step: 0.1 },
   { key: "animals.respawnIntervalSec",  group: "tier_spawn", label: "Respawn-Intervall (s)",   defaultValue: 0.5, min: 0.1, max: 10, step: 0.1 },
-  { key: "animals.respawnPerTick",      group: "tier_spawn", label: "Respawn-Versuche/Tick",   defaultValue: 140, min: 1, max: 1000, step: 1 },
+  { key: "animals.respawnPerTick",      group: "tier_spawn", label: "Respawn-Versuche/Tick",   defaultValue: 140, min: 1, max: 500, step: 1 },
   { key: "animals.respawnMinUnitDist",  group: "tier_spawn", label: "Min. Abstand zu Einheit", defaultValue: 12, min: 1, max: 50, step: 1 },
   { key: "animals.respawnTileAttempts", group: "tier_spawn", label: "Respawn-Tile-Versuche",   defaultValue: 60, min: 1, max: 500, step: 1 },
   { key: "animals.fullStepRadius",      group: "tier_spawn", label: "Voll-Sim-Radius",         defaultValue: 12, min: 1, max: 50, step: 1 },
@@ -303,10 +315,11 @@ export interface BalDerived {
   mushroomRegrowTicks: number;
   cactusRegrowTicks: number;
   kreuterRegrowTicks: number;
+  /** 0 = nie respawn (alter Default). */
+  stoneRegrowTicks: number;
   // Other
   encounterCooldownTicks: number;
   footprintLifetimeTicks: number;
-  campfireBurnPerFuelSec: number;
   campfireRepelRadius: number;
   animalBreedRangeSq: number;
   animalRespawnMinUnitDistSq: number;
@@ -324,9 +337,9 @@ export const D: BalDerived = {
   mushroomRegrowTicks: 0,
   cactusRegrowTicks: 0,
   kreuterRegrowTicks: 0,
+  stoneRegrowTicks: 0,
   encounterCooldownTicks: 0,
   footprintLifetimeTicks: 0,
-  campfireBurnPerFuelSec: 0,
   campfireRepelRadius: 0,
   animalBreedRangeSq: 0,
   animalRespawnMinUnitDistSq: 0,
@@ -349,10 +362,13 @@ function recomputeDerived(): void {
   D.mushroomRegrowTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.mushroomSec"]));
   D.cactusRegrowTicks   = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.cactusSec"]));
   D.kreuterRegrowTicks  = Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.kreuterSec"]));
+  // 0 erlaubt = "nie respawn"; sonst min. 1 Tick.
+  D.stoneRegrowTicks    = SCALAR["regrow.stoneSec"] <= 0
+    ? 0
+    : Math.max(1, Math.round(TICK_RATE * SCALAR["regrow.stoneSec"]));
 
   D.encounterCooldownTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["growth.encounterCooldownSec"]));
   D.footprintLifetimeTicks = Math.max(1, Math.round(TICK_RATE * SCALAR["world.footprintLifetimeSec"]));
-  D.campfireBurnPerFuelSec = night / Math.max(1, SCALAR["day.nightCampfireHolzPerNight"]);
   D.campfireRepelRadius    = SCALAR["fire.range"] + SCALAR["fire.repelRadiusBonus"];
 
   const ar = SCALAR["animals.breedRange"];
@@ -412,7 +428,6 @@ export const BAL = {
   get cactusHarvestHolz()    { return SCALAR["harvest.cactusHolz"]; },
   get cactusHarvestWasser()  { return SCALAR["harvest.cactusWasser"]; },
   get kreuterHarvestAmount() { return SCALAR["harvest.kreuterAmount"]; },
-  get treeAutopickGain()     { return SCALAR["harvest.treeAutopick"]; },
   get bushAutopickGain()     { return SCALAR["harvest.bushAutopick"]; },
   get mushroomAutopickGain() { return SCALAR["harvest.mushAutopick"]; },
   get stoneAutopickGain()    { return SCALAR["harvest.stoneAutopick"]; },
@@ -423,9 +438,10 @@ export const BAL = {
   get kreuterAutopickGain()  { return SCALAR["harvest.kreuterAutopick"]; },
 
   // einheiten / essen
-  get unitHpMax()           { return SCALAR["unit.hpMax"]; },
-  get unitHpLossPerTile()   { return SCALAR["unit.hpLossPerTile"]; },
-  get unitHpLossPerSecIdle() { return SCALAR["unit.hpLossPerSecIdle"]; },
+  get unitHpMax()                  { return SCALAR["unit.hpMax"]; },
+  get unitHpLossPercentPerTile()   { return SCALAR["unit.hpLossPercentPerTile"]; },
+  get unitHpLossPerSecIdle()       { return SCALAR["unit.hpLossPerSecIdle"]; },
+  get unitColdHpLossPerSecAtNight() { return SCALAR["unit.coldHpLossPerSecAtNight"]; },
   get eatInterval()         { return SCALAR["eat.intervalSec"]; },
   get hpGainFleisch()       { return SCALAR["eat.hpGainFleisch"]; },
   get hpGainFisch()         { return SCALAR["eat.hpGainFisch"]; },
@@ -461,6 +477,8 @@ export const BAL = {
   get campfireGrowRadius()         { return SCALAR["fire.growRadius"]; },
   get campfireMaxSize()            { return SCALAR["fire.maxSize"]; },
   get campfireHpRegenPerSec()      { return SCALAR["fire.hpRegenPerSec"]; },
+  get tentFelleThreshold()         { return SCALAR["tent.felleThreshold"]; },
+  get tentFellePerNight()          { return SCALAR["tent.fellePerNight"]; },
 
   // tiere (welt)
   get animalSpawnRadius()        { return SCALAR["animals.spawnRadius"]; },
@@ -489,7 +507,7 @@ export const BAL = {
 
 // ---- Persistence interface ----
 const isAnimalKey = (key: string): { kind: AnimalKind; field: keyof AnimalTunable } | null => {
-  const m = /^animal\.([a-zA-Z]+)\.([a-zA-Z]+)$/.exec(key);
+  const m = /^animal\.(\w+)\.(\w+)$/.exec(key);
   if (!m) return null;
   const kind = m[1] as AnimalKind;
   const field = m[2] as keyof AnimalTunable;
@@ -506,6 +524,25 @@ function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
   if (value > max) return max;
   return value;
+}
+
+// Pair constraints: SCALAR[lower] must stay ≤ SCALAR[upper].
+// Editing one side "pulls" the other to satisfy the constraint, so the
+// UI can never produce an inverted range or unordered lifecycle gates.
+const ORDERED_PAIRS: Array<[string, string]> = [
+  ["fish.turnIntervalMin", "fish.turnIntervalMax"],
+  ["growth.childAgeSec",   "growth.oldThresholdSec"],
+  ["growth.oldThresholdSec", "growth.maxAgeSec"],
+];
+
+function enforceOrderedPairs(touchedKey?: string): void {
+  for (const [lo, hi] of ORDERED_PAIRS) {
+    if (SCALAR[lo] === undefined || SCALAR[hi] === undefined) continue;
+    if (SCALAR[lo] <= SCALAR[hi]) continue;
+    if (touchedKey === lo) SCALAR[hi] = SCALAR[lo];
+    else if (touchedKey === hi) SCALAR[lo] = SCALAR[hi];
+    else SCALAR[hi] = SCALAR[lo]; // hydrate path: pull upper to match lower
+  }
 }
 
 export function isValidKey(key: string): boolean {
@@ -526,6 +563,7 @@ export function applyValue(key: string, value: number): number | null {
   const v = clamp(value, def.min, def.max);
   if (SCALAR_DEF_BY_KEY.has(key)) {
     SCALAR[key] = v;
+    enforceOrderedPairs(key);
   } else {
     const a = isAnimalKey(key);
     if (!a) return null;
@@ -534,6 +572,17 @@ export function applyValue(key: string, value: number): number | null {
   recomputeDerived();
   applyProtocolFromScalars();
   return v;
+}
+
+/**
+ * Reset a single key to its default value. Returns the default, or null
+ * if the key is unknown. Triggers the same derived/protocol re-application
+ * as applyValue.
+ */
+export function resetToDefault(key: string): number | null {
+  const def = defOf(key);
+  if (!def) return null;
+  return applyValue(key, def.defaultValue);
 }
 
 export interface BalancingSnapshot {
@@ -572,6 +621,7 @@ export function hydrateFromMap(rows: Record<string, number>): void {
       if (a) (ANIMALS[a.kind] as Record<keyof AnimalTunable, number>)[a.field] = clamp(v, def.min, def.max);
     }
   }
+  enforceOrderedPairs();
   recomputeDerived();
   applyProtocolFromScalars();
 }

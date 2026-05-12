@@ -6,6 +6,7 @@ export interface AnimalSpec {
   hp: number;
   speed: number;
   meat: number;
+  felle: number;
   biomes: Biome[];
   density: number;
   wanderRadius: number;
@@ -55,6 +56,7 @@ export function animalSpec(kind: AnimalKind): AnimalSpec {
     hp: t.hp,
     speed: t.speed,
     meat: t.meat,
+    felle: t.felle,
     biomes: s.biomes,
     density: t.density,
     wanderRadius: t.wanderRadius,

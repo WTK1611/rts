@@ -202,6 +202,10 @@ export interface UnitSnapshot {
   gender: UnitGender;
   firstName: string;
   isChief: boolean;
+  // True when the unit wears their own pelt — protects from night cold.
+  // Tribe starts with everyone equipped; new births consume 1 felle from
+  // the pool if available, else spawn without one.
+  hasFell: boolean;
   huntWeapon?: HuntWeapon;
   huntFacing?: 1 | -1;
 }
@@ -314,9 +318,6 @@ export interface CampfireSnapshot {
   size: number;
   hasTent: boolean;
 }
-
-export const TENT_FELLE_THRESHOLD = 3;
-export const TENT_FELLE_PER_NIGHT = 1;
 
 export let CAMPFIRE_RANGE = 2.5;
 
