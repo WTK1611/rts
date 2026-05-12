@@ -17,6 +17,13 @@ import {
   DayPhase,
   EncounterEvent,
   phaseAt,
+  Season,
+  seasonAt,
+  seasonAllowsBush,
+  seasonAllowsMushroom,
+  seasonAnimalSpawnMultiplier,
+  seasonRegrowMultiplier,
+  seasonWaterMultiplier,
   emptyResources,
   FishSnapshot,
   Footprint,
@@ -53,10 +60,12 @@ import {
   hasBushAt,
   hasCactusAt,
   hasFishAt,
+  hasKreuterAt,
   hasMushroomAt,
   hasStoneAt,
   hasTreeAt,
   isLandTile,
+  kreuterAmountAt,
   mushroomBerriesAt,
   rand01,
   spawnsFromSeed,
@@ -1481,15 +1490,19 @@ export class Sim {
     deficits.sort((a, b) => b.missing - a.missing);
 
     const r = BAL.animalSpawnRadius;
+    const seasonBudget = Math.max(
+      1,
+      Math.round(BAL.animalRespawnPerTick * seasonAnimalSpawnMultiplier(seasonAt(this.gameTimeSec))),
+    );
     let spawnedTotal = 0;
     const totalMissing = deficits.reduce((s, d) => s + d.missing, 0);
     for (const { kind, missing } of deficits) {
-      if (spawnedTotal >= BAL.animalRespawnPerTick) break;
+      if (spawnedTotal >= seasonBudget) break;
       const share = Math.max(
         1,
-        Math.ceil((missing / totalMissing) * BAL.animalRespawnPerTick),
+        Math.ceil((missing / totalMissing) * seasonBudget),
       );
-      const budget = Math.min(share, missing, BAL.animalRespawnPerTick - spawnedTotal);
+      const budget = Math.min(share, missing, seasonBudget - spawnedTotal);
       const spec = animalSpec(kind);
       let spawnedHere = 0;
       let attempts = 0;
@@ -2318,6 +2331,10 @@ export class Sim {
       hasCactusAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("cactus", i, j))
     ) return "cactus";
+    if (
+      hasKreuterAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("kreuter", i, j))
+    ) return "kreuter";
     return null;
   }
 
@@ -2465,7 +2482,9 @@ export class Sim {
         return;
       }
     }
-    if (hasBushAt(this.seed, ti, tj)) {
+    const season = seasonAt(this.gameTimeSec);
+    const regrowMult = seasonRegrowMultiplier(season);
+    if (hasBushAt(this.seed, ti, tj) && seasonAllowsBush(season)) {
       const k = objKey("bush", ti, tj);
       if (
         !this.removedKeys.has(k) &&
@@ -2473,12 +2492,13 @@ export class Sim {
       ) {
         this.autoPickAndRegrow(
           u, "bush", ti, tj, "beeren",
-          BAL.bushAutopickGain, D.bushRegrowTicks,
+          BAL.bushAutopickGain,
+          Math.max(1, Math.round(D.bushRegrowTicks * regrowMult)),
         );
         return;
       }
     }
-    if (hasMushroomAt(this.seed, ti, tj)) {
+    if (hasMushroomAt(this.seed, ti, tj) && seasonAllowsMushroom(season)) {
       const k = objKey("mushroom", ti, tj);
       if (
         !this.removedKeys.has(k) &&
@@ -2486,7 +2506,8 @@ export class Sim {
       ) {
         this.autoPickAndRegrow(
           u, "mushroom", ti, tj, "pilze",
-          BAL.mushroomAutopickGain, D.mushroomRegrowTicks,
+          BAL.mushroomAutopickGain,
+          Math.max(1, Math.round(D.mushroomRegrowTicks * regrowMult)),
         );
         return;
       }
@@ -2515,6 +2536,19 @@ export class Sim {
           BAL.cactusAutopickHolz, D.cactusRegrowTicks,
         );
         this.gainResource(u.owner, "wasser", BAL.cactusAutopickWasser, ti + 0.5, tj + 0.5);
+        return;
+      }
+    }
+    if (hasKreuterAt(this.seed, ti, tj)) {
+      const k = objKey("kreuter", ti, tj);
+      if (
+        !this.removedKeys.has(k) &&
+        this.resourceRoom(u.owner, "kreuter") >= BAL.kreuterAutopickGain
+      ) {
+        this.autoPickAndRegrow(
+          u, "kreuter", ti, tj, "kreuter",
+          BAL.kreuterAutopickGain, D.kreuterRegrowTicks,
+        );
         return;
       }
     }
@@ -2599,14 +2633,16 @@ export class Sim {
     if (resKey === "fisch") return BAL.hpGainFisch;
     if (resKey === "beeren") return BAL.hpGainBeeren;
     if (resKey === "pilze") return BAL.hpGainPilze;
+    if (resKey === "kreuter") return BAL.hpGainKreuter;
     return 0;
   }
 
   private autoEat(u: SimUnit): void {
     if (u.hp >= u.hpMax * BAL.autoeatHpThreshold) return;
     const r = this.resources[u.owner];
+    // Kräuter first: they heal injuries/illness, so consume them before food when hurt.
     const order: Array<keyof Resources> = [
-      "fleisch", "fisch", "pilze", "beeren",
+      "kreuter", "fleisch", "fisch", "pilze", "beeren",
     ];
     for (const key of order) {
       if (r[key] <= 0) continue;
@@ -2620,7 +2656,8 @@ export class Sim {
   }
 
   private consumeWater(dt: number): void {
-    const ratePerUnit = BAL.waterPerUnitPerDay / DAY_LENGTH_SEC;
+    const seasonMult = seasonWaterMultiplier(seasonAt(this.gameTimeSec));
+    const ratePerUnit = (BAL.waterPerUnitPerDay / DAY_LENGTH_SEC) * seasonMult;
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!this.active[p]) continue;
       const count = this.byOwnerCache[p].length;
@@ -2853,6 +2890,10 @@ export class Sim {
         if (
           hasCactusAt(this.seed, i, j) &&
           !this.removedKeys.has(objKey("cactus", i, j))
+        ) return true;
+        if (
+          hasKreuterAt(this.seed, i, j) &&
+          !this.removedKeys.has(objKey("kreuter", i, j))
         ) return true;
       }
     }
@@ -3773,9 +3814,10 @@ export class Sim {
     const roomHolz = this.resourceRoom(u.owner, "holz") > 0;
     const roomWasser = this.resourceRoom(u.owner, "wasser") > 0;
     const roomFleisch = this.resourceRoom(u.owner, "fleisch") > 0;
+    const roomKreuter = this.resourceRoom(u.owner, "kreuter") > 0;
     const roomCactus = roomHolz || roomWasser;
     let bestGather: { kind: ObjectKind; i: number; j: number; d2: number } | null = null;
-    if (roomPilze || roomBeeren || roomStein || roomCactus) {
+    if (roomPilze || roomBeeren || roomStein || roomCactus || roomKreuter) {
       for (let dj = -R; dj <= R; dj++) {
         for (let di = -R; di <= R; di++) {
           const cdx = di + 0.5 - (chief.gx - ci0);
@@ -3808,6 +3850,12 @@ export class Sim {
             !this.removedKeys.has(objKey("cactus", i, j))
           ) {
             kind = "cactus";
+          } else if (
+            roomKreuter &&
+            hasKreuterAt(seed, i, j) &&
+            !this.removedKeys.has(objKey("kreuter", i, j))
+          ) {
+            kind = "kreuter";
           }
           if (!kind) continue;
           const mdx = i + 0.5 - u.gx;
@@ -3863,6 +3911,7 @@ export class Sim {
     if (t.kind === "bush") return hasBushAt(this.seed, t.i, t.j);
     if (t.kind === "mushroom") return hasMushroomAt(this.seed, t.i, t.j);
     if (t.kind === "cactus") return hasCactusAt(this.seed, t.i, t.j);
+    if (t.kind === "kreuter") return hasKreuterAt(this.seed, t.i, t.j);
     return hasStoneAt(this.seed, t.i, t.j);
   }
 
@@ -3890,6 +3939,10 @@ export class Sim {
       amount = BAL.cactusHarvestHolz;
       resKey = "holz";
       baseTotal = cactusYieldAt(this.seed, t.i, t.j);
+    } else if (t.kind === "kreuter") {
+      amount = BAL.kreuterHarvestAmount;
+      resKey = "kreuter";
+      baseTotal = kreuterAmountAt(this.seed, t.i, t.j);
     } else {
       amount = BAL.stoneHarvestAmount;
       resKey = "stein";

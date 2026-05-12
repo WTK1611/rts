@@ -14,11 +14,105 @@ export let NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = 40;
 
 export type DayPhase = "morning" | "noon" | "afternoon" | "night";
 
+export type Season = "spring" | "summer" | "autumn" | "winter";
+
+export const SEASON_LEN_DAYS = 4;
+export const SEASONS: Season[] = ["spring", "summer", "autumn", "winter"];
+export const YEAR_LEN_DAYS = SEASON_LEN_DAYS * SEASONS.length;
+
+function dayIndexAt(timeSec: number): number {
+  return Math.floor(timeSec / DAY_LENGTH_SEC);
+}
+
+export function seasonAt(timeSec: number): Season {
+  const d = dayIndexAt(timeSec);
+  const idx = ((d % YEAR_LEN_DAYS) + YEAR_LEN_DAYS) % YEAR_LEN_DAYS;
+  return SEASONS[Math.floor(idx / SEASON_LEN_DAYS)];
+}
+
+export function dayOfSeasonAt(timeSec: number): number {
+  const d = dayIndexAt(timeSec);
+  const idx = ((d % YEAR_LEN_DAYS) + YEAR_LEN_DAYS) % YEAR_LEN_DAYS;
+  return (idx % SEASON_LEN_DAYS) + 1;
+}
+
+export function yearAt(timeSec: number): number {
+  return Math.floor(dayIndexAt(timeSec) / YEAR_LEN_DAYS) + 1;
+}
+
+// === Seasonal modifiers ===
+// Night length scales (1.0 = baseline). Daylight phases scale inversely so a
+// full day always equals DAY_LENGTH_SEC.
+export function seasonNightFactor(season: Season): number {
+  switch (season) {
+    case "summer": return 0.5;   // short nights
+    case "winter": return 1.6;   // long nights (capped against daylight below)
+    default: return 1.0;
+  }
+}
+
+// Summer: hotter -> more thirst. Winter: less.
+export function seasonWaterMultiplier(season: Season): number {
+  switch (season) {
+    case "summer": return 1.6;
+    case "winter": return 0.8;
+    default: return 1.0;
+  }
+}
+
+// Autumn: abundance. Faster regrow + more animal respawn budget.
+export function seasonRegrowMultiplier(season: Season): number {
+  return season === "autumn" ? 0.6 : 1.0;
+}
+export function seasonAnimalSpawnMultiplier(season: Season): number {
+  if (season === "autumn") return 1.8;
+  if (season === "winter") return 0.7;
+  return 1.0;
+}
+
+// Winter: bushes bear no berries.
+export function seasonAllowsBush(season: Season): boolean {
+  return season !== "winter";
+}
+// Mushrooms only grow in warm/moist seasons.
+export function seasonAllowsMushroom(season: Season): boolean {
+  return season === "summer" || season === "autumn";
+}
+
+export interface PhaseLengths {
+  morning: number;
+  noon: number;
+  afternoon: number;
+  night: number;
+  sunsetAt: number;
+}
+
+export function phaseLengthsFor(season: Season): PhaseLengths {
+  const baseDaylight = MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC;
+  const total = baseDaylight + NIGHT_LEN_SEC;
+  // Reserve at least 10% of the day for daylight even in deep winter.
+  const maxNight = total * 0.9;
+  const minNight = total * 0.1;
+  const wantNight = NIGHT_LEN_SEC * seasonNightFactor(season);
+  const night = Math.min(maxNight, Math.max(minNight, wantNight));
+  const daylight = total - night;
+  const ratio = baseDaylight > 0 ? daylight / baseDaylight : 0;
+  const morning = MORNING_LEN_SEC * ratio;
+  const noon = NOON_LEN_SEC * ratio;
+  const afternoon = AFTERNOON_LEN_SEC * ratio;
+  return { morning, noon, afternoon, night, sunsetAt: morning + noon + afternoon };
+}
+
+export function phaseLengthsAt(timeSec: number): PhaseLengths {
+  return phaseLengthsFor(seasonAt(timeSec));
+}
+
 export function phaseAt(timeSec: number): DayPhase {
   const t = ((timeSec % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC;
-  if (t < MORNING_LEN_SEC) return "morning";
-  if (t < MORNING_LEN_SEC + NOON_LEN_SEC) return "noon";
-  if (t < SUNSET_AT_SEC) return "afternoon";
+  const p = phaseLengthsAt(timeSec);
+  if (t < p.morning) return "morning";
+  if (t < p.morning + p.noon) return "noon";
+  if (t < p.sunsetAt) return "afternoon";
   return "night";
 }
 
@@ -100,6 +194,7 @@ export interface Resources {
   fleisch: number;
   fisch: number;
   stein: number;
+  kreuter: number;
 }
 
 export const RESOURCE_KEYS: Array<keyof Resources> = [
@@ -110,6 +205,7 @@ export const RESOURCE_KEYS: Array<keyof Resources> = [
   "fleisch",
   "fisch",
   "stein",
+  "kreuter",
 ];
 
 export const RESOURCE_CAP_PER_PERSON: Resources = {
@@ -120,6 +216,7 @@ export const RESOURCE_CAP_PER_PERSON: Resources = {
   fleisch: 8,
   fisch: 4,
   stein: 5,
+  kreuter: 3,
 };
 
 export function resourceCap(
@@ -132,11 +229,11 @@ export function resourceCap(
 export function emptyResources(): Resources {
   return {
     holz: 0, wasser: 0, beeren: 0, pilze: 0,
-    fleisch: 0, fisch: 0, stein: 0,
+    fleisch: 0, fisch: 0, stein: 0, kreuter: 0,
   };
 }
 
-export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone" | "cactus";
+export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone" | "cactus" | "kreuter";
 
 export type AnimalKind =
   | "hare"

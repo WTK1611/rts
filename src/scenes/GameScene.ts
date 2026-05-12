@@ -5,6 +5,7 @@ import { Tree, TreeStage } from "../Tree";
 import { Bush } from "../Bush";
 import { Cactus } from "../Cactus";
 import { Fish } from "../Fish";
+import { Kreuter } from "../Kreuter";
 import { Mushroom } from "../Mushroom";
 import { Stone } from "../Stone";
 import { Sequoia } from "../Sequoia";
@@ -15,7 +16,6 @@ import { Artifact } from "../Artifact";
 import { DropPile } from "../DropPile";
 import { Net } from "../net";
 import {
-  AFTERNOON_LEN_SEC,
   AnimalSnapshot,
   applyProtocolBalance,
   ArtifactFindEvent,
@@ -28,6 +28,7 @@ import {
   CAMPFIRE_RANGE,
   DAY_LENGTH_SEC,
   DayPhase,
+  dayOfSeasonAt,
   emptyResources,
   FishSnapshot,
   Footprint,
@@ -35,9 +36,8 @@ import {
   InitMessage,
   LeaderboardMessage,
   MAX_TRIBE_SIZE,
-  MORNING_LEN_SEC,
-  NIGHT_LEN_SEC,
-  NOON_LEN_SEC,
+  PhaseLengths,
+  phaseLengthsAt,
   PlayerId,
   phaseAt,
   RemovedObject,
@@ -48,9 +48,11 @@ import {
   DamageEvent,
   resourceCap,
   ScoreEntry,
+  Season,
+  seasonAt,
+  SEASON_LEN_DAYS,
   ServerMessage,
   StateMessage,
-  SUNSET_AT_SEC,
   TICK_RATE,
   TreeGrowthEvent,
 } from "../../shared/protocol";
@@ -61,6 +63,7 @@ import {
   hasBushAt,
   hasCactusAt,
   hasFishAt,
+  hasKreuterAt,
   hasMushroomAt,
   hasSequoiaAt,
   hasStoneAt,
@@ -114,6 +117,7 @@ interface Chunk {
   bushes: Map<string, Bush>;
   cacti: Map<string, Cactus>;
   mushrooms: Map<string, Mushroom>;
+  kreuters: Map<string, Kreuter>;
   fishes: Map<string, Fish>;
   stones: Map<string, Stone>;
   sequoias: Map<string, Sequoia>;
@@ -138,11 +142,23 @@ const MINIMAP_PX = 200;
 const MINIMAP_PX_PER_TILE = 4;
 const MINIMAP_RANGE = MINIMAP_PX / MINIMAP_PX_PER_TILE;
 
-type HelpKey = "berry" | "water" | "birth" | "volcano";
+type HelpKey =
+  | "berry"
+  | "water"
+  | "birth"
+  | "volcano"
+  | "wood"
+  | "club"
+  | "campfire"
+  | "mushroom"
+  | "stone"
+  | "spear"
+  | "tracks"
+  | "stoneHunt";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
-    img: "/image/beeren-300.webp",
+    img: "/image/sammlerin-beeren-300.webp",
     text: (s) => s.helpTipBerry,
   },
   water: {
@@ -157,9 +173,40 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
     img: "/image/vulkan-300.webp",
     text: (s) => s.helpTipVolcano,
   },
+  wood: {
+    img: "/image/holz-300.webp",
+    text: (s) => s.helpTipWood,
+  },
+  club: {
+    img: "/image/knüppel-hirsch-300.webp",
+    text: (s) => s.helpTipClub,
+  },
+  campfire: {
+    img: "/image/lagerfeuer-wildes tier-300.webp",
+    text: (s) => s.helpTipCampfire,
+  },
+  mushroom: {
+    img: "/image/piltze-300.webp",
+    text: (s) => s.helpTipMushroom,
+  },
+  stone: {
+    img: "/image/sammlerin - steine-300.webp",
+    text: (s) => s.helpTipStone,
+  },
+  spear: {
+    img: "/image/speer-mamut-300.webp",
+    text: (s) => s.helpTipSpear,
+  },
+  tracks: {
+    img: "/image/spuren-300.webp",
+    text: (s) => s.helpTipTracks,
+  },
+  stoneHunt: {
+    img: "/image/stein-hase-300.webp",
+    text: (s) => s.helpTipStoneHunt,
+  },
 };
 
-const HELP_WATER_RADIUS = 2;
 const HELP_VOLCANO_RADIUS = 4;
 const HELP_DURATION_MS = 3000;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
@@ -185,6 +232,7 @@ export class GameScene extends Phaser.Scene {
   private bushes: Map<string, Bush> = new Map();
   private cacti: Map<string, Cactus> = new Map();
   private mushrooms: Map<string, Mushroom> = new Map();
+  private kreuters: Map<string, Kreuter> = new Map();
   private fishes: Map<string, Fish> = new Map();
   private stones: Map<string, Stone> = new Map();
   private sequoias: Map<string, Sequoia> = new Map();
@@ -313,6 +361,7 @@ export class GameScene extends Phaser.Scene {
   private nightEraser!: Phaser.GameObjects.Graphics;
   private celestialGfx!: Phaser.GameObjects.Graphics;
   private lastPhase: DayPhase = "morning";
+  private lastSeason: Season = "spring";
   private nightDeathOwn = 0;
   private nightDeathOther: Record<number, number> = {};
   private nightExtinctOthers: number[] = [];
@@ -345,6 +394,7 @@ export class GameScene extends Phaser.Scene {
     this.tribeCounts = data.init.tribeCounts ?? [];
     this.gameTimeSec = data.init.gameTimeSec ?? 0;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    this.lastSeason = seasonAt(this.gameTimeSec);
     this.tribeOrigin = data.init.tribeOrigin ?? [];
     if (data.init.treeGrowth) {
       for (const ev of data.init.treeGrowth) {
@@ -624,9 +674,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const prevPhase = this.lastPhase;
+    const prevSeason = this.lastSeason;
     this.gameTimeSec += dt;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    this.lastSeason = seasonAt(this.gameTimeSec);
     if (prevPhase !== this.lastPhase) this.onPhaseChange(prevPhase);
+    if (prevSeason !== this.lastSeason) this.onSeasonChange(prevSeason);
 
     this.updateChunks();
     this.updateFog();
@@ -1019,6 +1072,7 @@ export class GameScene extends Phaser.Scene {
     const bushes = new Map<string, Bush>();
     const cacti = new Map<string, Cactus>();
     const mushrooms = new Map<string, Mushroom>();
+    const kreuters = new Map<string, Kreuter>();
     const fishes = new Map<string, Fish>();
     const stones = new Map<string, Stone>();
     const sequoias = new Map<string, Sequoia>();
@@ -1083,6 +1137,13 @@ export class GameScene extends Phaser.Scene {
             mushrooms.set(id, m);
             this.mushrooms.set(id, m);
           }
+        } else if (hasKreuterAt(this.seed, i, j)) {
+          const id = objKey("kreuter", i, j);
+          if (!this.removedKeys.has(id) && !this.kreuters.has(id)) {
+            const k = new Kreuter(this, i, j, this.seed);
+            kreuters.set(id, k);
+            this.kreuters.set(id, k);
+          }
         } else if (hasStoneAt(this.seed, i, j)) {
           const id = objKey("stone", i, j);
           if (!this.removedKeys.has(id) && !this.stones.has(id)) {
@@ -1112,7 +1173,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.chunks.set(`${cx},${cy}`, {
       cx, cy, rt,
-      trees, bushes, cacti, mushrooms, fishes, stones, sequoias, volcanoes,
+      trees, bushes, cacti, mushrooms, kreuters, fishes, stones, sequoias, volcanoes,
       surfSegments,
       waterfalls,
       bbox: { x: ofx, y: ofy, w, h },
@@ -1233,6 +1294,11 @@ export class GameScene extends Phaser.Scene {
       m.container.destroy();
       m.shadow.destroy();
       this.mushrooms.delete(mid);
+    }
+    for (const [kid, k] of chunk.kreuters) {
+      k.container.destroy();
+      k.shadow.destroy();
+      this.kreuters.delete(kid);
     }
     for (const [fid, f] of chunk.fishes) {
       f.container.destroy();
@@ -1823,6 +1889,14 @@ export class GameScene extends Phaser.Scene {
       m.container.setVisible(v);
       m.shadow.setVisible(v);
     }
+    for (const k of this.kreuters.values()) {
+      const key = `k:${k.i},${k.j}`;
+      const v = this.visible.has(`${k.i},${k.j}`);
+      if (cache.get(key) === v) continue;
+      cache.set(key, v);
+      k.container.setVisible(v);
+      k.shadow.setVisible(v);
+    }
     for (const f of this.fishes.values()) {
       const fi = Math.floor(f.gx);
       const fj = Math.floor(f.gy);
@@ -1934,17 +2008,22 @@ export class GameScene extends Phaser.Scene {
     return t < 0 ? t + DAY_LENGTH_SEC : t;
   }
 
+  private phaseLens(): PhaseLengths {
+    return phaseLengthsAt(this.gameTimeSec);
+  }
+
   private clockString(): string {
     const tt = this.timeOfDay();
+    const p = this.phaseLens();
     let hour: number;
-    if (tt < MORNING_LEN_SEC) {
-      hour = 7 + (tt / MORNING_LEN_SEC) * 5;
-    } else if (tt < MORNING_LEN_SEC + NOON_LEN_SEC) {
-      hour = 12 + ((tt - MORNING_LEN_SEC) / NOON_LEN_SEC) * 3;
-    } else if (tt < SUNSET_AT_SEC) {
-      hour = 15 + ((tt - MORNING_LEN_SEC - NOON_LEN_SEC) / AFTERNOON_LEN_SEC) * 4;
+    if (tt < p.morning) {
+      hour = 7 + (tt / Math.max(0.001, p.morning)) * 5;
+    } else if (tt < p.morning + p.noon) {
+      hour = 12 + ((tt - p.morning) / Math.max(0.001, p.noon)) * 3;
+    } else if (tt < p.sunsetAt) {
+      hour = 15 + ((tt - p.morning - p.noon) / Math.max(0.001, p.afternoon)) * 4;
     } else {
-      hour = 19 + ((tt - SUNSET_AT_SEC) / NIGHT_LEN_SEC) * 12;
+      hour = 19 + ((tt - p.sunsetAt) / Math.max(0.001, p.night)) * 12;
     }
     if (hour >= 24) hour -= 24;
     const h = Math.floor(hour);
@@ -1953,36 +2032,46 @@ export class GameScene extends Phaser.Scene {
   }
 
   private overlayTintFor(t: number): { color: number; alpha: number } {
-    const noonStart = MORNING_LEN_SEC;
-    const afterStart = MORNING_LEN_SEC + NOON_LEN_SEC;
+    const p = this.phaseLens();
+    const season = seasonAt(this.gameTimeSec);
+    const noonStart = p.morning;
+    const afterStart = p.morning + p.noon;
+    // Winter adds a cool blue-white daylight tint (snow-light).
+    const isWinter = season === "winter";
     if (t < noonStart) {
-      const k = t / MORNING_LEN_SEC;
+      const k = p.morning > 0 ? t / p.morning : 1;
+      const dayColor = isWinter ? 0xd6e6ff : 0xffd0a0;
       return {
-        color: lerpColor(0x2a3a5a, 0xffd0a0, Math.min(1, k * 1.5)),
-        alpha: 0.45 * (1 - k),
+        color: lerpColor(0x2a3a5a, dayColor, Math.min(1, k * 1.5)),
+        alpha: isWinter ? 0.45 * (1 - k) + 0.18 : 0.45 * (1 - k),
       };
     }
     if (t < afterStart) {
+      if (isWinter) return { color: 0xc8dcf5, alpha: 0.22 };
       return { color: 0xffffff, alpha: 0 };
     }
-    if (t < SUNSET_AT_SEC) {
-      const k = (t - afterStart) / AFTERNOON_LEN_SEC;
+    if (t < p.sunsetAt) {
+      const k = p.afternoon > 0 ? (t - afterStart) / p.afternoon : 0;
+      const sunsetColor = isWinter ? 0x6a90c8 : 0xff7a3a;
+      const baseColor = isWinter ? 0xc8dcf5 : 0xffffff;
+      const baseAlpha = isWinter ? 0.22 : 0;
       return {
-        color: lerpColor(0xffffff, 0xff7a3a, k),
-        alpha: 0.4 * k,
+        color: lerpColor(baseColor, sunsetColor, k),
+        alpha: baseAlpha + (0.4 - baseAlpha) * k,
       };
     }
-    const k = (t - SUNSET_AT_SEC) / NIGHT_LEN_SEC;
-    if (k < 0.15) {
+    const nk = p.night > 0 ? (t - p.sunsetAt) / p.night : 0;
+    if (nk < 0.15) {
+      const fromColor = isWinter ? 0x6a90c8 : 0xff7a3a;
       return {
-        color: lerpColor(0xff7a3a, 0x0a1a30, k / 0.15),
-        alpha: 0.4 + 0.3 * (k / 0.15),
+        color: lerpColor(fromColor, 0x0a1a30, nk / 0.15),
+        alpha: 0.4 + 0.3 * (nk / 0.15),
       };
     }
-    if (k > 0.85) {
+    if (nk > 0.85) {
       return {
-        color: lerpColor(0x0a1a30, 0x2a3a5a, (k - 0.85) / 0.15),
-        alpha: 0.7 - 0.25 * ((k - 0.85) / 0.15),
+        color: lerpColor(0x0a1a30, 0x2a3a5a, (nk - 0.85) / 0.15),
+        alpha: 0.7 - 0.25 * ((nk - 0.85) / 0.15),
       };
     }
     return { color: 0x0a1a30, alpha: 0.7 };
@@ -2037,7 +2126,8 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const er = this.nightEraser;
     const isNight = this.lastPhase === "night";
-    const nightK = isNight ? Math.min(1, (t - SUNSET_AT_SEC) / (NIGHT_LEN_SEC * 0.15)) : 0;
+    const p = this.phaseLens();
+    const nightK = isNight ? Math.min(1, (t - p.sunsetAt) / Math.max(0.001, p.night * 0.15)) : 0;
     for (const f of this.campfires.values()) {
       const wx = f.container.x;
       const wy = f.container.y;
@@ -2079,13 +2169,14 @@ export class GameScene extends Phaser.Scene {
     | null {
     const margin = 60;
     const arcTop = 60;
-    if (t >= SUNSET_AT_SEC) {
-      const k = (t - SUNSET_AT_SEC) / NIGHT_LEN_SEC;
+    const p = this.phaseLens();
+    if (t >= p.sunsetAt) {
+      const k = p.night > 0 ? (t - p.sunsetAt) / p.night : 0;
       const x = margin + (w - margin * 2) * k;
       const y = arcTop + 40 + (1 - Math.sin(k * Math.PI)) * 80;
       return { x, y, isNight: true };
     }
-    const dayK = t / SUNSET_AT_SEC;
+    const dayK = p.sunsetAt > 0 ? t / p.sunsetAt : 0;
     const x = margin + (w - margin * 2) * dayK;
     const y = arcTop + (1 - Math.sin(dayK * Math.PI)) * 90;
     return { x, y, isNight: false };
@@ -2112,15 +2203,15 @@ export class GameScene extends Phaser.Scene {
       g.fillCircle(pos.x + 3, pos.y + 4, 2);
       g.fillCircle(pos.x + 5, pos.y - 4, 1.5);
     } else {
-      const sunriseEnd = MORNING_LEN_SEC * 0.5;
-      const sunsetStart = SUNSET_AT_SEC - AFTERNOON_LEN_SEC * 0.5;
+      const p = this.phaseLens();
+      const sunriseEnd = p.morning * 0.5;
+      const sunsetStart = p.sunsetAt - p.afternoon * 0.5;
       let sunColor = 0xffe27a;
-      if (t < sunriseEnd) sunColor = lerpColor(0xff7a3a, 0xffe27a, t / sunriseEnd);
-      else if (t > sunsetStart) {
-        sunColor = lerpColor(
-          0xffe27a, 0xff5a1a,
-          (t - sunsetStart) / (SUNSET_AT_SEC - sunsetStart),
-        );
+      if (sunriseEnd > 0 && t < sunriseEnd) {
+        sunColor = lerpColor(0xff7a3a, 0xffe27a, t / sunriseEnd);
+      } else if (t > sunsetStart) {
+        const span = Math.max(0.001, p.sunsetAt - sunsetStart);
+        sunColor = lerpColor(0xffe27a, 0xff5a1a, (t - sunsetStart) / span);
       }
       g.fillStyle(sunColor, 0.18);
       g.fillCircle(pos.x, pos.y, 50);
@@ -2443,6 +2534,7 @@ export class GameScene extends Phaser.Scene {
       if (Math.abs(drift) > 0.5) this.gameTimeSec = msg.gameTimeSec;
       else this.gameTimeSec += drift * 0.2;
       this.lastPhase = phaseAt(this.gameTimeSec);
+      this.lastSeason = seasonAt(this.gameTimeSec);
     }
     if (typeof msg.serverTickMs === "number") this.perfServerTickMs = msg.serverTickMs;
     if (typeof msg.animalCount === "number") this.perfAnimalCount = msg.animalCount;
@@ -2578,6 +2670,7 @@ export class GameScene extends Phaser.Scene {
     }
     for (const fp of msg.newFootprints) {
       this.footprints.push(fp);
+      if (fp.o !== this.playerId) this.triggerHelp("tracks");
     }
     for (const id of msg.removedAnimalIds) {
       const a = this.animals.get(id);
@@ -2818,6 +2911,7 @@ export class GameScene extends Phaser.Scene {
           ? s.toastOwnCampfire
           : s.toastOtherCampfire(name);
       this.showToast(text, "campfire", snap.owner);
+      if (snap.owner === this.playerId) this.triggerHelp("campfire");
     }
   }
 
@@ -2921,6 +3015,13 @@ export class GameScene extends Phaser.Scene {
         this.cacti.delete(k);
         for (const c of this.chunks.values()) c.cacti.delete(k);
       }
+    } else if (ro.kind === "kreuter") {
+      const kr = this.kreuters.get(k);
+      if (kr) {
+        kr.remove();
+        this.kreuters.delete(k);
+        for (const c of this.chunks.values()) c.kreuters.delete(k);
+      }
     } else {
       const s = this.stones.get(k);
       if (s) {
@@ -3004,6 +3105,13 @@ export class GameScene extends Phaser.Scene {
       this.cacti.set(k, c);
       c.container.setVisible(v);
       c.shadow.setVisible(v);
+    } else if (ro.kind === "kreuter") {
+      if (this.kreuters.has(k)) return;
+      const kr = new Kreuter(this, ro.i, ro.j, this.seed);
+      chunk.kreuters.set(k, kr);
+      this.kreuters.set(k, kr);
+      kr.container.setVisible(v);
+      kr.shadow.setVisible(v);
     }
   }
 
@@ -3254,6 +3362,10 @@ export class GameScene extends Phaser.Scene {
       hasCactusAt(this.seed, i, j) &&
       !this.removedKeys.has(objKey("cactus", i, j))
     ) return true;
+    if (
+      hasKreuterAt(this.seed, i, j) &&
+      !this.removedKeys.has(objKey("kreuter", i, j))
+    ) return true;
     return false;
   }
 
@@ -3405,6 +3517,14 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
+  private onSeasonChange(_prev: Season): void {
+    const s = t();
+    const label = s.seasonLabel(this.lastSeason);
+    const icon = s.seasonIcon(this.lastSeason);
+    this.showToast(`${icon} ${s.toastSeasonStart(label)}`, "join");
+    this.updateHud();
+  }
+
   private onNightfall(): void {
     this.showToast(t().toastNightfall, "death");
   }
@@ -3443,7 +3563,7 @@ export class GameScene extends Phaser.Scene {
     const myColor = this.playerColorCss(this.playerId);
     const myRes = this.resources[this.playerId] ?? {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
-      fleisch: 0, fisch: 0, stein: 0,
+      fleisch: 0, fisch: 0, stein: 0, kreuter: 0,
     };
     const labels: Record<keyof Resources, string> = {
       holz: s.resHolz,
@@ -3453,6 +3573,7 @@ export class GameScene extends Phaser.Scene {
       fleisch: s.resFleisch,
       fisch: s.resFisch,
       stein: s.resStein,
+      kreuter: s.resKreuter,
     };
     const tribeCounts = this.tribeCounts;
     const myTribeSize = tribeCounts[this.playerId] ?? 0;
@@ -3491,7 +3612,11 @@ export class GameScene extends Phaser.Scene {
       ? `<span class="count" title="${s.hudTribeMembers}">👥 ?</span>`
       : countChip(tribeCounts[this.playerId] ?? 0);
     const phaseLabel = s.phaseLabel(this.lastPhase);
-    const clockHtml = `<span class="clock" title="${phaseLabel}">${this.clockString()} ${s.phaseIcon(this.lastPhase)}</span>`;
+    const seasonLabel = s.seasonLabel(this.lastSeason);
+    const seasonIcon = s.seasonIcon(this.lastSeason);
+    const dayOfSeason = dayOfSeasonAt(this.gameTimeSec);
+    const clockTitle = `${seasonLabel} ${dayOfSeason}/${SEASON_LEN_DAYS} · ${phaseLabel}`;
+    const clockHtml = `<span class="clock" title="${clockTitle}">${seasonIcon} ${this.clockString()} ${s.phaseIcon(this.lastPhase)}</span>`;
 
     const otherRows: string[] = [];
     for (let i = 0; i < this.names.length; i++) {
@@ -3621,6 +3746,7 @@ export class GameScene extends Phaser.Scene {
     const survival = `${mm}:${ss.toString().padStart(2, "0")}`;
 
     const phaseLabel = `${s.phaseIcon(this.lastPhase)} ${s.phaseLabel(this.lastPhase)}`;
+    const seasonLabel = `${s.seasonIcon(this.lastSeason)} ${s.seasonLabel(this.lastSeason)} (${dayOfSeasonAt(this.gameTimeSec)}/${SEASON_LEN_DAYS})`;
 
     const progress = this.growthProgress[this.playerId] ?? 0;
     const active = this.growthActive[this.playerId] ?? false;
@@ -3640,6 +3766,7 @@ export class GameScene extends Phaser.Scene {
       `<h2>${escapeHtml(s.infoTitle)}</h2>` +
       `<div class="info-section">` +
       `<div class="info-sub">${escapeHtml(s.infoSectionOverview)}</div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoSeason)}</span><b>${escapeHtml(seasonLabel)}</b></div>` +
       `<div class="info-row"><span class="lbl">${escapeHtml(s.infoPhase)}</span><b>${escapeHtml(phaseLabel)}</b></div>` +
       `<div class="info-row"><span class="lbl">${escapeHtml(s.infoSurvival)}</span><b>${escapeHtml(survival)}</b></div>` +
       `<div class="info-row"><span class="lbl">${escapeHtml(s.infoTribeSize)}</span><b>${count} / ${MAX_TRIBE_SIZE}</b></div>` +
@@ -3833,6 +3960,17 @@ export class GameScene extends Phaser.Scene {
   private onResourceGain(key: keyof Resources, amount: number): void {
     if (amount <= 0) return;
     if (key === "beeren") this.triggerHelp("berry");
+    else if (key === "pilze") this.triggerHelp("mushroom");
+    else if (key === "holz") {
+      this.triggerHelp("wood");
+      if (this.collectedTotals.stein > 0) this.triggerHelp("spear");
+    } else if (key === "stein") {
+      this.triggerHelp("stone");
+      if (this.collectedTotals.holz > 0) this.triggerHelp("spear");
+    } else if (key === "fleisch") {
+      this.triggerHelp("stoneHunt");
+      this.triggerHelp("club");
+    }
     const now = performance.now();
     const expiresAt = now + GAIN_DISPLAY_MS;
     const cur = this.recentGains[key];
@@ -3938,13 +4076,9 @@ export class GameScene extends Phaser.Scene {
       const cj = Math.floor(u.gy);
 
       if (needWater) {
-        for (let dj = -HELP_WATER_RADIUS; dj <= HELP_WATER_RADIUS; dj++) {
-          for (let di = -HELP_WATER_RADIUS; di <= HELP_WATER_RADIUS; di++) {
-            if (!isLandTile(this.seed, ci + di, cj + dj)) {
-              this.triggerHelp("water");
-              return;
-            }
-          }
+        if (this.isWaterAt(ci, cj)) {
+          this.triggerHelp("water");
+          return;
         }
       }
 
@@ -4084,6 +4218,7 @@ export class GameScene extends Phaser.Scene {
       fleisch: tr.resFleisch,
       fisch: tr.resFisch,
       stein: tr.resStein,
+      kreuter: tr.resKreuter,
     };
     const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(
@@ -4144,6 +4279,7 @@ export class GameScene extends Phaser.Scene {
       fleisch: tr.resFleisch,
       fisch: tr.resFisch,
       stein: tr.resStein,
+      kreuter: tr.resKreuter,
     };
     const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(

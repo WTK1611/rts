@@ -1,5 +1,5 @@
 import { Language, LANGUAGES } from "../shared/names";
-import { DayPhase } from "../shared/protocol";
+import { DayPhase, Season } from "../shared/protocol";
 
 export interface Strings {
   // lobby
@@ -21,6 +21,7 @@ export interface Strings {
   resFleisch: string;
   resFisch: string;
   resStein: string;
+  resKreuter: string;
   hudTribeMembers: string;
   hudWaitingForOthers: string;
   hudYou: string;
@@ -74,6 +75,9 @@ export interface Strings {
   toastSunriseLost: (deathSummary: string) => string;
   phaseLabel: (p: DayPhase) => string;
   phaseIcon: (p: DayPhase) => string;
+  seasonLabel: (s: Season) => string;
+  seasonIcon: (s: Season) => string;
+  toastSeasonStart: (label: string) => string;
 
   // rewards
   rewardNewMember: string;
@@ -109,6 +113,14 @@ export interface Strings {
   helpTipWater: string;
   helpTipBirth: string;
   helpTipVolcano: string;
+  helpTipWood: string;
+  helpTipClub: string;
+  helpTipCampfire: string;
+  helpTipMushroom: string;
+  helpTipStone: string;
+  helpTipSpear: string;
+  helpTipTracks: string;
+  helpTipStoneHunt: string;
   helpEnabled: string;
   helpDisabled: string;
 
@@ -116,6 +128,7 @@ export interface Strings {
   infoTitle: string;
   infoSectionOverview: string;
   infoSectionResources: string;
+  infoSeason: string;
   infoPhase: string;
   infoSurvival: string;
   infoTribeSize: string;
@@ -146,6 +159,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Fleisch",
     resFisch: "Fisch",
     resStein: "Stein",
+    resKreuter: "Kräuter",
     hudTribeMembers: "Stammesmitglieder",
     hudWaitingForOthers: "Warte auf weitere Stämme …",
     hudYou: "Du",
@@ -208,6 +222,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Frühling" :
+      sn === "summer" ? "Sommer" :
+      sn === "autumn" ? "Herbst" : "Winter",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `${l} beginnt`,
 
     rewardNewMember: "ein neues Stammesmitglied",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -241,12 +264,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "Wasser brauchst du zum Leben — aber auch Fische… Vorsicht vor Alligatoren!",
     helpTipBirth: "Geburt! Wenn Mann und Frau zusammen sind und genug Nahrung haben, wächst dein Stamm. Jedes Kind braucht Zeit, bevor es selbst sammeln oder jagen kann.",
     helpTipVolcano: "Ein Vulkan! In seiner Nähe kann sich dein Stamm das Holz für das nächtliche Lagerfeuer sparen.",
+    helpTipWood: "Holz — euer wichtigster Rohstoff. Daraus macht ihr Feuer für die Nacht und schnitzt Knüppel und Speere für die Jagd.",
+    helpTipClub: "Mit einem Holzknüppel kannst du Tiere viel besser jagen als mit bloßen Händen.",
+    helpTipCampfire: "Jeden Abend braucht dein Stamm Schutz — das Lagerfeuer wärmt und vertreibt wilde Tiere.",
+    helpTipMushroom: "Pilze sind wertvolle Lebensmittel — sammelt sie unterwegs ein.",
+    helpTipStone: "Sammle Steine — du brauchst sie zum Feuermachen und als Waffen.",
+    helpTipSpear: "Mit Speeren kann dein Stamm Tiere viel besser jagen — für einen Speer brauchst du Holz und Stein.",
+    helpTipTracks: "Beim Laufen hinterlässt dein Stamm Spuren — daran lassen sich andere Stämme finden.",
+    helpTipStoneHunt: "Deine erste Waffe: der Stein — damit lassen sich Tiere jagen.",
     helpEnabled: "Hilfetexte: An (h)",
     helpDisabled: "Hilfetexte: Aus (h)",
 
     infoTitle: "Stamm – Übersicht",
     infoSectionOverview: "Stamm",
     infoSectionResources: "Vorräte",
+    infoSeason: "Jahreszeit",
     infoPhase: "Tageszeit",
     infoSurvival: "Überlebenszeit",
     infoTribeSize: "Stammesmitglieder",
@@ -276,6 +308,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Meat",
     resFisch: "Fish",
     resStein: "Stone",
+    resKreuter: "Herbs",
     hudTribeMembers: "Tribe members",
     hudWaitingForOthers: "Waiting for more tribes …",
     hudYou: "You",
@@ -335,6 +368,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Spring" :
+      sn === "summer" ? "Summer" :
+      sn === "autumn" ? "Autumn" : "Winter",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `${l} begins`,
 
     rewardNewMember: "a new tribe member",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -367,12 +409,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "You need water to live — and fish too… watch out for alligators!",
     helpTipBirth: "A birth! When men and women are together and have enough food, your tribe grows. Every child needs time before it can gather or hunt on its own.",
     helpTipVolcano: "A volcano! Nearby, your tribe can save the wood for the nightly campfire.",
+    helpTipWood: "Wood — your most important resource. Use it to build fires for the night and carve clubs and spears for the hunt.",
+    helpTipClub: "With a wooden club you can hunt animals far better than with bare hands.",
+    helpTipCampfire: "Every evening your tribe needs shelter — the campfire warms them and scares off wild animals.",
+    helpTipMushroom: "Mushrooms are valuable food — gather them as you pass by.",
+    helpTipStone: "Collect stones — you need them to make fire and as weapons.",
+    helpTipSpear: "With spears your tribe hunts animals far better — to craft a spear you need wood and stone.",
+    helpTipTracks: "Your tribe leaves footprints as it walks — that's how other tribes can find each other.",
+    helpTipStoneHunt: "Your first weapon: the stone — use it to hunt animals.",
     helpEnabled: "Help tips: On (h)",
     helpDisabled: "Help tips: Off (h)",
 
     infoTitle: "Tribe – Overview",
     infoSectionOverview: "Tribe",
     infoSectionResources: "Stockpile",
+    infoSeason: "Season",
     infoPhase: "Time of day",
     infoSurvival: "Survival time",
     infoTribeSize: "Tribe members",
@@ -402,6 +453,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Carne",
     resFisch: "Pesce",
     resStein: "Pietra",
+    resKreuter: "Erbe",
     hudTribeMembers: "Membri della tribù",
     hudWaitingForOthers: "In attesa di altre tribù …",
     hudYou: "Tu",
@@ -462,6 +514,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Primavera" :
+      sn === "summer" ? "Estate" :
+      sn === "autumn" ? "Autunno" : "Inverno",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `Inizia ${l}`,
 
     rewardNewMember: "un nuovo membro della tribù",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -494,12 +555,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "L'acqua ti serve per vivere — e anche i pesci… attento agli alligatori!",
     helpTipBirth: "Una nascita! Quando uomini e donne stanno insieme e c'è cibo a sufficienza, la tribù cresce. Ogni bambino ha bisogno di tempo prima di poter raccogliere o cacciare da solo.",
     helpTipVolcano: "Un vulcano! Nelle sue vicinanze la tua tribù può risparmiare la legna per il falò notturno.",
+    helpTipWood: "Legna — la tua risorsa più importante. Serve per accendere il fuoco notturno e per intagliare mazze e lance per la caccia.",
+    helpTipClub: "Con una mazza di legno puoi cacciare gli animali molto meglio che a mani nude.",
+    helpTipCampfire: "Ogni sera la tua tribù ha bisogno di riparo — il falò scalda e tiene lontane le bestie selvatiche.",
+    helpTipMushroom: "I funghi sono cibo prezioso — raccoglili lungo il cammino.",
+    helpTipStone: "Raccogli pietre — ti servono per accendere il fuoco e come armi.",
+    helpTipSpear: "Con le lance la tua tribù caccia molto meglio — per fare una lancia servono legno e pietra.",
+    helpTipTracks: "Camminando la tua tribù lascia impronte — così le altre tribù possono trovarsi.",
+    helpTipStoneHunt: "La tua prima arma: la pietra — usala per cacciare gli animali.",
     helpEnabled: "Suggerimenti: Attivi (h)",
     helpDisabled: "Suggerimenti: Disattivati (h)",
 
     infoTitle: "Tribù – Riepilogo",
     infoSectionOverview: "Tribù",
     infoSectionResources: "Scorte",
+    infoSeason: "Stagione",
     infoPhase: "Momento del giorno",
     infoSurvival: "Tempo di sopravvivenza",
     infoTribeSize: "Membri della tribù",
@@ -529,6 +599,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Carne",
     resFisch: "Pescado",
     resStein: "Piedra",
+    resKreuter: "Hierbas",
     hudTribeMembers: "Miembros de la tribu",
     hudWaitingForOthers: "Esperando a más tribus …",
     hudYou: "Tú",
@@ -589,6 +660,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Primavera" :
+      sn === "summer" ? "Verano" :
+      sn === "autumn" ? "Otoño" : "Invierno",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `Comienza ${l}`,
 
     rewardNewMember: "un nuevo miembro de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -621,12 +701,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "Necesitas agua para vivir — y también peces… ¡cuidado con los caimanes!",
     helpTipBirth: "¡Un nacimiento! Cuando hombres y mujeres están juntos y hay suficiente comida, tu tribu crece. Cada niño necesita tiempo antes de poder recolectar o cazar por sí solo.",
     helpTipVolcano: "¡Un volcán! Cerca de él tu tribu puede ahorrarse la leña para la hoguera nocturna.",
+    helpTipWood: "Madera — tu recurso más importante. Sirve para encender el fuego nocturno y para tallar garrotes y lanzas para la caza.",
+    helpTipClub: "Con un garrote de madera puedes cazar animales mucho mejor que con las manos desnudas.",
+    helpTipCampfire: "Cada anochecer tu tribu necesita refugio — la hoguera abriga y ahuyenta a las bestias salvajes.",
+    helpTipMushroom: "Las setas son comida valiosa — recógelas por el camino.",
+    helpTipStone: "Recoge piedras — las necesitas para hacer fuego y también como armas.",
+    helpTipSpear: "Con lanzas tu tribu caza animales mucho mejor — para fabricar una lanza necesitas madera y piedra.",
+    helpTipTracks: "Al caminar tu tribu deja huellas — así las tribus pueden encontrarse.",
+    helpTipStoneHunt: "Tu primera arma: la piedra — úsala para cazar animales.",
     helpEnabled: "Consejos: Activados (h)",
     helpDisabled: "Consejos: Desactivados (h)",
 
     infoTitle: "Tribu – Resumen",
     infoSectionOverview: "Tribu",
     infoSectionResources: "Reservas",
+    infoSeason: "Estación",
     infoPhase: "Momento del día",
     infoSurvival: "Tiempo de supervivencia",
     infoTribeSize: "Miembros de la tribu",
@@ -656,6 +745,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Carne",
     resFisch: "Peixe",
     resStein: "Pedra",
+    resKreuter: "Ervas",
     hudTribeMembers: "Membros da tribo",
     hudWaitingForOthers: "À espera de mais tribos …",
     hudYou: "Tu",
@@ -716,6 +806,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Primavera" :
+      sn === "summer" ? "Verão" :
+      sn === "autumn" ? "Outono" : "Inverno",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `Começa ${l}`,
 
     rewardNewMember: "um novo membro da tribo",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -748,12 +847,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "Precisas de água para viver — e também de peixes… cuidado com os jacarés!",
     helpTipBirth: "Um nascimento! Quando homens e mulheres estão juntos e há comida suficiente, a tua tribo cresce. Cada criança precisa de tempo antes de poder colher ou caçar sozinha.",
     helpTipVolcano: "Um vulcão! Por perto, a tua tribo pode poupar a lenha para a fogueira noturna.",
+    helpTipWood: "Madeira — o teu recurso mais importante. Serve para acender a fogueira noturna e para talhar maças e lanças para a caça.",
+    helpTipClub: "Com uma maça de madeira consegues caçar animais muito melhor do que com as mãos nuas.",
+    helpTipCampfire: "Toda noite a tua tribo precisa de abrigo — a fogueira aquece e afasta os animais selvagens.",
+    helpTipMushroom: "Os cogumelos são alimento valioso — apanha-os pelo caminho.",
+    helpTipStone: "Recolhe pedras — precisas delas para fazer fogo e também como armas.",
+    helpTipSpear: "Com lanças a tua tribo caça muito melhor — para fazer uma lança precisas de madeira e pedra.",
+    helpTipTracks: "Ao caminhar a tua tribo deixa pegadas — é assim que as tribos se encontram.",
+    helpTipStoneHunt: "A tua primeira arma: a pedra — usa-a para caçar animais.",
     helpEnabled: "Sugestões: Ativadas (h)",
     helpDisabled: "Sugestões: Desativadas (h)",
 
     infoTitle: "Tribo – Resumo",
     infoSectionOverview: "Tribo",
     infoSectionResources: "Reservas",
+    infoSeason: "Estação",
     infoPhase: "Hora do dia",
     infoSurvival: "Tempo de sobrevivência",
     infoTribeSize: "Membros da tribo",
@@ -783,6 +891,7 @@ const STRINGS: Record<Language, Strings> = {
     resFleisch: "Viande",
     resFisch: "Poisson",
     resStein: "Pierre",
+    resKreuter: "Herbes",
     hudTribeMembers: "Membres de la tribu",
     hudWaitingForOthers: "En attente d'autres tribus …",
     hudYou: "Toi",
@@ -843,6 +952,15 @@ const STRINGS: Record<Language, Strings> = {
       p === "morning" ? "🌅" :
       p === "noon" ? "☀️" :
       p === "afternoon" ? "🌇" : "🌙",
+    seasonLabel: (sn) =>
+      sn === "spring" ? "Printemps" :
+      sn === "summer" ? "Été" :
+      sn === "autumn" ? "Automne" : "Hiver",
+    seasonIcon: (sn) =>
+      sn === "spring" ? "🌱" :
+      sn === "summer" ? "☀️" :
+      sn === "autumn" ? "🍂" : "❄️",
+    toastSeasonStart: (l) => `${l} commence`,
 
     rewardNewMember: "un nouveau membre de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -875,12 +993,21 @@ const STRINGS: Record<Language, Strings> = {
     helpTipWater: "Tu as besoin d'eau pour vivre — et de poissons aussi… attention aux alligators !",
     helpTipBirth: "Une naissance ! Quand hommes et femmes sont ensemble et qu'il y a assez de nourriture, ta tribu grandit. Chaque enfant a besoin de temps avant de pouvoir cueillir ou chasser seul.",
     helpTipVolcano: "Un volcan ! À proximité, ta tribu peut économiser le bois du feu de camp nocturne.",
+    helpTipWood: "Bois — votre ressource la plus précieuse. Il sert à allumer le feu de la nuit et à tailler gourdins et lances pour la chasse.",
+    helpTipClub: "Avec un gourdin en bois, tu chasses les animaux bien mieux qu'à mains nues.",
+    helpTipCampfire: "Chaque soir, ta tribu a besoin d'abri — le feu de camp réchauffe et fait fuir les bêtes sauvages.",
+    helpTipMushroom: "Les champignons sont une nourriture précieuse — ramasse-les en chemin.",
+    helpTipStone: "Ramasse des pierres — il t'en faut pour faire du feu et comme armes.",
+    helpTipSpear: "Avec des lances, ta tribu chasse bien mieux — pour fabriquer une lance, il faut du bois et de la pierre.",
+    helpTipTracks: "En marchant, ta tribu laisse des traces — c'est ainsi que les tribus se trouvent.",
+    helpTipStoneHunt: "Ta première arme : la pierre — utilise-la pour chasser les animaux.",
     helpEnabled: "Astuces : Activées (h)",
     helpDisabled: "Astuces : Désactivées (h)",
 
     infoTitle: "Tribu – Aperçu",
     infoSectionOverview: "Tribu",
     infoSectionResources: "Réserves",
+    infoSeason: "Saison",
     infoPhase: "Moment de la journée",
     infoSurvival: "Temps de survie",
     infoTribeSize: "Membres de la tribu",
