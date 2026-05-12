@@ -20,8 +20,12 @@ import {
   Season,
   seasonAt,
   seasonAllowsBush,
+  seasonAllowsKreuter,
   seasonAllowsMushroom,
   seasonAnimalSpawnMultiplier,
+  seasonFishCatchMultiplier,
+  seasonKreuterYieldMultiplier,
+  seasonMushroomYieldMultiplier,
   seasonRegrowMultiplier,
   seasonWaterMultiplier,
   emptyResources,
@@ -2500,13 +2504,17 @@ export class Sim {
     }
     if (hasMushroomAt(this.seed, ti, tj) && seasonAllowsMushroom(season)) {
       const k = objKey("mushroom", ti, tj);
+      const gain = Math.max(
+        1,
+        Math.round(BAL.mushroomAutopickGain * seasonMushroomYieldMultiplier(season)),
+      );
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "pilze") >= BAL.mushroomAutopickGain
+        this.resourceRoom(u.owner, "pilze") >= gain
       ) {
         this.autoPickAndRegrow(
           u, "mushroom", ti, tj, "pilze",
-          BAL.mushroomAutopickGain,
+          gain,
           Math.max(1, Math.round(D.mushroomRegrowTicks * regrowMult)),
         );
         return;
@@ -2539,15 +2547,19 @@ export class Sim {
         return;
       }
     }
-    if (hasKreuterAt(this.seed, ti, tj)) {
+    if (hasKreuterAt(this.seed, ti, tj) && seasonAllowsKreuter(season)) {
       const k = objKey("kreuter", ti, tj);
+      const gain = Math.max(
+        1,
+        Math.round(BAL.kreuterAutopickGain * seasonKreuterYieldMultiplier(season)),
+      );
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "kreuter") >= BAL.kreuterAutopickGain
+        this.resourceRoom(u.owner, "kreuter") >= gain
       ) {
         this.autoPickAndRegrow(
           u, "kreuter", ti, tj, "kreuter",
-          BAL.kreuterAutopickGain, D.kreuterRegrowTicks,
+          gain, D.kreuterRegrowTicks,
         );
         return;
       }
@@ -2573,6 +2585,8 @@ export class Sim {
 
   private tryAutoPickShallowFish(u: SimUnit, ti: number, tj: number): void {
     if (this.resourceRoom(u.owner, "fisch") <= 0) return;
+    const catchProb = seasonFishCatchMultiplier(seasonAt(this.gameTimeSec));
+    if (catchProb < 1 && Math.random() >= catchProb) return;
     const cx = ti + 0.5;
     const cy = tj + 0.5;
     const r2 = BAL.fishCatchRadius * BAL.fishCatchRadius;

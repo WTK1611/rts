@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { gridToScreen, TILE_H } from "./iso";
 import { groundHeight, treeSpeciesAt, TreeSpecies } from "../shared/worldgen";
+import { Season } from "../shared/protocol";
 
 const DECID_VARIANTS = [
   { trunkW: 5, trunkH: 12, leafW: 22, leafH: 24, leafColor: 0x2e7a2e },
@@ -8,6 +9,20 @@ const DECID_VARIANTS = [
   { trunkW: 6, trunkH: 14, leafW: 26, leafH: 28, leafColor: 0x3a8a3a },
   { trunkW: 6, trunkH: 18, leafW: 24, leafH: 34, leafColor: 0x205820 },
 ];
+
+const AUTUMN_COLORS = [
+  0xc23a1a, // rot
+  0xd97a1a, // orange
+  0xe6b224, // gold
+  0xa67340, // braun
+  0x9a3318, // dunkelrot
+  0xc2871a, // ocker
+];
+
+const SPRING_LEAF = 0x8fd36b;
+const SPRING_HIGHLIGHT = 0xbbe89a;
+const SUMMER_HIGHLIGHT = 0x6cbf6c;
+const WINTER_TWIG = 0x4a3a22;
 
 const CONIFER_VARIANTS = [
   { trunkW: 4, trunkH: 8, baseW: 22, totalH: 36, leafColor: 0x1f4d1f },
@@ -35,6 +50,12 @@ export class Tree {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   private baseScale: number;
+  private leaves: Phaser.GameObjects.Ellipse | null = null;
+  private leavesShadow: Phaser.GameObjects.Ellipse | null = null;
+  private leavesHighlight: Phaser.GameObjects.Ellipse | null = null;
+  private summerLeafColor = 0;
+  private autumnColor = 0;
+  private currentSeason: Season = "summer";
 
   constructor(
     scene: Phaser.Scene,
@@ -100,6 +121,12 @@ export class Tree {
       0x6cbf6c,
       0.55,
     );
+    this.leaves = leaves;
+    this.leavesShadow = leavesShadow;
+    this.leavesHighlight = highlight;
+    this.summerLeafColor = v.leafColor;
+    const h = (this.i * 53 + this.j * 97) >>> 0;
+    this.autumnColor = AUTUMN_COLORS[h % AUTUMN_COLORS.length];
     return [trunk, leavesShadow, leaves, highlight];
   }
 
@@ -154,6 +181,53 @@ export class Tree {
       objs.push(shadow, tri, highlight);
     }
     return objs;
+  }
+
+  applySeason(season: Season): void {
+    if (this.currentSeason === season) return;
+    this.currentSeason = season;
+    // Conifers (and not-yet-built leaves) stay as-is.
+    if (!this.leaves || !this.leavesShadow || !this.leavesHighlight) return;
+    const leaves = this.leaves;
+    const shadow = this.leavesShadow;
+    const hi = this.leavesHighlight;
+    switch (season) {
+      case "spring":
+        leaves.setVisible(true);
+        leaves.setFillStyle(SPRING_LEAF, 1);
+        leaves.setStrokeStyle(2, 0x2a6a2a);
+        shadow.setVisible(true);
+        shadow.setAlpha(0.18);
+        hi.setVisible(true);
+        hi.setFillStyle(SPRING_HIGHLIGHT, 0.6);
+        break;
+      case "summer":
+        leaves.setVisible(true);
+        leaves.setFillStyle(this.summerLeafColor, 1);
+        leaves.setStrokeStyle(2, 0x183818);
+        shadow.setVisible(true);
+        shadow.setAlpha(0.18);
+        hi.setVisible(true);
+        hi.setFillStyle(SUMMER_HIGHLIGHT, 0.55);
+        break;
+      case "autumn":
+        leaves.setVisible(true);
+        leaves.setFillStyle(this.autumnColor, 1);
+        leaves.setStrokeStyle(2, 0x5a2a10);
+        shadow.setVisible(true);
+        shadow.setAlpha(0.18);
+        hi.setVisible(true);
+        hi.setFillStyle(0xffd58a, 0.45);
+        break;
+      case "winter":
+        // Bare twigs: faint canopy outline only.
+        leaves.setVisible(true);
+        leaves.setFillStyle(WINTER_TWIG, 0.18);
+        leaves.setStrokeStyle(1.4, WINTER_TWIG, 0.85);
+        shadow.setVisible(false);
+        hi.setVisible(false);
+        break;
+    }
   }
 
   setStage(stage: TreeStage): void {

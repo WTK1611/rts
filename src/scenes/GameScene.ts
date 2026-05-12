@@ -345,7 +345,7 @@ export class GameScene extends Phaser.Scene {
   private helpStackEl: HTMLElement | null = null;
   private infoEl: HTMLElement | null = null;
   private infoVisible = false;
-  private helpVisible = true;
+  private helpVisible = false;
   private helpSeen = new Set<string>();
   private helpCheckAccum = 0;
   private perfFrameTimeMs = 16.7;
@@ -612,7 +612,10 @@ export class GameScene extends Phaser.Scene {
     this.perfEl = document.getElementById("perf");
     const storedPerf = localStorage.getItem("rts.perfVisible");
     if (storedPerf !== null) this.perfVisible = storedPerf === "1";
-    if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
+    if (this.perfEl) {
+      this.perfEl.style.display = this.perfVisible ? "" : "none";
+      this.setupPanelDrag(this.perfEl, "rts.perf.position");
+    }
 
     this.helpStackEl = document.getElementById("help-stack");
     const storedHelp = localStorage.getItem(HELP_STORAGE_KEY_VISIBLE);
@@ -1112,12 +1115,14 @@ export class GameScene extends Phaser.Scene {
           if (!this.trees.has(id)) {
             if (!this.removedKeys.has(id)) {
               const t = new Tree(this, id, i, j, this.seed);
+              t.applySeason(this.lastSeason);
               trees.set(id, t);
               this.trees.set(id, t);
             } else {
               const stage = this.treeGrowthMap.get(`${i},${j}`);
               if (stage !== undefined) {
                 const t = new Tree(this, id, i, j, this.seed, stage);
+                t.applySeason(this.lastSeason);
                 trees.set(id, t);
                 this.trees.set(id, t);
               }
@@ -3049,6 +3054,7 @@ export class GameScene extends Phaser.Scene {
     const chunk = this.chunks.get(`${cx},${cy}`);
     if (!chunk) return;
     const t = new Tree(this, k, ev.i, ev.j, this.seed, ev.stage);
+    t.applySeason(this.lastSeason);
     chunk.trees.set(k, t);
     this.trees.set(k, t);
     const v = this.visible.has(`${ev.i},${ev.j}`);
@@ -3086,6 +3092,7 @@ export class GameScene extends Phaser.Scene {
         existing.setStage(4);
       } else {
         const t = new Tree(this, k, ro.i, ro.j, this.seed);
+        t.applySeason(this.lastSeason);
         chunk.trees.set(k, t);
         this.trees.set(k, t);
         t.container.setVisible(v);
@@ -3522,6 +3529,7 @@ export class GameScene extends Phaser.Scene {
     const label = s.seasonLabel(this.lastSeason);
     const icon = s.seasonIcon(this.lastSeason);
     this.showToast(`${icon} ${s.toastSeasonStart(label)}`, "join");
+    for (const tree of this.trees.values()) tree.applySeason(this.lastSeason);
     this.updateHud();
   }
 

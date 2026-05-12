@@ -65,18 +65,43 @@ export function seasonRegrowMultiplier(season: Season): number {
   return season === "autumn" ? 0.6 : 1.0;
 }
 export function seasonAnimalSpawnMultiplier(season: Season): number {
-  if (season === "autumn") return 1.8;
-  if (season === "winter") return 0.7;
-  return 1.0;
+  switch (season) {
+    case "spring": return 0.8; // Jungtiere noch klein, Bestand niedrig
+    case "autumn": return 1.8; // Maximum vor Winter
+    case "winter": return 0.5; // Verluste, Winterruhe
+    default: return 1.0;
+  }
 }
 
-// Winter: bushes bear no berries.
+// Bushes only bear berries in summer + autumn (no spring berries, no winter).
 export function seasonAllowsBush(season: Season): boolean {
-  return season !== "winter";
+  return season === "summer" || season === "autumn";
 }
-// Mushrooms only grow in warm/moist seasons.
+// Mushrooms only in summer + autumn, with autumn yielding more.
 export function seasonAllowsMushroom(season: Season): boolean {
   return season === "summer" || season === "autumn";
+}
+export function seasonMushroomYieldMultiplier(season: Season): number {
+  if (season === "autumn") return 1.5;
+  if (season === "summer") return 0.5;
+  return 0;
+}
+// Herbs bloom in spring (best), good in summer, sparse in autumn, none in winter.
+export function seasonAllowsKreuter(season: Season): boolean {
+  return season !== "winter";
+}
+export function seasonKreuterYieldMultiplier(season: Season): number {
+  switch (season) {
+    case "spring": return 1.5;
+    case "summer": return 1.0;
+    case "autumn": return 0.5;
+    default: return 0;
+  }
+}
+// Fish are harder to catch in winter (under ice) and spring (laichzeit/schonzeit).
+export function seasonFishCatchMultiplier(season: Season): number {
+  if (season === "winter" || season === "spring") return 0.5;
+  return 1.0;
 }
 
 export interface PhaseLengths {
