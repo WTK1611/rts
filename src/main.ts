@@ -172,7 +172,7 @@ function updateLobbyClock(): void {
     `${s.phaseIcon(phase)} ${gameClockString(gt)}`;
 }
 updateLobbyClock();
-window.setInterval(updateLobbyClock, 5000);
+window.setInterval(updateLobbyClock, 1000);
 
 (function fetchWorldInfo() {
   let settled = false;

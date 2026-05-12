@@ -34,6 +34,7 @@ import {
   seasonRegrowMultiplier,
   seasonWaterMultiplier,
   emptyResources,
+  startingResources,
   FishKind,
   FishSnapshot,
   Footprint,
@@ -2200,6 +2201,7 @@ export class Sim {
     this.active[p] = true;
     this.tribeOrigin[p] = p;
     this.clearPregnanciesFor(p);
+    this.resources[p] = startingResources();
     this.nextUnitIdx[p] = TRIBE_SIZE;
     this.tribeLanguage[p] = language ?? languageForSlot(this.seed, p);
     const a = this.spawns[p];
@@ -2262,7 +2264,7 @@ export class Sim {
     this.active[p] = true;
     this.tribeOrigin[p] = p;
     this.clearPregnanciesFor(p);
-    this.resources[p] = emptyResources();
+    this.resources[p] = startingResources();
     const fid = this.campfireIdFor(p);
     if (this.campfires.has(fid)) {
       this.campfires.delete(fid);

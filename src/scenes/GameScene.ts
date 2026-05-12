@@ -422,6 +422,7 @@ export class GameScene extends Phaser.Scene {
   private helpVisible = false;
   private helpSeen = new Set<string>();
   private helpCheckAccum = 0;
+  private helpSequenceTimer: number | null = null;
   private perfFrameTimeMs = 16.7;
   private perfLastDomUpdateMs = 0;
   private perfServerTickMs = 0;
@@ -4318,19 +4319,38 @@ export class GameScene extends Phaser.Scene {
   private toggleHelp(): void {
     this.helpVisible = !this.helpVisible;
     localStorage.setItem(HELP_STORAGE_KEY_VISIBLE, this.helpVisible ? "1" : "0");
-    if (!this.helpVisible) {
-      this.clearHelpStack();
-    } else {
-      this.replaySeenHelp();
+    this.stopHelpSequence();
+    this.clearHelpStack();
+    if (this.helpVisible) {
+      this.startHelpSequence();
     }
     const s = t();
     this.showToast(this.helpVisible ? s.helpEnabled : s.helpDisabled, "join");
   }
 
-  private replaySeenHelp(): void {
-    this.clearHelpStack();
-    for (const key of this.helpSeen) {
-      if (key in HELP_TIPS) this.showHelpCard(key as HelpKey);
+  private startHelpSequence(): void {
+    const keys = Object.keys(HELP_TIPS) as HelpKey[];
+    const stepMs = HELP_DURATION_MS + 400;
+    let i = 0;
+    const showNext = () => {
+      if (!this.helpVisible) return;
+      if (i >= keys.length) {
+        this.helpSequenceTimer = null;
+        return;
+      }
+      const key = keys[i++];
+      this.showHelpCard(key);
+      this.helpSeen.add(key);
+      this.persistHelpSeen();
+      this.helpSequenceTimer = window.setTimeout(showNext, stepMs);
+    };
+    showNext();
+  }
+
+  private stopHelpSequence(): void {
+    if (this.helpSequenceTimer !== null) {
+      window.clearTimeout(this.helpSequenceTimer);
+      this.helpSequenceTimer = null;
     }
   }
 

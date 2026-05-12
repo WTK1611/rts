@@ -276,6 +276,14 @@ export function emptyResources(): Resources {
   };
 }
 
+export function startingResources(): Resources {
+  return {
+    holz: 10, wasser: 8, beeren: 0, pilze: 0,
+    fleisch: 0, fisch: 0, stein: 0, kreuter: 0,
+    felle: 8,
+  };
+}
+
 export type ObjectKind = "tree" | "bush" | "mushroom" | "fish" | "stone" | "cactus" | "kreuter";
 
 export type AnimalKind =
