@@ -30,14 +30,19 @@
     <style>
       html, body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
       #game {
+        position: fixed; top: 0; left: 0;
         width: 100vw; height: 100vh;
         touch-action: none;
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
+        /* Phaser-Canvas inkl. Nachtfilter bleibt unter allen DOM-Overlays
+           (HUD, Banner, Header, Toasts). */
+        z-index: 0;
       }
       #hud {
         position: fixed; top: 12px; left: 12px; color: #e8f0e8;
+        z-index: 10;
         font-family: system-ui, sans-serif;
         background: none; padding: 10px 14px; border-radius: 0;
         border: none;
@@ -276,6 +281,27 @@
         border-color: rgba(255,220,120,0.18);
         color: #ffe2a8;
       }
+      #tribe-banner .season-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-size: 13px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        background: rgba(120,200,140,0.07);
+        border: 1px solid rgba(140,210,150,0.18);
+        color: #c8e6cc;
+      }
+      #tribe-banner .season-chip .lbl { letter-spacing: 0.2px; }
+      #tribe-banner .season-chip .day {
+        font-weight: 500; opacity: 0.7;
+        font-size: 11px;
+        padding: 1px 6px; border-radius: 8px;
+        background: rgba(255,255,255,0.06);
+      }
+      #tribe-banner .clock .time { font-weight: 700; }
+      #tribe-banner .clock .phase-lbl {
+        font-size: 12px; font-weight: 500; opacity: 0.85;
+      }
       #tribe-banner .growth {
         margin: 15px -28px 0;
         padding: 0;
@@ -337,7 +363,11 @@
         #tribe-banner .me { font-size: 16px; gap: 10px; }
         #tribe-banner .me .swatch { width: 12px; height: 12px; flex-basis: 12px; }
         #tribe-banner .count,
-        #tribe-banner .clock { padding: 3px 10px; font-size: 12px; }
+        #tribe-banner .clock,
+        #tribe-banner .season-chip { padding: 3px 10px; font-size: 12px; }
+        #tribe-banner .season-chip .lbl { font-size: 11px; }
+        #tribe-banner .season-chip .day { font-size: 10px; padding: 0 4px; }
+        #tribe-banner .clock .phase-lbl { font-size: 10px; }
         #tribe-banner .growth { margin: 8px -16px 0; }
         #tribe-banner .growth .bar { height: 5px; }
         #tribe-banner .growth .label-row { padding: 0 16px 6px; font-size: 10px; }

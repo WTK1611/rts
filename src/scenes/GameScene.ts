@@ -440,6 +440,11 @@ export class GameScene extends Phaser.Scene {
   private nightOverlay!: Phaser.GameObjects.RenderTexture;
   private nightEraser!: Phaser.GameObjects.Graphics;
   private celestialGfx!: Phaser.GameObjects.Graphics;
+  // UI-Kamera für bildschirmfixierte Layer (Nachtfilter, Sonne/Mond).
+  // Sie ignoriert Zoom & Scroll der Hauptkamera, damit die Layer nicht
+  // mit der Welt mitskalieren — sonst entstehen nach Pinch-Zoom oder
+  // Geräte-Rotation versetzte/zu kleine Overlays.
+  private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private lastPhase: DayPhase = "morning";
   private lastSeason: Season = "spring";
   private nightDeathOwn = 0;
@@ -597,8 +602,26 @@ export class GameScene extends Phaser.Scene {
     this.celestialGfx = this.add.graphics()
       .setScrollFactor(0)
       .setDepth(1_820_000);
+    // UI-Kamera erst nach der Hauptkamera anlegen, damit sie OBEN gerendert
+    // wird. Sie sieht nur die Bildschirm-Overlays.
+    this.uiCam = this.cameras.add(0, 0, screenW, screenH);
+    this.uiCam.setScroll(0, 0);
+    this.uiCam.setZoom(1);
     this.scale.on("resize", (size: Phaser.Structs.Size) => {
       this.nightOverlay.setSize(size.width, size.height);
+      this.uiCam.setSize(size.width, size.height);
+    });
+    // iOS feuert bei Rotation oft erst verzögert window.resize, sodass
+    // scale.width/height kurz veraltet bleiben. Wir greifen den
+    // orientationchange direkt ab und forcieren ein refresh.
+    const onOrientation = () => {
+      // Kleiner Defer, damit Safari die neue innerWidth/innerHeight liefert.
+      window.setTimeout(() => this.scale.refresh(), 50);
+      window.setTimeout(() => this.scale.refresh(), 250);
+    };
+    window.addEventListener("orientationchange", onOrientation);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener("orientationchange", onOrientation);
     });
 
     const cam = this.cameras.main;
@@ -609,6 +632,26 @@ export class GameScene extends Phaser.Scene {
     cam.setZoom(1.6);
     this.camTargetX = cam.scrollX;
     this.camTargetY = cam.scrollY;
+
+    // Trennung Welt-/UI-Kamera: Hauptkamera ignoriert den Nachtfilter und
+    // das Himmels-Overlay (sonst skaliert sie mit der Welt mit, was nach
+    // Pinch-Zoom oder Rotation versetzte/verschnittene Overlays liefert).
+    // Die UI-Kamera rendert nur die beiden Objekte — alle anderen werden
+    // dynamisch ignoriert, sobald sie der Szene hinzugefügt werden.
+    const uiObjects = new Set<Phaser.GameObjects.GameObject>([
+      this.nightOverlay,
+      this.celestialGfx,
+    ]);
+    cam.ignore([this.nightOverlay, this.celestialGfx]);
+    for (const obj of this.children.list) {
+      if (!uiObjects.has(obj)) this.uiCam.ignore(obj);
+    }
+    this.events.on(
+      Phaser.Scenes.Events.ADDED_TO_SCENE,
+      (obj: Phaser.GameObjects.GameObject) => {
+        if (!uiObjects.has(obj)) this.uiCam.ignore(obj);
+      },
+    );
 
     const kb = this.input.keyboard!;
     this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
@@ -2193,9 +2236,15 @@ export class GameScene extends Phaser.Scene {
   private updateDayNight(): void {
     const t = this.timeOfDay();
     const { color, alpha } = this.overlayTintFor(t);
-    const w = this.scale.width;
-    const h = this.scale.height;
+    // Maße der UI-Kamera (nicht der Hauptkamera) sind massgeblich — sie
+    // entsprechen dem aktuellen Viewport 1:1 (Zoom 1, kein Scroll), auch
+    // direkt nach Rotation/Pinch-Zoom.
+    const w = this.uiCam.width;
+    const h = this.uiCam.height;
     const rt = this.nightOverlay;
+    if (rt.width !== w || rt.height !== h) {
+      rt.setSize(w, h);
+    }
     rt.clear();
     if (alpha > 0.01) {
       rt.fill(color, alpha, 0, 0, w, h);
@@ -2267,14 +2316,12 @@ export class GameScene extends Phaser.Scene {
       const brightFrac = (1 - Math.cos(phase * 2 * Math.PI)) / 2;
       if (brightFrac > 0.05) {
         const moonAlpha = (0.18 + 0.12 * nightK) * brightFrac;
-        const moonPos = this.celestialScreenPos(t, this.scale.width, this.scale.height);
+        const moonPos = this.celestialScreenPos(t, this.uiCam.width, this.uiCam.height);
         if (moonPos) {
-          const z = cam.zoom;
-          const mx = (moonPos.x - (cam.width * (1 - z)) / 2) / z;
-          const my = (moonPos.y - (cam.height * (1 - z)) / 2) / z;
+          // Eraser nutzt jetzt direkt UI-Kamera-Koords (Zoom 1, kein Scroll).
           er.clear();
           er.fillStyle(0xffffff, moonAlpha);
-          er.fillCircle(mx, my, (60 + 30 * brightFrac) / z);
+          er.fillCircle(moonPos.x, moonPos.y, 60 + 30 * brightFrac);
           this.nightOverlay.erase(er);
         }
       }
@@ -3914,9 +3961,21 @@ export class GameScene extends Phaser.Scene {
     const phaseLabel = s.phaseLabel(this.lastPhase);
     const seasonLabel = s.seasonLabel(this.lastSeason);
     const seasonIcon = s.seasonIcon(this.lastSeason);
+    const phaseIcon = s.phaseIcon(this.lastPhase);
     const dayOfSeason = dayOfSeasonAt(this.gameTimeSec);
     const clockTitle = `${seasonLabel} ${dayOfSeason}/${SEASON_LEN_DAYS} · ${phaseLabel}`;
-    const clockHtml = `<span class="clock" title="${clockTitle}">${seasonIcon} ${this.clockString()} ${s.phaseIcon(this.lastPhase)}</span>`;
+    // Statusbar mit eindeutigen Labels: Jahreszeit + Tag, Uhrzeit + Tagesphase.
+    // Mobile-Tooltips funktionieren nicht zuverlässig — Text statt nur Icons.
+    const seasonChipHtml =
+      `<span class="season-chip" title="${seasonLabel}">` +
+      `${seasonIcon} <span class="lbl">${seasonLabel}</span>` +
+      `<span class="day">${dayOfSeason}/${SEASON_LEN_DAYS}</span>` +
+      `</span>`;
+    const clockHtml =
+      `<span class="clock" title="${clockTitle}">` +
+      `${phaseIcon} <span class="time">${this.clockString()}</span>` +
+      `<span class="phase-lbl">${phaseLabel}</span>` +
+      `</span>`;
 
     this.hud.innerHTML =
       `<div class="hud-drag-handle"></div>` +
@@ -3946,7 +4005,7 @@ export class GameScene extends Phaser.Scene {
         `<div class="me clickable${meActive}" data-spectate-slot="${this.playerId}">` +
         `<span class="swatch" style="background:${banColor}"></span>` +
         `${escapeHtml(banTitle)}${banFlag ? ` <span class="flag">${banFlag}</span>` : ""} ` +
-        `${banCountChip} ${clockHtml}</div>` +
+        `${banCountChip} ${seasonChipHtml} ${clockHtml}</div>` +
         this.growthHudHtml();
     }
   }
