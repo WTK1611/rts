@@ -506,7 +506,7 @@ export class Sim {
   private spawnWolfPackAround(ci: number, cj: number): number {
     const spec = animalSpec("wolf");
     const packRoll = rand01(this.seed ^ 0xc101, ci, cj);
-    const packSize = 3 + Math.floor(packRoll * 3); // 3..5
+    const packSize = 2 + Math.floor(packRoll * 3); // 2..4
     let placed = 0;
     const tried = new Set<string>();
     const tryPlace = (i: number, j: number): boolean => {
@@ -930,7 +930,7 @@ export class Sim {
   // bestehenden Nacht-Räuber-Bonus.
   private wolfMoonBoost(kind: AnimalKind): number {
     if (kind !== "wolf") return 1;
-    return isFullMoonNight(this.gameTimeSec) ? 1.5 : 1;
+    return isFullMoonNight(this.gameTimeSec) ? 1.25 : 1;
   }
 
   private animalDetectRange(spec: AnimalSpec, kind?: AnimalKind): number {

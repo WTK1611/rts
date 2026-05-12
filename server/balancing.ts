@@ -88,7 +88,7 @@ export const ANIMAL_DEFAULTS: Record<AnimalKind, AnimalTunable> = {
   // sim.spawnAnimals + Rudel-Aggression in stepAnimalAttack). Einzeln wenig
   // gefährlich, im Rudel der härteste Gegner: schnell, hoher Schaden, lange
   // Aggro. Gruppenkampf wird durch packCallForHelp() koordiniert.
-  wolf:        { hp: 10, speed: 4.5, meat: 4,  felle: 2, density: 0.0003, wanderRadius: 14, damage: 7,  detectRange: 7, autoHuntRange: 0, attackRange: 1.4, aggroDurationSec: 20, preyDamage: 4, matureAgeSec: 45, gestationSec: 55,  maxAgeSec: 260, amphibianRange: 0 },
+  wolf:        { hp: 10, speed: 4.5, meat: 4,  felle: 2, density: 0.0003, wanderRadius: 14, damage: 4,  detectRange: 5, autoHuntRange: 0, attackRange: 1.4, aggroDurationSec: 14, preyDamage: 3, matureAgeSec: 45, gestationSec: 55,  maxAgeSec: 260, amphibianRange: 0 },
 };
 
 const ANIMAL_FIELD_META: Array<{
