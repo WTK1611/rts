@@ -3,6 +3,8 @@ export const SPAWN_GUARD_RADIUS = 3;
 export const SPAWN_DISTANCE_MIN = 22;
 export const SPAWN_DISTANCE_MAX = 38;
 export const SPAWN_COUNT = 10;
+const SPAWN_LAND_CHECK_RADIUS = 9;
+const SPAWN_LAND_RATIO_MIN = 0.78;
 
 export interface SpawnArea {
   cx: number;
@@ -22,6 +24,20 @@ function mulberry32(seed: number): () => number {
 
 const spawnCache = new Map<number, SpawnArea[]>();
 
+function spawnHasEnoughLand(seed: number, cx: number, cy: number, ratio: number): boolean {
+  const r = SPAWN_LAND_CHECK_RADIUS;
+  let land = 0;
+  let total = 0;
+  for (let dj = -r; dj <= r; dj++) {
+    for (let di = -r; di <= r; di++) {
+      if (di * di + dj * dj > r * r) continue;
+      total++;
+      if (elevationAt(seed, cx + di, cy + dj) >= WATER_LEVEL) land++;
+    }
+  }
+  return total > 0 && land / total >= ratio;
+}
+
 export function spawnsFromSeed(seed: number): SpawnArea[] {
   const cached = spawnCache.get(seed);
   if (cached) return cached;
@@ -29,7 +45,8 @@ export function spawnsFromSeed(seed: number): SpawnArea[] {
   const result: SpawnArea[] = [];
   const minSep = SPAWN_DISTANCE_MIN;
   let attempts = 0;
-  while (result.length < SPAWN_COUNT && attempts < 5000) {
+  const maxAttempts = 20000;
+  while (result.length < SPAWN_COUNT && attempts < maxAttempts) {
     attempts++;
     let cx: number;
     let cy: number;
@@ -53,7 +70,13 @@ export function spawnsFromSeed(seed: number): SpawnArea[] {
         break;
       }
     }
-    if (ok) result.push({ cx, cy });
+    if (!ok) continue;
+    const progress = attempts / maxAttempts;
+    const ratio = progress < 0.5
+      ? SPAWN_LAND_RATIO_MIN
+      : Math.max(0.55, SPAWN_LAND_RATIO_MIN - (progress - 0.5) * 0.4);
+    if (!spawnHasEnoughLand(seed, cx, cy, ratio)) continue;
+    result.push({ cx, cy });
   }
   spawnCache.set(seed, result);
   return result;
