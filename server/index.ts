@@ -101,6 +101,8 @@ interface PlayerSlot {
   language: NameLanguage;
   tribeNameIndex: number; // -1 for human players (use typed name)
   bot?: AIBot;
+  spectator?: boolean;
+  spectatorTarget?: PlayerId | null;
 }
 
 const BOT_COUNT = Number(process.env.RTS_BOT_COUNT ?? 5);
@@ -219,24 +221,36 @@ function tribeNameIndicesOf(): number[] {
   return world.players.map((p) => p?.tribeNameIndex ?? -1);
 }
 
+function viewerUnits(
+  ownerId: PlayerId,
+  units: UnitSnapshot[],
+): UnitSnapshot[] {
+  const slot = world.players[ownerId];
+  const tgt = slot?.spectatorTarget ?? null;
+  const out: UnitSnapshot[] = [];
+  for (const u of units) {
+    if (u.owner === ownerId) out.push(u);
+    else if (tgt !== null && u.owner === tgt) out.push(u);
+  }
+  return out;
+}
+
 function visibleAnimalsFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
 ): AnimalSnapshot[] {
-  const myUnits: UnitSnapshot[] = [];
-  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
-  if (myUnits.length === 0) return [];
-  return world.sim.visibleAnimalSnapshots(myUnits, ANIMAL_VIEW_RADIUS);
+  const viewers = viewerUnits(ownerId, units);
+  if (viewers.length === 0) return [];
+  return world.sim.visibleAnimalSnapshots(viewers, ANIMAL_VIEW_RADIUS);
 }
 
 function visibleFishesFor(
   ownerId: PlayerId,
   units: UnitSnapshot[],
 ): FishSnapshot[] {
-  const myUnits: UnitSnapshot[] = [];
-  for (const u of units) if (u.owner === ownerId) myUnits.push(u);
-  if (myUnits.length === 0) return [];
-  return world.sim.visibleFishSnapshots(myUnits, ANIMAL_VIEW_RADIUS);
+  const viewers = viewerUnits(ownerId, units);
+  if (viewers.length === 0) return [];
+  return world.sim.visibleFishSnapshots(viewers, ANIMAL_VIEW_RADIUS);
 }
 
 function botSlotIds(): PlayerId[] {
@@ -289,22 +303,25 @@ function visibleUnitsFor(
   units: UnitSnapshot[],
 ): UnitSnapshot[] {
   const botOwners = new Set(botSlotIds());
-  const myUnits: UnitSnapshot[] = [];
+  const viewers = viewerUnits(ownerId, units);
   const others: UnitSnapshot[] = [];
   const out: UnitSnapshot[] = [];
+  const inOut = new Set<string>();
   for (const u of units) {
     if (u.owner === ownerId) {
-      myUnits.push(u);
       out.push(u);
+      inOut.add(u.id);
     } else if (botOwners.has(u.owner)) {
       out.push(u);
+      inOut.add(u.id);
     } else {
       others.push(u);
     }
   }
-  if (myUnits.length === 0) return out;
+  if (viewers.length === 0) return out;
   for (const a of others) {
-    for (const u of myUnits) {
+    if (inOut.has(a.id)) continue;
+    for (const u of viewers) {
       const dx = a.gx - u.gx;
       const dy = a.gy - u.gy;
       if (dx * dx + dy * dy <= UNIT_VIEW_RADIUS_SQ) {
@@ -320,9 +337,10 @@ function joinPlayer(
   ws: WebSocket,
   name: string,
   requestedLanguage?: string,
+  spectator?: boolean,
 ): void {
   let slotId = world.players.findIndex((p) => p === null);
-  if (slotId === -1) slotId = evictBotSlot();
+  if (slotId === -1 && !spectator) slotId = evictBotSlot();
   if (slotId === -1) {
     send(ws, {
       type: "error",
@@ -342,11 +360,17 @@ function joinPlayer(
     id: slotId,
     language,
     tribeNameIndex: -1,
+    spectator: spectator || undefined,
   };
   world.players[slotId] = slot;
   slots.set(ws, slot);
-  world.sim.addPlayer(slotId, language);
-  world.sim.followChiefEnabled[slotId] = true;
+  if (!spectator) {
+    world.sim.addPlayer(slotId, language);
+    world.sim.followChiefEnabled[slotId] = true;
+  } else {
+    const firstBot = world.players.find((p) => p?.bot);
+    if (firstBot) slot.spectatorTarget = firstBot.id;
+  }
 
   const allUnits = world.sim.unitsSnapshot();
   const allCampfires = world.sim.campfiresSnapshot();
@@ -394,7 +418,10 @@ function joinPlayer(
     balancing: balancingSnapshotMsg(),
     resourceCapPerPerson: resourceCapsSnapshot(),
     tileOverrides: world.sim.tileOverridesSnapshot(),
+    spectator: spectator || undefined,
   });
+
+  if (spectator) return;
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
   for (const other of world.players) {
@@ -682,7 +709,7 @@ wss.on("connection", (ws) => {
         return;
       }
       const name = (msg.name || "Player").trim().slice(0, 20) || "Player";
-      joinPlayer(ws, name, msg.language);
+      joinPlayer(ws, name, msg.language, msg.spectator);
       return;
     }
 
@@ -751,6 +778,21 @@ wss.on("connection", (ws) => {
 
     const slot = slots.get(ws);
     if (!slot) return;
+
+    if (msg.type === "setSpectator") {
+      const tgt = msg.target;
+      if (tgt === null) {
+        slot.spectatorTarget = null;
+      } else if (
+        Number.isInteger(tgt) &&
+        tgt >= 0 &&
+        tgt < MAX_PLAYERS &&
+        world.players[tgt]?.bot
+      ) {
+        slot.spectatorTarget = tgt;
+      }
+      return;
+    }
 
     if (msg.type === "move") {
       world.sim.cmdMove(slot.id, msg.unitIds, msg.i, msg.j);

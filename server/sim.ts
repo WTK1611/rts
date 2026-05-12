@@ -1453,7 +1453,9 @@ export class Sim {
       }
 
       if (!spec.aggressive && !spec.predator) {
-        let predator: SimAnimal | null = null;
+        let threatGx = 0;
+        let threatGy = 0;
+        let hasThreat = false;
         let pdist2 = BAL.preyFleeRange * BAL.preyFleeRange;
         const cs = SPATIAL_CELL;
         const ax = Math.floor(a.gx / cs);
@@ -1462,27 +1464,46 @@ export class Sim {
         for (let cy = ay - rr; cy <= ay + rr; cy++) {
           for (let cx = ax - rr; cx <= ax + rr; cx++) {
             const arr = this.predatorGrid.get(gridKey(cx, cy));
-            if (!arr) continue;
-            for (const other of arr) {
-              if (other === a) continue;
-              if (other.hp <= 0) continue;
-              const dx = other.gx - a.gx;
-              const dy = other.gy - a.gy;
-              const d2 = dx * dx + dy * dy;
-              if (d2 < pdist2) {
-                predator = other;
-                pdist2 = d2;
+            if (arr) {
+              for (const other of arr) {
+                if (other === a) continue;
+                if (other.hp <= 0) continue;
+                const dx = other.gx - a.gx;
+                const dy = other.gy - a.gy;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < pdist2) {
+                  threatGx = other.gx;
+                  threatGy = other.gy;
+                  hasThreat = true;
+                  pdist2 = d2;
+                }
+              }
+            }
+            const uarr = this.unitGrid.get(gridKey(cx, cy));
+            if (uarr) {
+              for (const u of uarr) {
+                if (u.hp <= 0) continue;
+                if (this.unitAtAnyFire(u)) continue;
+                const dx = u.gx - a.gx;
+                const dy = u.gy - a.gy;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < pdist2) {
+                  threatGx = u.gx;
+                  threatGy = u.gy;
+                  hasThreat = true;
+                  pdist2 = d2;
+                }
               }
             }
           }
         }
-        if (predator) {
+        if (hasThreat) {
           a.state = "flee";
           a.fleeRepathTimer -= dt;
           if (a.path.length === 0 || a.fleeRepathTimer <= 0) {
             a.fleeRepathTimer = BAL.preyFleeRepathSec;
-            const dx = a.gx - predator.gx;
-            const dy = a.gy - predator.gy;
+            const dx = a.gx - threatGx;
+            const dy = a.gy - threatGy;
             const d = Math.hypot(dx, dy) || 1;
             const fd = BAL.preyFleeRange;
             const ti = Math.floor(a.gx + (dx / d) * fd);

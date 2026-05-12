@@ -288,7 +288,7 @@ const CATASTROPHE_HELP: Record<CatastropheKind, HelpKey> = {
 
 const HELP_VOLCANO_RADIUS = 4;
 const HELP_WOLF_RADIUS = 10;
-const HELP_DURATION_MS = 3000;
+const HELP_DURATION_MS = 5000;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
 const INFO_STORAGE_KEY_VISIBLE = "rts.infoVisible";
@@ -303,6 +303,7 @@ export class GameScene extends Phaser.Scene {
   private tribeNameIndices: number[] = [];
   private botSlots: PlayerId[] = [];
   private spectatorTarget: PlayerId | null = null;
+  private isSpectator = false;
   private removedKeys = new Set<string>();
   private serverTick = 0;
 
@@ -461,6 +462,10 @@ export class GameScene extends Phaser.Scene {
     this.tribeLanguages = data.init.languages ?? [];
     this.tribeNameIndices = data.init.tribeNameIndices ?? [];
     this.botSlots = data.init.botSlots ?? [];
+    this.isSpectator = !!data.init.spectator;
+    if (this.isSpectator && this.botSlots.length > 0) {
+      this.spectatorTarget = this.botSlots[0];
+    }
     this.removedKeys = new Set(
       data.init.removedObjects.map((o) => objKey(o.kind, o.i, o.j)),
     );
@@ -1025,23 +1030,28 @@ export class GameScene extends Phaser.Scene {
     this.userPanned = false;
     this.visObjectCache.clear();
     this.visSourceHash = -1;
+    this.net.send({ type: "setSpectator", target: slot });
     const name = this.displayName(slot);
     this.showToast(t().toastSpectating(name), "join");
     this.updateHud();
   }
 
   private stopSpectating(): void {
+    if (this.isSpectator) return;
     if (this.spectatorTarget === null) return;
     this.spectatorTarget = null;
     this.userPanned = false;
     this.visObjectCache.clear();
     this.visSourceHash = -1;
+    this.net.send({ type: "setSpectator", target: null });
     this.showToast(t().toastBackToTribe, "join");
     this.updateHud();
   }
 
   private cycleSpectator(): void {
-    const cycle: (PlayerId | null)[] = [null, ...this.botSlots];
+    const cycle: (PlayerId | null)[] = this.isSpectator
+      ? [...this.botSlots]
+      : [null, ...this.botSlots];
     if (cycle.length <= 1) return;
     const current = this.spectatorTarget;
     let idx = cycle.indexOf(current);
@@ -4195,7 +4205,11 @@ export class GameScene extends Phaser.Scene {
     const s = t();
     const myName = this.names[this.playerId] ?? s.hudYou;
     const myColor = this.playerColorCss(this.playerId);
-    const myRes = this.resources[this.playerId] ?? {
+    const watchingSlot =
+      this.spectatorTarget !== null && this.spectatorTarget !== this.playerId
+        ? this.spectatorTarget
+        : this.playerId;
+    const myRes = this.resources[watchingSlot] ?? {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
       fleisch: 0, fisch: 0, stein: 0, kreuter: 0, felle: 0,
     };
@@ -4211,7 +4225,7 @@ export class GameScene extends Phaser.Scene {
       felle: s.resFelle,
     };
     const tribeCounts = this.tribeCounts;
-    const myTribeSize = tribeCounts[this.playerId] ?? 0;
+    const myTribeSize = tribeCounts[watchingSlot] ?? 0;
     const now = performance.now();
     const resHtml = RESOURCE_KEYS.map((k) => {
       const have = myRes[k];

@@ -2,6 +2,7 @@ import {
   biomeAt,
   hasBushAt,
   hasCactusAt,
+  hasKreuterAt,
   hasMushroomAt,
   hasStoneAt,
   hasTreeAt,
@@ -9,9 +10,18 @@ import {
   rand01,
 } from "../shared/worldgen";
 import { AnimalKind, PlayerId } from "../shared/protocol";
+import { objKey } from "../shared/objectKey";
 import { Sim, SimAnimal, SimUnit } from "./sim";
 
-type Need = "tree" | "bush" | "mushroom" | "fish" | "stone" | "water" | "cactus";
+type Need =
+  | "tree"
+  | "bush"
+  | "mushroom"
+  | "fish"
+  | "stone"
+  | "water"
+  | "cactus"
+  | "kreuter";
 
 const SAFE_HUNT: ReadonlySet<AnimalKind> = new Set<AnimalKind>([
   "hare",
@@ -37,12 +47,15 @@ interface BotUnitMem {
 const SCAN_RADIUS = 12;
 const RETREAT_HP_THRESHOLD = 70;
 const HUNT_HP_THRESHOLD = 55;
+const FEMALE_SAFETY_HP = 80;
+const FEMALE_REGROUP_RADIUS = 4;
 const DRIFT_INTERVAL_MIN = 60;
 const DRIFT_INTERVAL_RANGE = 90;
 const DRIFT_STEP = 6;
 const REGROUP_RADIUS = 7;
 const MAX_TARGET_DIST_FROM_CENTER = 10;
 const HUNT_SCAN_RADIUS = 9;
+const COHUNT_RADIUS = 6;
 
 export class AIBot {
   readonly id: PlayerId;
@@ -91,6 +104,15 @@ export class AIBot {
     }
 
     const sleepingAtFire = this.sim.campfires.has(this.sim.campfireIdFor(this.id));
+    // At night, if we have wood/stone for the fire and some food/water,
+    // stay near camp instead of foraging in the dark (wolves, cave lions).
+    const r = this.sim.resources[this.id];
+    const food = r.fleisch + r.fisch + r.beeren + r.pilze;
+    const nightShelter =
+      this.sim.isNight() &&
+      !sleepingAtFire &&
+      r.holz >= 1 && r.stein >= 1 &&
+      r.wasser >= 2 && food >= 2;
 
     for (const u of myUnits) {
       let m = this.mem.get(u.id);
@@ -108,6 +130,12 @@ export class AIBot {
         this.maybeRetreat(u);
         continue;
       }
+      if (nightShelter) {
+        m.cooldown = 1.2 + Math.random();
+        if (this.maybeRetreat(u)) continue;
+        if (center) this.maybeRegroup(u, center, 3);
+        continue;
+      }
       m.cooldown = 0.7 + Math.random();
       this.decide(u, center);
     }
@@ -115,10 +143,35 @@ export class AIBot {
 
   private decide(u: SimUnit, center: { x: number; y: number } | null): void {
     if (this.maybeRetreat(u)) return;
-    if (center && this.maybeRegroup(u, center)) return;
+    // Mature females stay closer to camp so injuries don't block reproduction
+    const regroupR =
+      u.gender === "f" && u.hp < u.hpMax
+        ? FEMALE_REGROUP_RADIUS
+        : REGROUP_RADIUS;
+    if (center && this.maybeRegroup(u, center, regroupR)) return;
+    if (this.maybeCoHunt(u)) return;
     if (this.maybeHunt(u, center)) return;
     if (this.maybeHarvest(u, center)) return;
     this.wander(u, center);
+  }
+
+  private maybeCoHunt(u: SimUnit): boolean {
+    if (u.hp < HUNT_HP_THRESHOLD) return false;
+    if (u.gender === "f" && u.hp < FEMALE_SAFETY_HP) return false;
+    for (const ally of this.sim.units.values()) {
+      if (ally.owner !== this.id) continue;
+      if (ally === u) continue;
+      if (!ally.huntTarget) continue;
+      const a = this.sim.animals.get(ally.huntTarget);
+      if (!a || a.hp <= 0) continue;
+      if (!SAFE_HUNT.has(a.kind)) continue;
+      const dx = a.gx - u.gx;
+      const dy = a.gy - u.gy;
+      if (dx * dx + dy * dy > COHUNT_RADIUS * COHUNT_RADIUS) continue;
+      this.sim.cmdHunt(this.id, [u.id], a.id);
+      return true;
+    }
+    return false;
   }
 
   private tribeCenterFrom(myUnits: SimUnit[]): { x: number; y: number } | null {
@@ -132,9 +185,13 @@ export class AIBot {
     return { x: cx / myUnits.length, y: cy / myUnits.length };
   }
 
-  private maybeRegroup(u: SimUnit, c: { x: number; y: number }): boolean {
+  private maybeRegroup(
+    u: SimUnit,
+    c: { x: number; y: number },
+    radius: number = REGROUP_RADIUS,
+  ): boolean {
     const d = Math.hypot(u.gx - c.x, u.gy - c.y);
-    if (d <= REGROUP_RADIUS) return false;
+    if (d <= radius) return false;
     const ti = Math.floor(c.x);
     const tj = Math.floor(c.y);
     if (this.sim.isWalkable(ti, tj)) {
@@ -194,6 +251,11 @@ export class AIBot {
     if (u.hp < HUNT_HP_THRESHOLD) return false;
     const r = this.sim.resources[this.id];
     const food = r.fleisch + r.fisch;
+    // Females avoid hunting unless food is critically low; protects fertility
+    if (u.gender === "f") {
+      if (u.hp < FEMALE_SAFETY_HP) return false;
+      if (food >= 8) return false;
+    }
     const haveSpear = r.holz >= 1 && r.stein >= 1;
     if (food >= 30 && !haveSpear) return false;
 
@@ -224,17 +286,29 @@ export class AIBot {
   ): boolean {
     const r = this.sim.resources[this.id];
     const fruit = r.beeren + r.pilze;
+    const food = r.fleisch + r.fisch;
+    // Tribe-wide injury level — pulls Kräuter priority up when anyone is hurt
+    let injuredCount = 0;
+    for (const m of this.sim.units.values()) {
+      if (m.owner !== this.id) continue;
+      if (m.hp < m.hpMax * 0.7) injuredCount++;
+    }
 
     const needs: Array<{ kind: Need; w: number }> = [];
-    if (r.wasser < 6) needs.push({ kind: "water", w: 6 - r.wasser });
-    if (r.wasser < 6 || r.holz < 12) {
-      needs.push({ kind: "cactus", w: Math.max(6 - r.wasser, (12 - r.holz) * 0.6) });
+    if (r.wasser < 8) needs.push({ kind: "water", w: (8 - r.wasser) * 1.5 });
+    if (r.wasser < 8 || r.holz < 16) {
+      needs.push({ kind: "cactus", w: Math.max(8 - r.wasser, (16 - r.holz) * 0.6) });
     }
-    if (fruit < 12) needs.push({ kind: "bush", w: 12 - fruit });
-    if (fruit < 12) needs.push({ kind: "mushroom", w: 12 - fruit });
-    if (r.holz < 12) needs.push({ kind: "tree", w: 12 - r.holz });
-    if (r.stein < 8) needs.push({ kind: "stone", w: 8 - r.stein });
-    if (r.fisch < 6) needs.push({ kind: "fish", w: 6 - r.fisch });
+    if (fruit < 16) needs.push({ kind: "bush", w: 16 - fruit });
+    if (fruit < 16) needs.push({ kind: "mushroom", w: 16 - fruit });
+    // Wood for the nightly campfire + spear crafting
+    if (r.holz < 20) needs.push({ kind: "tree", w: (20 - r.holz) * 0.9 });
+    if (r.stein < 10) needs.push({ kind: "stone", w: 10 - r.stein });
+    if (food < 20) needs.push({ kind: "fish", w: (20 - food) * 0.8 });
+    // Kräuter: healing herb, very high HP gain (35)
+    if (r.kreuter < 4 || injuredCount > 0) {
+      needs.push({ kind: "kreuter", w: 6 + injuredCount * 4 });
+    }
     if (needs.length === 0) {
       needs.push({ kind: "tree", w: 1 });
       needs.push({ kind: "bush", w: 1 });
@@ -250,7 +324,7 @@ export class AIBot {
         const dc = Math.hypot(tgt.i + 0.5 - center.x, tgt.j + 0.5 - center.y);
         if (dc > MAX_TARGET_DIST_FROM_CENTER) continue;
       }
-      if (n.kind === "water" || n.kind === "fish") {
+      if (n.kind === "water" || n.kind === "fish" || n.kind === "kreuter") {
         this.sim.cmdMove(this.id, [u.id], tgt.i, tgt.j);
       } else {
         this.sim.cmdHarvest(this.id, [u.id], tgt.i, tgt.j);
@@ -355,6 +429,12 @@ export class AIBot {
     if (kind === "cactus") {
       return (
         hasCactusAt(seed, i, j) && !this.sim.removedKeys.has(`c_${i}_${j}`)
+      );
+    }
+    if (kind === "kreuter") {
+      return (
+        hasKreuterAt(seed, i, j) &&
+        !this.sim.removedKeys.has(objKey("kreuter", i, j))
       );
     }
     return hasStoneAt(seed, i, j) && !this.sim.removedKeys.has(`s_${i}_${j}`);

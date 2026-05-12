@@ -428,6 +428,7 @@ export interface InitMessage {
   balancing: BalancingSnapshotMsg;
   resourceCapPerPerson: Resources;
   tileOverrides: TileOverrideEvent[];
+  spectator?: boolean;
 }
 
 export interface EncounterEvent {
@@ -607,6 +608,7 @@ export interface JoinCommand {
   type: "join";
   name: string;
   language?: string;
+  spectator?: boolean;
 }
 
 export interface MoveCommand {
@@ -658,6 +660,11 @@ export interface ResetBalancingCommand {
   type: "resetBalancing";
 }
 
+export interface SetSpectatorCommand {
+  type: "setSpectator";
+  target: PlayerId | null;
+}
+
 export type ClientMessage =
   | JoinCommand
   | MoveCommand
@@ -668,4 +675,5 @@ export type ClientMessage =
   | SubmitScoreCommand
   | FetchLeaderboardCommand
   | SetBalancingCommand
-  | ResetBalancingCommand;
+  | ResetBalancingCommand
+  | SetSpectatorCommand;

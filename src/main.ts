@@ -12,6 +12,10 @@ import {
 } from "../shared/names";
 import { getLanguage, setLanguage, t } from "./i18n";
 
+declare const __APP_VERSION__: string;
+const versionTag = document.getElementById("version-tag");
+if (versionTag) versionTag.textContent = `v${__APP_VERSION__}`;
+
 const SERVER_URL = (() => {
   const env = import.meta.env.VITE_SERVER_URL as string | undefined;
   if (env) return env;
@@ -116,24 +120,41 @@ const lobbySeed = (Math.random() * 0xffffffff) >>> 0;
 drawLobbyMap(lobbySeed);
 window.addEventListener("resize", () => drawLobbyMap(lobbySeed));
 
+const lobbyClock = document.getElementById("lobby-clock");
+function updateLobbyClock(): void {
+  if (!lobbyClock) return;
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  lobbyClock.textContent = `${hh}:${mm}`;
+}
+updateLobbyClock();
+window.setInterval(updateLobbyClock, 30000);
+
 function setStatus(text: string): void {
   lobbyStatus.textContent = text;
 }
 
-function play(): void {
-  const name = nameInput.value.trim().slice(0, 20);
+function play(opts?: { spectator?: boolean }): void {
+  const spectator = !!opts?.spectator;
   const s = t();
-  if (!name) {
-    setStatus(s.lobbyEnterName);
-    nameInput.focus();
-    return;
+  let name: string;
+  if (spectator) {
+    name = "(Beobachter)";
+  } else {
+    name = nameInput.value.trim().slice(0, 20);
+    if (!name) {
+      setStatus(s.lobbyEnterName);
+      nameInput.focus();
+      return;
+    }
+    localStorage.setItem("rts-name", name);
   }
-  localStorage.setItem("rts-name", name);
   const language = getLanguage();
 
   playBtn.disabled = true;
   nameInput.disabled = true;
-  setStatus(s.lobbyConnecting);
+  setStatus(spectator ? "Beobachter-Modus …" : s.lobbyConnecting);
 
   const net = new Net(SERVER_URL);
   let started = false;
@@ -173,7 +194,7 @@ function play(): void {
   });
 
   net.connect(
-    () => net.send({ type: "join", name, language }),
+    () => net.send({ type: "join", name, language, spectator: spectator || undefined }),
     () => {
       if (!started) {
         setStatus(t().lobbyConnectionLost);
@@ -184,7 +205,27 @@ function play(): void {
   );
 }
 
-playBtn.addEventListener("click", play);
+playBtn.addEventListener("click", () => play());
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") play();
 });
+
+if (lobbyIcon) {
+  let clicks = 0;
+  let clickTimer: number | null = null;
+  lobbyIcon.addEventListener("click", () => {
+    clicks += 1;
+    if (clickTimer !== null) window.clearTimeout(clickTimer);
+    if (clicks >= 3) {
+      clicks = 0;
+      play({ spectator: true });
+      return;
+    }
+    clickTimer = window.setTimeout(() => {
+      clicks = 0;
+      clickTimer = null;
+    }, 600);
+  });
+  lobbyIcon.style.cursor = "pointer";
+  lobbyIcon.title = "3× klicken: Beobachter-Modus";
+}

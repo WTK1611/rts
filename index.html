@@ -236,7 +236,7 @@
         color: #e8f0e8;
         font-family: system-ui, sans-serif;
         z-index: 9;
-        width: min(640px, calc(100vw - 16px));
+        width: min(820px, calc(100vw - 16px));
         box-sizing: border-box;
         pointer-events: auto;
         cursor: grab; touch-action: none;
@@ -663,6 +663,17 @@
         #info-panel { width: 90vw; max-width: 360px; font-size: 12px; padding: 10px 12px; }
         #info-panel h2 { font-size: 14px; }
       }
+      #version-tag {
+        position: fixed; top: 2px; left: 6px;
+        z-index: 100;
+        pointer-events: none;
+        user-select: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+        color: rgba(232, 240, 232, 0.55);
+        text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+        letter-spacing: 0.3px;
+      }
       #lobby {
         position: fixed; inset: 0; display: flex;
         align-items: center; justify-content: center;
@@ -675,6 +686,25 @@
         width: 100%; height: 100%;
         image-rendering: pixelated;
         z-index: 0;
+      }
+      #lobby-clock {
+        position: absolute; top: 20px; right: 24px;
+        z-index: 3;
+        font-family: system-ui, sans-serif;
+        font-size: 18px; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: #e8f0e8;
+        padding: 8px 16px;
+        background: rgba(14, 18, 16, 0.55);
+        backdrop-filter: blur(12px) saturate(140%);
+        -webkit-backdrop-filter: blur(12px) saturate(140%);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px;
+        letter-spacing: 0.02em;
+        pointer-events: none;
+      }
+      @media (max-width: 480px) {
+        #lobby-clock { font-size: 14px; padding: 6px 12px; top: 12px; right: 12px; }
       }
       #lobby-veil {
         position: absolute; inset: 0;
@@ -843,10 +873,12 @@
     </style>
   </head>
   <body>
+    <div id="version-tag"></div>
     <div id="game"></div>
     <div id="lobby">
       <canvas id="lobby-map"></canvas>
       <div id="lobby-veil"></div>
+      <div id="lobby-clock"></div>
       <div id="lobby-card">
         <img id="lobby-icon" src="/image/js_icon.webp" alt="Tribes" />
         <h1 id="lobby-heading">Stämme: Jäger und Sammler</h1>
