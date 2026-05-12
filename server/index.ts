@@ -723,6 +723,15 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (msg.type === "fetchWorldInfo") {
+      send(ws, {
+        type: "worldInfo",
+        gameTimeSec: world.sim.gameTimeSec,
+        seed: world.sim.seed,
+      });
+      return;
+    }
+
     if (msg.type === "submitScore") {
       const entry = sanitizeScore(msg.entry);
       if (!entry) {

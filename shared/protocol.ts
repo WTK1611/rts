@@ -602,7 +602,8 @@ export type ServerMessage =
   | OpponentLeftMessage
   | ErrorMessage
   | LeaderboardMessage
-  | BalancingUpdateMessage;
+  | BalancingUpdateMessage
+  | WorldInfoMessage;
 
 export interface JoinCommand {
   type: "join";
@@ -651,6 +652,16 @@ export interface FetchLeaderboardCommand {
   type: "fetchLeaderboard";
 }
 
+export interface FetchWorldInfoCommand {
+  type: "fetchWorldInfo";
+}
+
+export interface WorldInfoMessage {
+  type: "worldInfo";
+  gameTimeSec: number;
+  seed: number;
+}
+
 export interface SetBalancingCommand {
   type: "setBalancing";
   updates: Array<{ key: string; value: number }>;
@@ -674,6 +685,7 @@ export type ClientMessage =
   | GreetTribeCommand
   | SubmitScoreCommand
   | FetchLeaderboardCommand
+  | FetchWorldInfoCommand
   | SetBalancingCommand
   | ResetBalancingCommand
   | SetSpectatorCommand;

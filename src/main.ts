@@ -1,7 +1,15 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
 import { Net } from "./net";
-import { ServerMessage } from "../shared/protocol";
+import {
+  DAY_LENGTH_SEC,
+  dayOfSeasonAt,
+  phaseAt,
+  phaseLengthsAt,
+  SEASON_LEN_DAYS,
+  seasonAt,
+  ServerMessage,
+} from "../shared/protocol";
 import { biomeAt, hasTreeAt } from "../shared/worldgen";
 import { BIOME_MINI_COLOR } from "./biomeColors";
 import {
@@ -116,20 +124,82 @@ function drawLobbyMap(seed: number): void {
   }
 }
 
-const lobbySeed = (Math.random() * 0xffffffff) >>> 0;
-drawLobbyMap(lobbySeed);
-window.addEventListener("resize", () => drawLobbyMap(lobbySeed));
+let lobbyMapSeed = (Math.random() * 0xffffffff) >>> 0;
+drawLobbyMap(lobbyMapSeed);
+window.addEventListener("resize", () => drawLobbyMap(lobbyMapSeed));
 
 const lobbyClock = document.getElementById("lobby-clock");
+let worldBaseGameTimeSec: number | null = null;
+let worldBaseEpochMs = 0;
+
+function currentGameTimeSec(): number | null {
+  if (worldBaseGameTimeSec === null) return null;
+  return worldBaseGameTimeSec + (Date.now() - worldBaseEpochMs) / 1000;
+}
+
+function gameClockString(gameTimeSec: number): string {
+  const p = phaseLengthsAt(gameTimeSec);
+  const tt = ((gameTimeSec % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC;
+  let hour: number;
+  if (tt < p.morning) {
+    hour = 7 + (tt / Math.max(0.001, p.morning)) * 5;
+  } else if (tt < p.morning + p.noon) {
+    hour = 12 + ((tt - p.morning) / Math.max(0.001, p.noon)) * 3;
+  } else if (tt < p.sunsetAt) {
+    hour = 15 + ((tt - p.morning - p.noon) / Math.max(0.001, p.afternoon)) * 4;
+  } else {
+    hour = 19 + ((tt - p.sunsetAt) / Math.max(0.001, p.night)) * 12;
+  }
+  if (hour >= 24) hour -= 24;
+  const h = Math.floor(hour);
+  const m = Math.floor((hour - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function updateLobbyClock(): void {
   if (!lobbyClock) return;
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  lobbyClock.textContent = `${hh}:${mm}`;
+  const gt = currentGameTimeSec();
+  if (gt === null) {
+    lobbyClock.textContent = "…";
+    return;
+  }
+  const s = t();
+  const season = seasonAt(gt);
+  const day = dayOfSeasonAt(gt);
+  const phase = phaseAt(gt);
+  lobbyClock.textContent =
+    `${s.seasonIcon(season)} ${s.seasonLabel(season)} ${day}/${SEASON_LEN_DAYS} · ` +
+    `${s.phaseIcon(phase)} ${gameClockString(gt)}`;
 }
 updateLobbyClock();
-window.setInterval(updateLobbyClock, 30000);
+window.setInterval(updateLobbyClock, 5000);
+
+(function fetchWorldInfo() {
+  let settled = false;
+  try {
+    const ws = new WebSocket(SERVER_URL);
+    ws.addEventListener("open", () => {
+      try { ws.send(JSON.stringify({ type: "fetchWorldInfo" })); } catch {}
+    });
+    ws.addEventListener("message", (ev) => {
+      if (settled) return;
+      try {
+        const m = JSON.parse(String(ev.data)) as ServerMessage;
+        if (m.type === "worldInfo") {
+          worldBaseGameTimeSec = m.gameTimeSec;
+          worldBaseEpochMs = Date.now();
+          settled = true;
+          lobbyMapSeed = m.seed;
+          updateLobbyClock();
+          drawLobbyMap(lobbyMapSeed);
+          ws.close();
+        }
+      } catch {}
+    });
+    ws.addEventListener("error", () => { ws.close(); });
+    window.setTimeout(() => { if (!settled) ws.close(); }, 5000);
+  } catch {}
+})();
 
 function setStatus(text: string): void {
   lobbyStatus.textContent = text;
