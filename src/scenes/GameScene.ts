@@ -89,6 +89,8 @@ interface ClickState {
 interface SurfSeg {
   pts: Array<{ x: number; y: number }>;
   phase: number;
+  speed: number;
+  duty: number;
 }
 
 interface WaterfallSeg {
@@ -1102,8 +1104,10 @@ export class GameScene extends Phaser.Scene {
       const b = corners[(e + 1) % 4];
       const wave = this.edgeWavePoints(i, j, e, a.x, a.y, b.x, b.y);
       const pts = [{ x: a.x, y: a.y }, ...wave, { x: b.x, y: b.y }];
-      const phase = (i * 0.37 + j * 0.71 + e * 1.13) % (Math.PI * 2);
-      out.push({ pts, phase });
+      const phase = rand01(this.seed ^ 0x53f1, i * 73 + e, j * 131 + e * 17) * Math.PI * 2;
+      const speed = 0.55 + rand01(this.seed ^ 0xa8c3, i * 41 + e * 7, j * 23 + e) * 0.9;
+      const duty = 0.35 + rand01(this.seed ^ 0x7e21, i * 19 + e * 11, j * 53 + e * 3) * 0.5;
+      out.push({ pts, phase, speed, duty });
     }
   }
 
@@ -1487,7 +1491,10 @@ export class GameScene extends Phaser.Scene {
       if (bb.x + bb.w < view.x || bb.x > view.right) continue;
       if (bb.y + bb.h < view.y || bb.y > view.bottom) continue;
       for (const seg of ch.surfSegments) {
-        const a = 0.5 + 0.5 * Math.sin(t + seg.phase);
+        const s = Math.sin(t * seg.speed + seg.phase);
+        const s2 = Math.sin(t * seg.speed * 0.43 + seg.phase * 1.7);
+        const a = Math.max(0, s * seg.duty + s2 * (1 - seg.duty) * 0.5);
+        if (a < 0.05) continue;
         const b = Math.min(3, Math.floor(a * 4));
         buckets[b].push(seg);
       }
