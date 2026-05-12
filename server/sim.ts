@@ -294,6 +294,7 @@ export class Sim {
   tick = 0;
   gameTimeSec = 30;
   private lastPhase: DayPhase = "morning";
+  private isWinterSeason = false;
 
   private animalGrid: Map<number, SimAnimal[]> = new Map();
   private predatorGrid: Map<number, SimAnimal[]> = new Map();
@@ -327,6 +328,7 @@ export class Sim {
   constructor(seed: number) {
     this.seed = seed;
     this.spawns = spawnsFromSeed(seed);
+    this.isWinterSeason = seasonAt(this.gameTimeSec) === "winter";
     this.spawnAnimals();
     this.spawnFishes();
     this.spawnArtifacts();
@@ -2344,7 +2346,12 @@ export class Sim {
       if (ov.kind === "flood" || ov.kind === "lava" || ov.kind === "crack") return false;
       if (ov.kind === "ice" || ov.kind === "ash") return true;
     }
-    return isLandTile(this.seed, i, j);
+    if (isLandTile(this.seed, i, j)) return true;
+    if (this.isWinterSeason) {
+      const b = biomeAt(this.seed, i, j);
+      if (b === "lake" || b === "river") return true;
+    }
+    return false;
   }
 
   private isWaterTile(i: number, j: number): boolean {
@@ -3095,6 +3102,7 @@ export class Sim {
     this.gameTimeSec += dt;
     const prevPhase = this.lastPhase;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    this.isWinterSeason = seasonAt(this.gameTimeSec) === "winter";
     if (prevPhase !== "night" && this.lastPhase === "night") this.onNightfall();
     this.rebuildSpatialIndex();
     this.rebuildActiveAnimalSet();
