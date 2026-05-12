@@ -43,6 +43,7 @@ export const ANIMAL_STATIC: Record<AnimalKind, AnimalStatic> = {
   mammoth:     { biomes: ["wiesen", "savanne", "wueste"],       aggressive: false, autoHuntable: false, predator: false, aquatic: false },
   alligator:   { biomes: ["lake", "river"],                     aggressive: true,  autoHuntable: true,  predator: true,  aquatic: true  },
   bear:        { biomes: ["wald", "felsen"],                    aggressive: true,  autoHuntable: false, predator: true,  aquatic: false },
+  wolf:        { biomes: ["wald", "wiesen", "felsen"],          aggressive: true,  autoHuntable: false, predator: true,  aquatic: false },
 };
 
 /**
@@ -79,7 +80,7 @@ export function animalSpec(kind: AnimalKind): AnimalSpec {
 
 export const ALL_ANIMAL_KINDS: AnimalKind[] = [
   "hare", "reindeer", "megaloceros", "bison",
-  "caveLion", "mammoth", "alligator", "bear",
+  "caveLion", "mammoth", "alligator", "bear", "wolf",
 ];
 
 export function kindHash(kind: AnimalKind): number {

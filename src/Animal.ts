@@ -23,6 +23,7 @@ const LOOKS: Record<AnimalKind, AnimalLook> = {
   mammoth:     { bodyW: 28, bodyH: 16, bodyColor: 0x4a352a, bellyColor: 0x6a4a35, legH: 12, shadowW: 36, scale: 1 },
   alligator:   { bodyW: 24, bodyH: 6,  bodyColor: 0x3d5a2a, bellyColor: 0x6d8a48, legH: 2,  shadowW: 26, scale: 1 },
   bear:        { bodyW: 22, bodyH: 12, bodyColor: 0x4a3320, bellyColor: 0x6b4a30, legH: 8,  shadowW: 28, scale: 1 },
+  wolf:        { bodyW: 16, bodyH: 7,  bodyColor: 0x6a5a48, bellyColor: 0x9c8a70, legH: 7,  shadowW: 20, scale: 1 },
 };
 
 const KIND_LABELS: Record<AnimalKind, string> = {
@@ -34,6 +35,7 @@ const KIND_LABELS: Record<AnimalKind, string> = {
   mammoth: "Mamut",
   alligator: "Alligator",
   bear: "Bär",
+  wolf: "Wolf",
 };
 
 export function animalLabel(kind: AnimalKind): string {
@@ -201,6 +203,33 @@ export class Animal {
       // teeth glint
       out.push(sc.add.rectangle(headX + 5, headY + 1.5, 3, 0.6, 0xfff2c2));
       return out;
+    }
+
+    if (kind === "wolf") {
+      // sharper, leaner head/snout
+      out.push(sc.add.triangle(
+        headX + 3, headY + 1,
+        -3, -1.8, -3, 1.8, 4, 0,
+        look.bodyColor,
+      ).setStrokeStyle(0.6, dark));
+      // pointy ears
+      out.push(sc.add.triangle(
+        headX - 1.5, headY - look.bodyH * 0.5,
+        -1.2, 1.6, 1.2, 1.6, 0, -2.2,
+        look.bodyColor,
+      ).setStrokeStyle(0.4, dark));
+      out.push(sc.add.triangle(
+        headX + 1.5, headY - look.bodyH * 0.5,
+        -1.2, 1.6, 1.2, 1.6, 0, -2.2,
+        look.bodyColor,
+      ).setStrokeStyle(0.4, dark));
+      // amber eye
+      out.push(sc.add.circle(headX + 0.5, headY - 0.4, 0.7, 0xffd96b));
+      // back ridge (darker line) hinting at mane
+      out.push(sc.add.rectangle(-look.bodyW * 0.1, bodyY - look.bodyH * 0.42, look.bodyW * 0.55, 1.3, dark, 0.7));
+      // long bushy tail
+      out.push(sc.add.line(0, 0, -look.bodyW * 0.5, bodyY, -look.bodyW * 0.85, bodyY - 1.5, dark, 1).setLineWidth(1.6));
+      out.push(sc.add.circle(-look.bodyW * 0.85, bodyY - 1.5, 1.4, dark));
     }
 
     if (kind === "mammoth") {

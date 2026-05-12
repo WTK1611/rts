@@ -8,6 +8,7 @@ export const BIOME_MINI_COLOR: Record<Biome, string> = {
   lake: "#244a72",
   river: "#3a78b0",
   felsen: "#707070",
+  lava: "#e85a20",
   gebirge: "#383838",
   canyon: "#8a4528",
 };

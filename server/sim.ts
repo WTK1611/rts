@@ -40,6 +40,7 @@ import {
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
   HuntWeapon,
+  isFullMoonNight,
   MAX_PLAYERS,
   MAX_TRIBE_SIZE,
   ObjectKind,
@@ -452,34 +453,39 @@ export class Sim {
           if (!spec.biomes.includes(b)) continue;
           const r01 = rand01(this.seed ^ kindHash(kind), i, j);
           if (r01 > spec.density) continue;
-          const id = `a_${kind[0]}${this.nextAnimalIdx++}`;
-          const ageR = rand01(this.seed ^ 0xa9e, i, j);
-          const ageSec =
-            spec.matureAgeSec + ageR * (spec.maxAgeSec - spec.matureAgeSec) * 0.6;
-          const breedR = rand01(this.seed ^ 0xb29, i, j);
-          this.animals.set(id, {
-            id,
-            kind,
-            hp: spec.hp,
-            hpMax: spec.hp,
-            gx: i + 0.5,
-            gy: j + 0.5,
-            homeI: i,
-            homeJ: j,
-            state: "idle",
-            path: [],
-            decisionTimer: rand01(this.seed ^ 0xa17, i, j) * 4,
-            attackTargetUnitId: null,
-            attackTargetAnimalId: null,
-            attackTimer: 0,
-            repathTimer: 0,
-            aggroExpireTick: 0,
-            fleeRepathTimer: 0,
-            ageSec,
-            maxAgeSec: spec.maxAgeSec * (0.85 + ageR * 0.3),
-            breedTimer: -spec.gestationSec * breedR,
-          });
-          counts.set(kind, (counts.get(kind) ?? 0) + 1);
+          if (kind === "wolf") {
+            const packed = this.spawnWolfPackAround(i, j);
+            counts.set(kind, (counts.get(kind) ?? 0) + packed);
+          } else {
+            const ageR = rand01(this.seed ^ 0xa9e, i, j);
+            const ageSec =
+              spec.matureAgeSec + ageR * (spec.maxAgeSec - spec.matureAgeSec) * 0.6;
+            const breedR = rand01(this.seed ^ 0xb29, i, j);
+            const id = `a_${kind[0]}${this.nextAnimalIdx++}`;
+            this.animals.set(id, {
+              id,
+              kind,
+              hp: spec.hp,
+              hpMax: spec.hp,
+              gx: i + 0.5,
+              gy: j + 0.5,
+              homeI: i,
+              homeJ: j,
+              state: "idle",
+              path: [],
+              decisionTimer: rand01(this.seed ^ 0xa17, i, j) * 4,
+              attackTargetUnitId: null,
+              attackTargetAnimalId: null,
+              attackTimer: 0,
+              repathTimer: 0,
+              aggroExpireTick: 0,
+              fleeRepathTimer: 0,
+              ageSec,
+              maxAgeSec: spec.maxAgeSec * (0.85 + ageR * 0.3),
+              breedTimer: -spec.gestationSec * breedR,
+            });
+            counts.set(kind, (counts.get(kind) ?? 0) + 1);
+          }
           break;
         }
       }
@@ -488,6 +494,66 @@ export class Sim {
       this.animalKindCap.set(kind, Math.max(20, Math.ceil(c * BAL.animalKindCapFactor)));
       this.animalKindFloor.set(kind, c);
     }
+  }
+
+  // Setzt 3–5 Wölfe rund um (ci,cj). Liefert die Anzahl tatsächlich
+  // platzierter Wölfe (≥1, der Mittel-Tile ist immer gültig, weil der
+  // Aufrufer ihn bereits validiert hat).
+  private spawnWolfPackAround(ci: number, cj: number): number {
+    const spec = animalSpec("wolf");
+    const packRoll = rand01(this.seed ^ 0xc101, ci, cj);
+    const packSize = 3 + Math.floor(packRoll * 3); // 3..5
+    let placed = 0;
+    const tried = new Set<string>();
+    const tryPlace = (i: number, j: number): boolean => {
+      const key = `${i},${j}`;
+      if (tried.has(key)) return false;
+      tried.add(key);
+      const b = biomeAt(this.seed, i, j);
+      if (!spec.biomes.includes(b)) return false;
+      if (!isLandTile(this.seed, i, j)) return false;
+      if (!this.animalWalkable(spec, i, j)) return false;
+      const ageR = rand01(this.seed ^ 0xc102, i, j);
+      const ageSec =
+        spec.matureAgeSec + ageR * (spec.maxAgeSec - spec.matureAgeSec) * 0.6;
+      const breedR = rand01(this.seed ^ 0xc103, i, j);
+      const id = `a_w${this.nextAnimalIdx++}`;
+      this.animals.set(id, {
+        id,
+        kind: "wolf",
+        hp: spec.hp,
+        hpMax: spec.hp,
+        gx: i + 0.5,
+        gy: j + 0.5,
+        homeI: ci,
+        homeJ: cj,
+        state: "idle",
+        path: [],
+        decisionTimer: rand01(this.seed ^ 0xc104, i, j) * 4,
+        attackTargetUnitId: null,
+        attackTargetAnimalId: null,
+        attackTimer: 0,
+        repathTimer: 0,
+        aggroExpireTick: 0,
+        fleeRepathTimer: 0,
+        ageSec,
+        maxAgeSec: spec.maxAgeSec * (0.85 + ageR * 0.3),
+        breedTimer: -spec.gestationSec * breedR,
+      });
+      placed++;
+      return true;
+    };
+    tryPlace(ci, cj);
+    // Wachsende Ringspirale, bis Pack-Größe erreicht ist oder Versuche aus.
+    for (let ring = 1; ring <= 4 && placed < packSize; ring++) {
+      for (let dj = -ring; dj <= ring && placed < packSize; dj++) {
+        for (let di = -ring; di <= ring && placed < packSize; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== ring) continue;
+          tryPlace(ci + di, cj + dj);
+        }
+      }
+    }
+    return placed;
   }
 
   animalsSnapshot(): AnimalSnapshot[] {
@@ -843,23 +909,39 @@ export class Sim {
     return sharedOrigin;
   }
 
-  private animalDetectRange(spec: AnimalSpec): number {
-    if (!this.isNight()) return spec.detectRange;
-    if (!spec.aggressive && !spec.predator) return spec.detectRange;
-    return spec.detectRange * BAL.nightPredatorDetectMult;
+  // Bei Vollmond werden Wölfe deutlich angriffslustiger: weitere Sicht,
+  // mehr Schaden und längere Aggrowellen. Effekt addiert sich auf den
+  // bestehenden Nacht-Räuber-Bonus.
+  private wolfMoonBoost(kind: AnimalKind): number {
+    if (kind !== "wolf") return 1;
+    return isFullMoonNight(this.gameTimeSec) ? 1.5 : 1;
   }
 
-  private animalDamage(spec: AnimalSpec): number {
-    if (!this.isNight()) return spec.damage;
-    if (!spec.aggressive && !spec.predator) return spec.damage;
-    return Math.ceil(spec.damage * BAL.nightPredatorDamageMult);
+  private animalDetectRange(spec: AnimalSpec, kind?: AnimalKind): number {
+    let r = spec.detectRange;
+    if (this.isNight() && (spec.aggressive || spec.predator)) {
+      r *= BAL.nightPredatorDetectMult;
+    }
+    if (kind) r *= this.wolfMoonBoost(kind);
+    return r;
   }
 
-  private animalAggroDurationTicks(spec: AnimalSpec): number {
-    const base = spec.aggroDurationSec;
-    if (!this.isNight()) return Math.floor(base * TICK_RATE);
-    if (!spec.aggressive && !spec.predator) return Math.floor(base * TICK_RATE);
-    return Math.floor(base * BAL.nightPredatorAggroDurationMult * TICK_RATE);
+  private animalDamage(spec: AnimalSpec, kind?: AnimalKind): number {
+    let d = spec.damage;
+    if (this.isNight() && (spec.aggressive || spec.predator)) {
+      d *= BAL.nightPredatorDamageMult;
+    }
+    if (kind) d *= this.wolfMoonBoost(kind);
+    return Math.ceil(d);
+  }
+
+  private animalAggroDurationTicks(spec: AnimalSpec, kind?: AnimalKind): number {
+    let base = spec.aggroDurationSec;
+    if (this.isNight() && (spec.aggressive || spec.predator)) {
+      base *= BAL.nightPredatorAggroDurationMult;
+    }
+    if (kind) base *= this.wolfMoonBoost(kind);
+    return Math.floor(base * TICK_RATE);
   }
 
   private animalSnap = (a: SimAnimal): AnimalSnapshot => {
@@ -1231,7 +1313,7 @@ export class Sim {
         } else {
           const tdx = t.gx - a.gx;
           const tdy = t.gy - a.gy;
-          const detect = this.animalDetectRange(spec);
+          const detect = this.animalDetectRange(spec, a.kind);
           const escapeR = detect * BAL.animalEscapeRangeMult;
           if (
             detect > 0 &&
@@ -1254,7 +1336,7 @@ export class Sim {
 
       if (!a.attackTargetUnitId && spec.aggressive && spec.detectRange > 0) {
         let nearest: SimUnit | null = null;
-        const r = this.animalDetectRange(spec);
+        const r = this.animalDetectRange(spec, a.kind);
         let nearestD2 = r * r;
         const cs = SPATIAL_CELL;
         const ax = Math.floor(a.gx / cs);
@@ -1281,7 +1363,10 @@ export class Sim {
           a.path = [];
           a.repathTimer = 0;
           a.aggroExpireTick =
-            this.tick + this.animalAggroDurationTicks(spec);
+            this.tick + this.animalAggroDurationTicks(spec, a.kind);
+          if (a.kind === "wolf") {
+            this.alertWolfPack(a, nearest);
+          }
         }
       }
 
@@ -1311,7 +1396,7 @@ export class Sim {
         }
         if (!a.attackTargetAnimalId) {
           let nearest: SimAnimal | null = null;
-          const r = this.animalDetectRange(spec);
+          const r = this.animalDetectRange(spec, a.kind);
           let nearestD2 = r * r;
           const cs = SPATIAL_CELL;
           const ax = Math.floor(a.gx / cs);
@@ -1633,32 +1718,38 @@ export class Sim {
           }
         }
         if (nearUnit) continue;
-        const id = `a_${kind[0]}r${this.nextAnimalIdx++}`;
-        const ageR = Math.random();
-        this.animals.set(id, {
-          id,
-          kind,
-          hp: spec.hp,
-          hpMax: spec.hp,
-          gx: cx,
-          gy: cy,
-          homeI: i,
-          homeJ: j,
-          state: "idle",
-          path: [],
-          decisionTimer: Math.random() * 4,
-          attackTargetUnitId: null,
-          attackTargetAnimalId: null,
-          attackTimer: 0,
-          repathTimer: 0,
-          aggroExpireTick: 0,
-          fleeRepathTimer: 0,
-          ageSec: spec.matureAgeSec * (0.3 + ageR * 0.4),
-          maxAgeSec: spec.maxAgeSec * (0.85 + Math.random() * 0.3),
-          breedTimer: -spec.gestationSec * Math.random(),
-        });
-        spawnedHere++;
-        spawnedTotal++;
+        if (kind === "wolf") {
+          const packed = this.spawnWolfPackAround(i, j);
+          spawnedHere += packed;
+          spawnedTotal += packed;
+        } else {
+          const id = `a_${kind[0]}r${this.nextAnimalIdx++}`;
+          const ageR = Math.random();
+          this.animals.set(id, {
+            id,
+            kind,
+            hp: spec.hp,
+            hpMax: spec.hp,
+            gx: cx,
+            gy: cy,
+            homeI: i,
+            homeJ: j,
+            state: "idle",
+            path: [],
+            decisionTimer: Math.random() * 4,
+            attackTargetUnitId: null,
+            attackTargetAnimalId: null,
+            attackTimer: 0,
+            repathTimer: 0,
+            aggroExpireTick: 0,
+            fleeRepathTimer: 0,
+            ageSec: spec.matureAgeSec * (0.3 + ageR * 0.4),
+            maxAgeSec: spec.maxAgeSec * (0.85 + Math.random() * 0.3),
+            breedTimer: -spec.gestationSec * Math.random(),
+          });
+          spawnedHere++;
+          spawnedTotal++;
+        }
       }
     }
   }
@@ -1678,13 +1769,13 @@ export class Sim {
       a.attackTimer += dt;
       if (a.attackTimer >= BAL.animalAttackInterval) {
         a.attackTimer = 0;
-        const dmg = this.animalDamage(spec);
+        const dmg = this.animalDamage(spec, a.kind);
         if (dmg > 0) {
           const applied = Math.min(t.hp, dmg);
           t.hp = Math.max(0, t.hp - dmg);
           this.pushDamage(applied, t.gx, t.gy);
           a.aggroExpireTick =
-            this.tick + this.animalAggroDurationTicks(spec);
+            this.tick + this.animalAggroDurationTicks(spec, a.kind);
           this.callForHelp(t, a.id);
         }
       }
@@ -1879,6 +1970,39 @@ export class Sim {
     }
   }
 
+  private alertWolfPack(source: SimAnimal, target: SimUnit): void {
+    // Vollmond verdoppelt den Hilferuf-Radius — das ganze Rudel jagt mit.
+    const baseR = 8;
+    const r = isFullMoonNight(this.gameTimeSec) ? baseR * 2 : baseR;
+    const r2 = r * r;
+    const spec = animalSpec("wolf");
+    const aggroTicks = this.animalAggroDurationTicks(spec, "wolf");
+    const cs = SPATIAL_CELL;
+    const ax = Math.floor(source.gx / cs);
+    const ay = Math.floor(source.gy / cs);
+    const rr = Math.ceil(r / cs);
+    for (let cy = ay - rr; cy <= ay + rr; cy++) {
+      for (let cx = ax - rr; cx <= ax + rr; cx++) {
+        const arr = this.predatorGrid.get(gridKey(cx, cy));
+        if (!arr) continue;
+        for (const other of arr) {
+          if (other === source) continue;
+          if (other.kind !== "wolf") continue;
+          if (other.hp <= 0) continue;
+          if (other.attackTargetUnitId === target.id) continue;
+          const dx = other.gx - source.gx;
+          const dy = other.gy - source.gy;
+          if (dx * dx + dy * dy > r2) continue;
+          other.attackTargetUnitId = target.id;
+          other.attackTargetAnimalId = null;
+          other.aggroExpireTick = this.tick + aggroTicks;
+          other.path = [];
+          other.repathTimer = 0;
+        }
+      }
+    }
+  }
+
   private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
     const claimed = new Set<string>();
     const r2 = BAL.groupFightRange * BAL.groupFightRange;
@@ -1970,7 +2094,10 @@ export class Sim {
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
           a.aggroExpireTick =
-            this.tick + this.animalAggroDurationTicks(spec);
+            this.tick + this.animalAggroDurationTicks(spec, a.kind);
+          if (a.kind === "wolf") {
+            this.alertWolfPack(a, u);
+          }
         } else {
           a.state = "flee";
         }

@@ -112,6 +112,7 @@ export type Biome =
   | "savanne"
   | "wueste"
   | "felsen"
+  | "lava"
   | "gebirge"
   | "canyon";
 
@@ -123,6 +124,7 @@ export const BIOME_PALETTES: Record<Biome, number[]> = {
   lake: [0x1f3e64, 0x244a72, 0x2a5680, 0x1c3658],
   river: [0x356ea0, 0x3a78b0, 0x4486bf, 0x305f8c],
   felsen: [0x6a6a6a, 0x787878, 0x5e5e5e, 0x848484, 0x707070, 0x606060],
+  lava: [0xd84a18, 0xe85a20, 0xc23a10, 0xf06a28, 0xb83208, 0xd64418],
   gebirge: [0x484848, 0x383838, 0x525252, 0x303030, 0x5a5a5a, 0x404040],
   canyon: [0xa05530, 0x8a4528, 0xb46038, 0x6c3a20, 0xc26b40, 0x744028],
 };
@@ -140,6 +142,7 @@ const HEIGHT_PROFILES: Record<Biome, HeightProfile> = {
   savanne: { base: 2.5, hill: 8 },
   wueste: { base: 1, hill: 4 },
   felsen: { base: 17, hill: 17 },
+  lava: { base: 15, hill: 4 },
   gebirge: { base: 39, hill: 29 },
   canyon: { base: -11, hill: 3 },
 };
@@ -212,7 +215,11 @@ function biomeRaw(seed: number, i: number, j: number): Biome {
   const elev = elevationAt(seed, i, j);
   if (elev < WATER_LEVEL) return "lake";
   if (elev > 0.85) return "gebirge";
-  if (elev > 0.72) return "felsen";
+  if (elev > 0.72) {
+    const lavaNoise = fbm(seed ^ 0x1ab1a, i * 0.18, j * 0.18, 3);
+    if (lavaNoise > 0.62) return "lava";
+    return "felsen";
+  }
 
   const r = Math.abs(
     valueNoise(seed ^ 0x717171, i * 0.05 + 17.3, j * 0.05 + 7.7) - 0.5,
@@ -246,7 +253,7 @@ export function biomeAt(seed: number, i: number, j: number): Biome {
 
 export function isLandTile(seed: number, i: number, j: number): boolean {
   const b = biomeAt(seed, i, j);
-  return b !== "lake" && b !== "river" && b !== "gebirge";
+  return b !== "lake" && b !== "river" && b !== "gebirge" && b !== "lava";
 }
 
 export function isInsideSpawnGuard(seed: number, i: number, j: number): boolean {
@@ -349,6 +356,7 @@ export function hasTreeAt(seed: number, i: number, j: number): boolean {
     biome === "lake" ||
     biome === "river" ||
     biome === "felsen" ||
+    biome === "lava" ||
     biome === "gebirge" ||
     biome === "canyon"
   ) return false;
@@ -578,7 +586,7 @@ export function artifactsFromSeed(seed: number): ArtifactSpec[] {
     const j = Math.floor((rng() - 0.5) * 2 * ARTIFACT_AREA_RADIUS);
     if (!isLandTile(seed, i, j)) continue;
     const b = biomeAt(seed, i, j);
-    if (b === "lake" || b === "river" || b === "gebirge") continue;
+    if (b === "lake" || b === "river" || b === "gebirge" || b === "lava") continue;
     if (hasVolcanoAt(seed, i, j)) continue;
     if (hasSequoiaAt(seed, i, j)) continue;
     if (hasTreeAt(seed, i, j)) continue;

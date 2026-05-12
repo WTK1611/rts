@@ -104,6 +104,16 @@ export function seasonFishCatchMultiplier(season: Season): number {
   return 1.0;
 }
 
+// Vollmond: alle 4 In-Game-Tage einmal (Tagindex % 4 === 0). Wirkt nur in
+// der Nachtphase und triggert z. B. aggressive Wolfsrudel.
+export const FULL_MOON_PERIOD_DAYS = 4;
+export function isFullMoonNight(timeSec: number): boolean {
+  if (phaseAt(timeSec) !== "night") return false;
+  const d = Math.floor(timeSec / DAY_LENGTH_SEC);
+  const idx = ((d % FULL_MOON_PERIOD_DAYS) + FULL_MOON_PERIOD_DAYS) % FULL_MOON_PERIOD_DAYS;
+  return idx === 0;
+}
+
 export interface PhaseLengths {
   morning: number;
   noon: number;
@@ -276,7 +286,8 @@ export type AnimalKind =
   | "caveLion"
   | "mammoth"
   | "alligator"
-  | "bear";
+  | "bear"
+  | "wolf";
 
 export interface AnimalSnapshot {
   id: string;

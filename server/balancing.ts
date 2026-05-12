@@ -41,7 +41,7 @@ export interface BalFieldDef {
 // ---- Animal tunables (per kind) ----
 export const ANIMAL_KINDS_ORDER: AnimalKind[] = [
   "hare", "reindeer", "megaloceros", "bison",
-  "caveLion", "mammoth", "alligator", "bear",
+  "caveLion", "mammoth", "alligator", "bear", "wolf",
 ];
 
 export const ANIMAL_LABELS: Record<AnimalKind, string> = {
@@ -53,6 +53,7 @@ export const ANIMAL_LABELS: Record<AnimalKind, string> = {
   mammoth: "Mammut",
   alligator: "Alligator",
   bear: "Bär",
+  wolf: "Wolf",
 };
 
 export interface AnimalTunable {
@@ -83,6 +84,11 @@ export const ANIMAL_DEFAULTS: Record<AnimalKind, AnimalTunable> = {
   mammoth:     { hp: 30, speed: 1.8, meat: 25, felle: 8, density: 0.0014, wanderRadius: 6,  damage: 10, detectRange: 4, autoHuntRange: 0, attackRange: 1.8, aggroDurationSec: 10, preyDamage: 0, matureAgeSec: 90, gestationSec: 100, maxAgeSec: 420, amphibianRange: 0 },
   alligator:   { hp: 14, speed: 2.6, meat: 8,  felle: 3, density: 0.0070, wanderRadius: 5,  damage: 6,  detectRange: 5, autoHuntRange: 5, attackRange: 1.6, aggroDurationSec: 18, preyDamage: 6, matureAgeSec: 50, gestationSec: 70,  maxAgeSec: 320, amphibianRange: 3 },
   bear:        { hp: 22, speed: 3.0, meat: 14, felle: 5, density: 0.0016, wanderRadius: 10, damage: 8,  detectRange: 6, autoHuntRange: 0, attackRange: 1.6, aggroDurationSec: 22, preyDamage: 7, matureAgeSec: 70, gestationSec: 80,  maxAgeSec: 360, amphibianRange: 0 },
+  // Wölfe sind selten (density niedrig), kommen aber im Rudel (PACK_SIZE in
+  // sim.spawnAnimals + Rudel-Aggression in stepAnimalAttack). Einzeln wenig
+  // gefährlich, im Rudel der härteste Gegner: schnell, hoher Schaden, lange
+  // Aggro. Gruppenkampf wird durch packCallForHelp() koordiniert.
+  wolf:        { hp: 10, speed: 4.5, meat: 4,  felle: 2, density: 0.0003, wanderRadius: 14, damage: 7,  detectRange: 7, autoHuntRange: 0, attackRange: 1.4, aggroDurationSec: 20, preyDamage: 4, matureAgeSec: 45, gestationSec: 55,  maxAgeSec: 260, amphibianRange: 0 },
 };
 
 const ANIMAL_FIELD_META: Array<{

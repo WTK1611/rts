@@ -24,6 +24,7 @@ const DANGER_DETECT: Partial<Record<AnimalKind, number>> = {
   caveLion: 7,
   mammoth: 3,
   alligator: 5,
+  wolf: 8,
 };
 
 const DANGER_MAX_RANGE =
@@ -166,7 +167,8 @@ export class AIBot {
     const lethal =
       near.kind === "mammoth" ||
       near.kind === "caveLion" ||
-      near.kind === "alligator";
+      near.kind === "alligator" ||
+      near.kind === "wolf";
     const lowHp = u.hp < RETREAT_HP_THRESHOLD;
     if (!lethal && !lowHp) return false;
     if (nearestD > nearestRange + 1) return false;
@@ -269,7 +271,7 @@ export class AIBot {
       const tj = Math.floor(ty);
       if (!this.sim.isWalkable(ti, tj)) continue;
       const b = biomeAt(this.sim.seed, ti, tj);
-      if (b === "lake" || b === "river" || b === "gebirge") continue;
+      if (b === "lake" || b === "river" || b === "gebirge" || b === "lava") continue;
       this.sim.cmdMove(this.id, [u.id], ti, tj);
       return;
     }

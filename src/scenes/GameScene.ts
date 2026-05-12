@@ -169,7 +169,8 @@ type HelpKey =
   | "cataStorm"
   | "cataLightning"
   | "cataLocusts"
-  | "cataLandslide";
+  | "cataLandslide"
+  | "wolves";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
@@ -264,6 +265,10 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
     img: "/image/erdrutsch-300.webp",
     text: (s) => s.helpTipCataLandslide,
   },
+  wolves: {
+    img: "/image/wölfe-300.webp",
+    text: (s) => s.helpTipWolves,
+  },
 };
 
 const CATASTROPHE_HELP: Record<CatastropheKind, HelpKey> = {
@@ -281,6 +286,7 @@ const CATASTROPHE_HELP: Record<CatastropheKind, HelpKey> = {
 };
 
 const HELP_VOLCANO_RADIUS = 4;
+const HELP_WOLF_RADIUS = 10;
 const HELP_DURATION_MS = 3000;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
@@ -369,8 +375,9 @@ export class GameScene extends Phaser.Scene {
   private keyDown!: Phaser.Input.Keyboard.Key;
   private keyLeft!: Phaser.Input.Keyboard.Key;
   private keyRight!: Phaser.Input.Keyboard.Key;
+  private keyR!: Phaser.Input.Keyboard.Key;
+  private keyF!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
-  private tribeMoveCooldown = 0;
   private minimapVisible = true;
 
   private gameStartMs = 0;
@@ -612,7 +619,9 @@ export class GameScene extends Phaser.Scene {
     this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
     this.keyLeft = kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
     this.keyRight = kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
-    kb.addCapture("UP,DOWN,LEFT,RIGHT");
+    this.keyR = kb.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.keyF = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+    kb.addCapture("UP,DOWN,LEFT,RIGHT,R,F");
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.P).on("down", () => this.togglePerf());
@@ -733,7 +742,7 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const speed = 600 / cam.zoom;
     this.applyEdgePan(dt, speed);
-    this.applyTribeKeys(dt);
+    this.applyCameraKeys(dt);
     if (!this.userPanned) this.applyTribeFollow();
 
     if (cam.zoom !== this.lastZoom) {
@@ -984,48 +993,29 @@ export class GameScene extends Phaser.Scene {
     this.spectateSlot(slot);
   }
 
-  private applyTribeKeys(dt: number): void {
+  private applyCameraKeys(dt: number): void {
+    const cam = this.cameras.main;
+
     const right = this.keyD.isDown || this.keyRight.isDown;
     const left = this.keyA.isDown || this.keyLeft.isDown;
     const down = this.keyS.isDown || this.keyDown.isDown;
     const up = this.keyW.isDown || this.keyUp.isDown;
     const dx = (right ? 1 : 0) - (left ? 1 : 0);
     const dy = (down ? 1 : 0) - (up ? 1 : 0);
-    if (dx === 0 && dy === 0) {
-      this.tribeMoveCooldown = 0;
-      return;
+    if (dx !== 0 || dy !== 0) {
+      const panSpeed = 900 / cam.zoom;
+      this.camTargetX += dx * panSpeed * dt;
+      this.camTargetY += dy * panSpeed * dt;
+      this.userPanned = true;
     }
-    this.tribeMoveCooldown -= dt;
-    if (this.tribeMoveCooldown > 0) return;
-    this.tribeMoveCooldown = 0.18;
 
-    let chief: Unit | null = null;
-    for (const u of this.units.values()) {
-      if (u.owner !== this.playerId) continue;
-      if (u.isChief) {
-        chief = u;
-        break;
-      }
+    const zoomIn = this.keyR.isDown;
+    const zoomOut = this.keyF.isDown;
+    if (zoomIn !== zoomOut) {
+      const factor = Math.pow(1.8, dt);
+      const next = zoomIn ? cam.zoom * factor : cam.zoom / factor;
+      cam.setZoom(Phaser.Math.Clamp(next, 0.5, 2.5));
     }
-    if (!chief) return;
-
-    const gdi = dx + dy;
-    const gdj = -dx + dy;
-    const stepDist = 3;
-    const ci = Math.round(chief.gx);
-    const cj = Math.round(chief.gy);
-    let ti = ci;
-    let tj = cj;
-    for (let s = 1; s <= stepDist; s++) {
-      const ni = ci + gdi * s;
-      const nj = cj + gdj * s;
-      if (!isLandTile(this.seed, ni, nj)) break;
-      ti = ni;
-      tj = nj;
-    }
-    if (ti === ci && tj === cj) return;
-    this.net.send({ type: "move", unitIds: [chief.id], i: ti, j: tj });
-    this.setMoveTarget(ti, tj, "move");
   }
 
   private applyTribeFollow(): void {
@@ -1552,6 +1542,20 @@ export class GameScene extends Phaser.Scene {
       if ((decor >> 11) % 5 === 0) {
         g.fillStyle(0x3a3a3a, 0.8);
         g.fillCircle(x + dx + 4, cy + dy + 2, 1.4);
+      }
+    } else if (biome === "lava") {
+      const r = ((decor >> 3) & 0xff) / 255;
+      g.fillStyle(0xffe070, 0.9);
+      g.fillCircle(x + dx, cy + dy, 1.2 + r * 1.4);
+      g.fillStyle(0xffa838, 0.55);
+      g.fillCircle(x + dx, cy + dy, 2.8 + r * 1.6);
+      if ((decor >> 11) % 3 === 0) {
+        g.fillStyle(0x3a1208, 0.8);
+        g.fillCircle(x + dx + 3, cy + dy - 2, 1.4);
+      }
+      if ((decor >> 17) % 5 === 0) {
+        g.fillStyle(0xfff0a0, 0.95);
+        g.fillRect(x + dx - 3, cy + dy + 2, 6, 1);
       }
     } else if (biome === "gebirge") {
       const r = ((decor >> 3) & 0xff) / 255;
@@ -3931,7 +3935,7 @@ export class GameScene extends Phaser.Scene {
       const banFlag = watching ? this.flagFor(watchedId) : this.flagFor(this.playerId);
       const banCount = tribeCounts[watchedId] ?? 0;
       const banCountChip =
-        !watching && isNight
+        watching && isNight
           ? `<span class="count" title="${s.hudTribeMembers}">👥 ?</span>`
           : countChip(banCount);
       const banTitle = watching
@@ -4346,9 +4350,11 @@ export class GameScene extends Phaser.Scene {
 
     const needWater = !this.helpSeen.has("water");
     const needVolcano = !this.helpSeen.has("volcano");
-    if (!needWater && !needVolcano) return;
+    const needWolves = !this.helpSeen.has("wolves");
+    if (!needWater && !needVolcano && !needWolves) return;
 
     const volcRadiusSq = HELP_VOLCANO_RADIUS * HELP_VOLCANO_RADIUS;
+    const wolfRadiusSq = HELP_WOLF_RADIUS * HELP_WOLF_RADIUS;
 
     for (const u of this.units.values()) {
       if (u.owner !== this.playerId) continue;
@@ -4368,6 +4374,18 @@ export class GameScene extends Phaser.Scene {
           const dy = v.j - cj;
           if (dx * dx + dy * dy <= volcRadiusSq) {
             this.triggerHelp("volcano");
+            return;
+          }
+        }
+      }
+
+      if (needWolves) {
+        for (const a of this.animals.values()) {
+          if (a.kind !== "wolf") continue;
+          const dx = a.gx - u.gx;
+          const dy = a.gy - u.gy;
+          if (dx * dx + dy * dy <= wolfRadiusSq) {
+            this.triggerHelp("wolves");
             return;
           }
         }

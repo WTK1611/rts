@@ -141,6 +141,7 @@ export interface Strings {
   helpTipCataLightning: string;
   helpTipCataLocusts: string;
   helpTipCataLandslide: string;
+  helpTipWolves: string;
   helpEnabled: string;
   helpDisabled: string;
 
@@ -332,6 +333,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "Blitzschlag! Ein Blitz hat eingeschlagen und Bäume entzündet. Vorsicht in der Nähe großer Bäume.",
     helpTipCataLocusts: "Heuschreckenplage! Ein Schwarm frisst Beeren, Kräuter und Pilze auf. Schnell ernten, bevor sie alles kahl fressen.",
     helpTipCataLandslide: "Erdrutsch! Geröll und Steine begraben den Pfad. Der Weg ist hier zeitweise versperrt.",
+    helpTipWolves: "Wölfe! Selten unterwegs — aber im Rudel tödlich. Bleibt zusammen, sucht das Lagerfeuer. Bei Vollmond besonders angriffslustig.",
     helpEnabled: "Hilfetexte: An (h)",
     helpDisabled: "Hilfetexte: Aus (h)",
 
@@ -517,6 +519,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "Lightning strike! A bolt has hit and set trees ablaze. Beware around tall trees.",
     helpTipCataLocusts: "Locust swarm! They devour berries, herbs and mushrooms. Harvest fast before they strip everything bare.",
     helpTipCataLandslide: "Landslide! Rubble and stones bury the trail. The path here is blocked for a while.",
+    helpTipWolves: "Wolves! Rare — but lethal in a pack. Stay together and head for the campfire. Especially aggressive under a full moon.",
     helpEnabled: "Help tips: On (h)",
     helpDisabled: "Help tips: Off (h)",
 
@@ -697,6 +700,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "Fulmine! Un lampo ha colpito e incendiato gli alberi. Attenzione vicino agli alberi alti.",
     helpTipCataLocusts: "Sciame di cavallette! Divora bacche, erbe e funghi. Raccogliete in fretta prima che lascino tutto spoglio.",
     helpTipCataLandslide: "Frana! Detriti e pietre seppelliscono il sentiero. Il passaggio qui è bloccato per un po'.",
+    helpTipWolves: "Lupi! Rari in giro — ma in branco sono letali. Restate uniti, cercate il falò. Con la luna piena sono particolarmente aggressivi.",
     helpEnabled: "Suggerimenti: Attivi (h)",
     helpDisabled: "Suggerimenti: Disattivati (h)",
 
@@ -877,6 +881,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "¡Rayo! Un relámpago ha caído y encendido árboles. Cuidado cerca de árboles altos.",
     helpTipCataLocusts: "¡Plaga de langostas! Devoran bayas, hierbas y setas. Cosechen rápido antes de que lo arrasen todo.",
     helpTipCataLandslide: "¡Desprendimiento! Escombros y piedras sepultan el sendero. El paso está bloqueado un tiempo.",
+    helpTipWolves: "¡Lobos! Raros por aquí — pero letales en manada. Mantenganse juntos y busquen la hoguera. Bajo luna llena son especialmente agresivos.",
     helpEnabled: "Consejos: Activados (h)",
     helpDisabled: "Consejos: Desactivados (h)",
 
@@ -1057,6 +1062,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "Relâmpago! Um raio caiu e incendiou árvores. Cuidado perto de árvores altas.",
     helpTipCataLocusts: "Praga de gafanhotos! Devoram bagas, ervas e cogumelos. Colham rápido antes que arrasem tudo.",
     helpTipCataLandslide: "Deslizamento! Escombros e pedras soterram o trilho. A passagem está bloqueada por um tempo.",
+    helpTipWolves: "Lobos! Raros por aqui — mas letais em alcateia. Fiquem juntos e procurem a fogueira. Sob lua cheia são especialmente agressivos.",
     helpEnabled: "Sugestões: Ativadas (h)",
     helpDisabled: "Sugestões: Desativadas (h)",
 
@@ -1237,6 +1243,7 @@ const STRINGS: Record<Language, Strings> = {
     helpTipCataLightning: "Foudre ! Un éclair a frappé et embrasé des arbres. Méfiez-vous près des grands arbres.",
     helpTipCataLocusts: "Invasion de sauterelles ! Elles dévorent baies, herbes et champignons. Récoltez vite avant qu'elles ne ravagent tout.",
     helpTipCataLandslide: "Éboulement ! Des gravats et des pierres ensevelissent la piste. Le passage est bloqué un moment.",
+    helpTipWolves: "Des loups ! Rares — mais en meute, ils sont mortels. Restez groupés, rejoignez le feu de camp. À la pleine lune, particulièrement agressifs.",
     helpEnabled: "Astuces : Activées (h)",
     helpDisabled: "Astuces : Désactivées (h)",
 
