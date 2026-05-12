@@ -865,31 +865,54 @@ export class Sim {
     const aquaticTarget = animalSpec(a.kind).aquatic;
     const walkable = (x: number, y: number) =>
       aquaticTarget ? this.unitHuntWalkable(x, y) : this.isWalkable(x, y);
-    const candidates: Array<{ i: number; j: number }> = [];
-    if (walkable(ti, tj)) candidates.push({ i: ti, j: tj });
     const adj: Array<[number, number]> = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
     ];
+    const ring1: Array<{ i: number; j: number }> = [];
+    if (walkable(ti, tj)) ring1.push({ i: ti, j: tj });
     for (const [di, dj] of adj) {
       const ni = ti + di;
       const nj = tj + dj;
-      if (walkable(ni, nj)) candidates.push({ i: ni, j: nj });
+      if (walkable(ni, nj)) ring1.push({ i: ni, j: nj });
     }
-    let bestPath: ReturnType<typeof findPath> = null;
-    for (const c of candidates) {
-      if (blocked.has(`${c.i},${c.j}`)) continue;
-      const p = findPath(
-        walkable,
-        Math.floor(u.gx),
-        Math.floor(u.gy),
-        c.i,
-        c.j,
-        blocked,
-      );
-      if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
+    const ring2: Array<{ i: number; j: number }> = [];
+    for (let dj = -2; dj <= 2; dj++) {
+      for (let di = -2; di <= 2; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== 2) continue;
+        const ni = ti + di;
+        const nj = tj + dj;
+        if (walkable(ni, nj)) ring2.push({ i: ni, j: nj });
+      }
     }
-    return bestPath;
+    const tryRing = (
+      ring: Array<{ i: number; j: number }>,
+      blockSet: Set<string>,
+    ): ReturnType<typeof findPath> => {
+      let best: ReturnType<typeof findPath> = null;
+      for (const c of ring) {
+        if (blockSet.has(`${c.i},${c.j}`)) continue;
+        const p = findPath(
+          walkable,
+          Math.floor(u.gx),
+          Math.floor(u.gy),
+          c.i,
+          c.j,
+          blockSet,
+        );
+        if (p && (!best || p.length < best.length)) best = p;
+      }
+      return best;
+    };
+    // Prefer an adjacent tile with the requested blocking; fall back to a
+    // wider ring; finally ignore ally blocking so the unit can at least
+    // approach when surrounded.
+    return (
+      tryRing(ring1, blocked) ??
+      tryRing(ring2, blocked) ??
+      tryRing(ring1, new Set()) ??
+      tryRing(ring2, new Set())
+    );
   }
 
   private rebuildOwnerCaches(): void {
@@ -1901,7 +1924,15 @@ export class Sim {
     const lastTile = last
       ? `${Math.floor(last.gx)},${Math.floor(last.gy)}`
       : null;
-    if (lastTile !== `${ti},${tj}`) {
+    const animalTile = `${ti},${tj}`;
+    const adjacentToAnimal =
+      last !== undefined &&
+      last !== null &&
+      Math.max(Math.abs(Math.floor(last.gx) - ti), Math.abs(Math.floor(last.gy) - tj)) <= 1;
+    // Repath when the animal moved tiles OR our path can't reach it.
+    if (lastTile !== animalTile && !adjacentToAnimal) {
+      this.repathToHuntable(u, a, this.blockedTilesFor(u, new Set()));
+    } else if (u.path.length === 0) {
       this.repathToHuntable(u, a, this.blockedTilesFor(u, new Set()));
     }
     u.state = "moving";
