@@ -18,6 +18,10 @@ db.exec(`
     ts INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_scores_score_desc ON scores(score DESC, ts ASC);
+  CREATE TABLE IF NOT EXISTS balancing (
+    key TEXT PRIMARY KEY,
+    value REAL NOT NULL
+  );
 `);
 
 const insertStmt = db.prepare(
@@ -72,4 +76,30 @@ export function totalScores(): number {
   return row ? Number(row.n) : 0;
 }
 
-console.log(`[rts-server] sqlite db at ${DB_PATH}, ${totalScores()} scores`);
+const balLoadStmt = db.prepare(`SELECT key, value FROM balancing`);
+const balUpsertStmt = db.prepare(
+  `INSERT INTO balancing (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+);
+const balDeleteAllStmt = db.prepare(`DELETE FROM balancing`);
+
+export function loadBalancing(): Record<string, number> {
+  const rows = balLoadStmt.all() as Array<{ key: string; value: number }>;
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.key] = Number(r.value);
+  return out;
+}
+
+export function saveBalancing(key: string, value: number): void {
+  balUpsertStmt.run(key, value);
+}
+
+export function resetBalancing(): void {
+  balDeleteAllStmt.run();
+}
+
+console.log(
+  `[rts-server] sqlite db at ${DB_PATH}, ${totalScores()} scores, ${
+    balLoadStmt.all().length
+  } balancing overrides`,
+);

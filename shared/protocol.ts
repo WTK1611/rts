@@ -1,15 +1,16 @@
 export const TICK_RATE = 20;
 export const MAX_PLAYERS = 10;
-export const MAX_TRIBE_SIZE = 12;
+export let MAX_TRIBE_SIZE = 12;
 
-export const DAY_LENGTH_SEC = 240;
-export const MORNING_LEN_SEC = 50;
-export const NOON_LEN_SEC = 30;
-export const AFTERNOON_LEN_SEC = 40;
-export const NIGHT_LEN_SEC = DAY_LENGTH_SEC - MORNING_LEN_SEC - NOON_LEN_SEC - AFTERNOON_LEN_SEC;
-export const SUNSET_AT_SEC = MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC;
-export const PHASE_LENGTH_SEC = NIGHT_LEN_SEC;
-export const NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = 40;
+export let MORNING_LEN_SEC = 50;
+export let NOON_LEN_SEC = 30;
+export let AFTERNOON_LEN_SEC = 40;
+export let NIGHT_LEN_SEC = 120;
+export let DAY_LENGTH_SEC =
+  MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC + NIGHT_LEN_SEC;
+export let SUNSET_AT_SEC = MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC;
+export let PHASE_LENGTH_SEC = NIGHT_LEN_SEC;
+export let NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = 40;
 
 export type DayPhase = "morning" | "noon" | "afternoon" | "night";
 
@@ -19,6 +20,48 @@ export function phaseAt(timeSec: number): DayPhase {
   if (t < MORNING_LEN_SEC + NOON_LEN_SEC) return "noon";
   if (t < SUNSET_AT_SEC) return "afternoon";
   return "night";
+}
+
+export interface ProtocolBalance {
+  morningLenSec?: number;
+  noonLenSec?: number;
+  afternoonLenSec?: number;
+  nightLenSec?: number;
+  nightCampfireHolzPerNight?: number;
+  maxTribeSize?: number;
+  campfireRange?: number;
+  artifactDiscoveryRadius?: number;
+  dropPileLifetimeSec?: number;
+  dropPilePickupRadius?: number;
+  dropPilePickupDelaySec?: number;
+  footprintLifetimeTicks?: number;
+}
+
+export function applyProtocolBalance(b: ProtocolBalance): void {
+  if (typeof b.morningLenSec === "number") MORNING_LEN_SEC = b.morningLenSec;
+  if (typeof b.noonLenSec === "number") NOON_LEN_SEC = b.noonLenSec;
+  if (typeof b.afternoonLenSec === "number") AFTERNOON_LEN_SEC = b.afternoonLenSec;
+  if (typeof b.nightLenSec === "number") NIGHT_LEN_SEC = b.nightLenSec;
+  DAY_LENGTH_SEC =
+    MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC + NIGHT_LEN_SEC;
+  SUNSET_AT_SEC = MORNING_LEN_SEC + NOON_LEN_SEC + AFTERNOON_LEN_SEC;
+  PHASE_LENGTH_SEC = NIGHT_LEN_SEC;
+  if (typeof b.nightCampfireHolzPerNight === "number") {
+    NIGHT_CAMPFIRE_HOLZ_PER_NIGHT = b.nightCampfireHolzPerNight;
+  }
+  if (typeof b.maxTribeSize === "number") MAX_TRIBE_SIZE = b.maxTribeSize;
+  if (typeof b.campfireRange === "number") CAMPFIRE_RANGE = b.campfireRange;
+  if (typeof b.artifactDiscoveryRadius === "number") {
+    ARTIFACT_DISCOVERY_RADIUS = b.artifactDiscoveryRadius;
+  }
+  if (typeof b.dropPileLifetimeSec === "number") DROP_PILE_LIFETIME_SEC = b.dropPileLifetimeSec;
+  if (typeof b.dropPilePickupRadius === "number") DROP_PILE_PICKUP_RADIUS = b.dropPilePickupRadius;
+  if (typeof b.dropPilePickupDelaySec === "number") {
+    DROP_PILE_PICKUP_DELAY_SEC = b.dropPilePickupDelaySec;
+  }
+  if (typeof b.footprintLifetimeTicks === "number") {
+    FOOTPRINT_LIFETIME_TICKS = b.footprintLifetimeTicks;
+  }
 }
 
 export type PlayerId = number;
@@ -145,7 +188,7 @@ export interface CampfireSnapshot {
   size: number;
 }
 
-export const CAMPFIRE_RANGE = 2.5;
+export let CAMPFIRE_RANGE = 2.5;
 
 export type ArtifactKind = "stonehenge" | "stoneCircle" | "monolith";
 
@@ -176,7 +219,7 @@ export interface ArtifactFindEvent {
   reward: ArtifactReward;
 }
 
-export const ARTIFACT_DISCOVERY_RADIUS = 4;
+export let ARTIFACT_DISCOVERY_RADIUS = 4;
 
 export interface DropPileSnapshot {
   id: string;
@@ -186,9 +229,9 @@ export interface DropPileSnapshot {
   decaySec: number;
 }
 
-export const DROP_PILE_LIFETIME_SEC = 180;
-export const DROP_PILE_PICKUP_RADIUS = 0.7;
-export const DROP_PILE_PICKUP_DELAY_SEC = 4;
+export let DROP_PILE_LIFETIME_SEC = 180;
+export let DROP_PILE_PICKUP_RADIUS = 0.7;
+export let DROP_PILE_PICKUP_DELAY_SEC = 4;
 
 export interface Footprint {
   o: PlayerId;
@@ -197,7 +240,22 @@ export interface Footprint {
   t: number;
 }
 
-export const FOOTPRINT_LIFETIME_TICKS = TICK_RATE * 25;
+export let FOOTPRINT_LIFETIME_TICKS = TICK_RATE * 25;
+
+export interface BalancingFieldMeta {
+  key: string;
+  group: string;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+}
+
+export interface BalancingSnapshotMsg {
+  fields: BalancingFieldMeta[];
+  values: Record<string, number>;
+}
 
 export interface InitMessage {
   type: "init";
@@ -222,6 +280,8 @@ export interface InitMessage {
   gameTimeSec: number;
   treeGrowth: TreeGrowthEvent[];
   tribeOrigin: PlayerId[];
+  balancing: BalancingSnapshotMsg;
+  resourceCapPerPerson: Resources;
 }
 
 export interface EncounterEvent {
@@ -327,13 +387,20 @@ export interface LeaderboardMessage {
   myEntryTs: number;
 }
 
+export interface BalancingUpdateMessage {
+  type: "balancingUpdate";
+  values: Record<string, number>;
+  resourceCapPerPerson?: Resources;
+}
+
 export type ServerMessage =
   | InitMessage
   | StateMessage
   | OpponentJoinedMessage
   | OpponentLeftMessage
   | ErrorMessage
-  | LeaderboardMessage;
+  | LeaderboardMessage
+  | BalancingUpdateMessage;
 
 export interface JoinCommand {
   type: "join";
@@ -376,6 +443,15 @@ export interface FetchLeaderboardCommand {
   type: "fetchLeaderboard";
 }
 
+export interface SetBalancingCommand {
+  type: "setBalancing";
+  updates: Array<{ key: string; value: number }>;
+}
+
+export interface ResetBalancingCommand {
+  type: "resetBalancing";
+}
+
 export type ClientMessage =
   | JoinCommand
   | MoveCommand
@@ -383,4 +459,6 @@ export type ClientMessage =
   | HuntCommand
   | IgniteCampfireCommand
   | SubmitScoreCommand
-  | FetchLeaderboardCommand;
+  | FetchLeaderboardCommand
+  | SetBalancingCommand
+  | ResetBalancingCommand;

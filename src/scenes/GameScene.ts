@@ -17,9 +17,12 @@ import { Net } from "../net";
 import {
   AFTERNOON_LEN_SEC,
   AnimalSnapshot,
+  applyProtocolBalance,
   ArtifactFindEvent,
   ArtifactReward,
   ArtifactSnapshot,
+  BalancingFieldMeta,
+  BalancingUpdateMessage,
   CampfireSnapshot,
   DropPileSnapshot,
   CAMPFIRE_RANGE,
@@ -38,6 +41,7 @@ import {
   PlayerId,
   phaseAt,
   RemovedObject,
+  RESOURCE_CAP_PER_PERSON,
   RESOURCE_KEYS,
   Resources,
   ResourceFlowEvent,
@@ -157,9 +161,11 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
 
 const HELP_WATER_RADIUS = 2;
 const HELP_VOLCANO_RADIUS = 4;
-const HELP_DURATION_MS = 2500;
+const HELP_DURATION_MS = 3000;
 const HELP_STORAGE_KEY_VISIBLE = "rts.helpVisible";
 const HELP_STORAGE_KEY_SEEN = "rts.helpSeen";
+const INFO_STORAGE_KEY_VISIBLE = "rts.infoVisible";
+const GAIN_DISPLAY_MS = 2500;
 
 export class GameScene extends Phaser.Scene {
   private net!: Net;
@@ -201,6 +207,8 @@ export class GameScene extends Phaser.Scene {
   private click: ClickState | null = null;
   private resources: Resources[] = [];
   private collectedTotals: Resources = emptyResources();
+  private recentGains: Partial<Record<keyof Resources, { amount: number; expiresAt: number }>> = {};
+  private nextGainExpiry = 0;
   private pendingScoreEntry: ScoreEntry | null = null;
   private hud: HTMLElement | null = null;
   private tribeBanner: HTMLElement | null = null;
@@ -286,13 +294,11 @@ export class GameScene extends Phaser.Scene {
   private chunkLoadQueued = new Set<string>();
 
   private perfEl: HTMLElement | null = null;
-  private helpEl: HTMLElement | null = null;
-  private helpImgEl: HTMLImageElement | null = null;
-  private helpTextEl: HTMLElement | null = null;
+  private helpStackEl: HTMLElement | null = null;
+  private infoEl: HTMLElement | null = null;
+  private infoVisible = false;
   private helpVisible = true;
   private helpSeen = new Set<string>();
-  private helpHideTimerId: number | null = null;
-  private helpCurrentKey: HelpKey | null = null;
   private helpCheckAccum = 0;
   private perfFrameTimeMs = 16.7;
   private perfLastDomUpdateMs = 0;
@@ -347,6 +353,40 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+    if (data.init.balancing) {
+      this.balancingFields = data.init.balancing.fields;
+      this.balancingValues = { ...data.init.balancing.values };
+    }
+    if (data.init.resourceCapPerPerson) {
+      Object.assign(RESOURCE_CAP_PER_PERSON, data.init.resourceCapPerPerson);
+    }
+    this.applyClientProtocolBalance();
+  }
+
+  private balancingFields: BalancingFieldMeta[] = [];
+  private balancingValues: Record<string, number> = {};
+  private balancingExpandedGroups: Set<string> = new Set();
+  private balancingVisible = false;
+
+  private applyClientProtocolBalance(): void {
+    const v = this.balancingValues;
+    if (Object.keys(v).length === 0) return;
+    applyProtocolBalance({
+      morningLenSec: v["day.morningLenSec"],
+      noonLenSec: v["day.noonLenSec"],
+      afternoonLenSec: v["day.afternoonLenSec"],
+      nightLenSec: v["day.nightLenSec"],
+      nightCampfireHolzPerNight: v["day.nightCampfireHolzPerNight"],
+      maxTribeSize: v["growth.maxTribeSize"],
+      campfireRange: v["fire.range"],
+      artifactDiscoveryRadius: v["world.artifactDiscoveryRadius"],
+      dropPileLifetimeSec: v["world.dropPileLifetimeSec"],
+      dropPilePickupRadius: v["world.dropPilePickupRadius"],
+      dropPilePickupDelaySec: v["world.dropPilePickupDelaySec"],
+      footprintLifetimeTicks: v["world.footprintLifetimeSec"] !== undefined
+        ? Math.round(v["world.footprintLifetimeSec"] * 20)
+        : undefined,
+    });
   }
 
   create(): void {
@@ -446,7 +486,8 @@ export class GameScene extends Phaser.Scene {
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.P).on("down", () => this.togglePerf());
-    kb.addKey(Phaser.Input.Keyboard.KeyCodes.I).on("down", () => this.toggleHelp());
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.H).on("down", () => this.toggleHelp());
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.I).on("down", () => this.toggleInfo());
 
     const spectateKeys: Array<[number, number]> = [
       [Phaser.Input.Keyboard.KeyCodes.ONE, 0],
@@ -509,6 +550,8 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.minimapWrap = document.getElementById("minimap-wrap");
+    this.minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement | null;
+    this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext("2d") : null;
     this.minimapVisible = false;
     if (this.minimapWrap) {
       this.minimapWrap.style.display = "none";
@@ -521,9 +564,7 @@ export class GameScene extends Phaser.Scene {
     if (storedPerf !== null) this.perfVisible = storedPerf === "1";
     if (this.perfEl) this.perfEl.style.display = this.perfVisible ? "" : "none";
 
-    this.helpEl = document.getElementById("help-card");
-    this.helpImgEl = document.getElementById("help-img") as HTMLImageElement | null;
-    this.helpTextEl = document.getElementById("help-text");
+    this.helpStackEl = document.getElementById("help-stack");
     const storedHelp = localStorage.getItem(HELP_STORAGE_KEY_VISIBLE);
     if (storedHelp !== null) this.helpVisible = storedHelp === "1";
     const storedSeen = localStorage.getItem(HELP_STORAGE_KEY_SEEN);
@@ -532,10 +573,16 @@ export class GameScene extends Phaser.Scene {
         if (k) this.helpSeen.add(k);
       }
     }
-    if (this.helpEl) {
-      this.helpEl.classList.remove("show");
-      this.helpEl.setAttribute("aria-hidden", "true");
-      this.setupPanelDrag(this.helpEl, "rts.help.position");
+
+    this.infoEl = document.getElementById("info-panel");
+    const storedInfo = localStorage.getItem(INFO_STORAGE_KEY_VISIBLE);
+    this.infoVisible = storedInfo === "1";
+    if (this.infoEl) {
+      this.setupPanelDrag(this.infoEl, "rts.info.position", {
+        ignoreSelector: ".bal-input, .bal-toggle, .bal-reset, .bal-group-head",
+      });
+      this.applyInfoVisibility();
+      if (this.infoVisible) this.renderInfo();
     }
 
     this.updateChunks();
@@ -589,6 +636,10 @@ export class GameScene extends Phaser.Scene {
     this.updateMoveTarget(dt);
     this.updateDayNight();
     this.checkHelpTriggers(dt);
+    this.updateInfoPanel(dt);
+    if (this.nextGainExpiry > 0 && performance.now() >= this.nextGainExpiry) {
+      if (this.pruneRecentGains()) this.updateHud();
+    }
   }
 
   private updateTribeRally(dt: number): void {
@@ -2279,6 +2330,18 @@ export class GameScene extends Phaser.Scene {
     else if (msg.type === "opponentJoined") this.onOpponentJoined(msg);
     else if (msg.type === "opponentLeft") this.onOpponentLeft(msg);
     else if (msg.type === "leaderboard") this.onLeaderboard(msg);
+    else if (msg.type === "balancingUpdate") this.onBalancingUpdate(msg);
+  }
+
+  private onBalancingUpdate(msg: BalancingUpdateMessage): void {
+    for (const [k, v] of Object.entries(msg.values)) {
+      this.balancingValues[k] = v;
+    }
+    if (msg.resourceCapPerPerson) {
+      Object.assign(RESOURCE_CAP_PER_PERSON, msg.resourceCapPerPerson);
+    }
+    this.applyClientProtocolBalance();
+    if (this.infoVisible && this.balancingVisible) this.renderInfo();
   }
 
   private onOpponentJoined(msg: {
@@ -3393,21 +3456,31 @@ export class GameScene extends Phaser.Scene {
     };
     const tribeCounts = this.tribeCounts;
     const myTribeSize = tribeCounts[this.playerId] ?? 0;
+    const now = performance.now();
     const resHtml = RESOURCE_KEYS.map((k) => {
       const have = myRes[k];
       const cap = resourceCap(k, myTribeSize);
       const pct = cap > 0 ? Math.min(100, Math.round((have / cap) * 100)) : 0;
       const full = cap > 0 && have >= cap ? " full" : "";
+      const fillTone =
+        pct >= 100 ? " tone-red"
+        : pct >= 75 ? " tone-orange"
+        : pct >= 40 ? " tone-yellow"
+        : " tone-green";
+      const gain = this.recentGains[k];
+      const gainHtml = gain && gain.expiresAt > now
+        ? ` <span class="gain">+${gain.amount}</span>`
+        : "";
       return (
         `<div class="item">` +
         `<span class="ico-wrap">` +
         `<span class="ico ${k}"></span>` +
         `<span class="cap-bar${full}" title="${have} / ${cap}">` +
-        `<span class="cap-fill" style="width:${pct}%"></span>` +
+        `<span class="cap-fill${fillTone}" style="width:${pct}%"></span>` +
         `</span>` +
         `</span>` +
         `<span class="label">${labels[k]}:</span>` +
-        `<b>${have}<span class="cap-max">/${cap}</span></b>` +
+        `<b>${have}<span class="cap-max">/${cap}</span></b>${gainHtml}` +
         `</div>`
       );
     }).join("");
@@ -3478,9 +3551,231 @@ export class GameScene extends Phaser.Scene {
   private toggleHelp(): void {
     this.helpVisible = !this.helpVisible;
     localStorage.setItem(HELP_STORAGE_KEY_VISIBLE, this.helpVisible ? "1" : "0");
-    if (!this.helpVisible) this.hideHelpCard();
+    if (!this.helpVisible) {
+      this.clearHelpStack();
+    } else {
+      this.replaySeenHelp();
+    }
     const s = t();
     this.showToast(this.helpVisible ? s.helpEnabled : s.helpDisabled, "join");
+  }
+
+  private replaySeenHelp(): void {
+    this.clearHelpStack();
+    for (const key of this.helpSeen) {
+      if (key in HELP_TIPS) this.showHelpCard(key as HelpKey);
+    }
+  }
+
+  private toggleInfo(): void {
+    this.infoVisible = !this.infoVisible;
+    localStorage.setItem(INFO_STORAGE_KEY_VISIBLE, this.infoVisible ? "1" : "0");
+    if (this.infoVisible) this.renderInfo();
+    this.applyInfoVisibility();
+  }
+
+  private applyInfoVisibility(): void {
+    const el = this.infoEl;
+    if (!el) return;
+    if (this.infoVisible) {
+      el.setAttribute("aria-hidden", "false");
+      el.classList.add("show");
+    } else {
+      el.setAttribute("aria-hidden", "true");
+      el.classList.remove("show");
+    }
+  }
+
+  private infoRefreshAccum = 0;
+  private updateInfoPanel(dt: number): void {
+    if (!this.infoVisible || !this.infoEl) return;
+    this.infoRefreshAccum += dt;
+    if (this.infoRefreshAccum < 0.5) return;
+    const active = document.activeElement;
+    if (active && this.infoEl.contains(active) && active.tagName === "INPUT") {
+      return;
+    }
+    this.infoRefreshAccum = 0;
+    this.renderInfo();
+  }
+
+  private renderInfo(): void {
+    const el = this.infoEl;
+    if (!el) return;
+    const s = t();
+
+    let count = 0;
+    let males = 0;
+    let females = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      count++;
+      if (u.gender === "m") males++;
+      else females++;
+    }
+
+    const elapsedMs = Math.max(0, Date.now() - this.gameStartMs);
+    const totalSec = Math.floor(elapsedMs / 1000);
+    const mm = Math.floor(totalSec / 60);
+    const ss = totalSec % 60;
+    const survival = `${mm}:${ss.toString().padStart(2, "0")}`;
+
+    const phaseLabel = `${s.phaseIcon(this.lastPhase)} ${s.phaseLabel(this.lastPhase)}`;
+
+    const progress = this.growthProgress[this.playerId] ?? 0;
+    const active = this.growthActive[this.playerId] ?? false;
+    let growthText: string;
+    if (count >= MAX_TRIBE_SIZE) growthText = s.growthFull;
+    else if (count < 2) growthText = s.growthTooFew;
+    else if (males < 1) growthText = s.growthNoMan;
+    else if (females < 1) growthText = s.growthNoWoman;
+    else if (active && progress >= 0.8) growthText = s.growthImminent;
+    else if (active) growthText = `${Math.round(progress * 100)}%`;
+    else growthText = s.growthPaused;
+
+    const collected = this.collectedTotals;
+    const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
+
+    el.innerHTML =
+      `<h2>${escapeHtml(s.infoTitle)}</h2>` +
+      `<div class="info-section">` +
+      `<div class="info-sub">${escapeHtml(s.infoSectionOverview)}</div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoPhase)}</span><b>${escapeHtml(phaseLabel)}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoSurvival)}</span><b>${escapeHtml(survival)}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoTribeSize)}</span><b>${count} / ${MAX_TRIBE_SIZE}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoMales)}</span><b>${males}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoFemales)}</span><b>${females}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoMaxTribe)}</span><b>${this.maxTribeSize}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoGrowth)}</span><b>${escapeHtml(growthText)}</b></div>` +
+      `<div class="info-row"><span class="lbl">${escapeHtml(s.infoCollectedTotal)}</span><b>${totalCollected}</b></div>` +
+      `</div>` +
+      this.balancingPanelHtml() +
+      `<div class="info-hint">${escapeHtml(s.infoHint)}</div>`;
+    this.hookBalancingPanelEvents();
+  }
+
+  private static readonly BAL_GROUP_LABELS: Record<string, string> = {
+    tageszyklus: "Tageszyklus",
+    wachstum: "Wachstum & Bevölkerung",
+    caps: "Lagerkapazitäten",
+    ernte: "Ernte",
+    regrow: "Nachwuchs (Regrow)",
+    einheiten: "Einheiten",
+    essen: "Essen & Trinken",
+    jagd: "Jagd & Kampf",
+    campfire: "Lagerfeuer",
+    tier_spawn: "Tier-Welt",
+    fische: "Fische",
+    tiere: "Tiere",
+    weltobjekte: "Weltobjekte",
+  };
+
+  private balancingPanelHtml(): string {
+    if (this.balancingFields.length === 0) {
+      return "";
+    }
+    const header =
+      `<div class="info-section bal-section">` +
+      `<div class="bal-header">` +
+      `<button class="bal-toggle" data-bal-action="toggle">${this.balancingVisible ? "▼" : "▶"} Balancing</button>` +
+      (this.balancingVisible
+        ? `<button class="bal-reset" data-bal-action="reset" title="Alle Werte auf Default zurücksetzen">Reset</button>`
+        : "") +
+      `</div>`;
+    if (!this.balancingVisible) return header + `</div>`;
+
+    const byGroup: Map<string, BalancingFieldMeta[]> = new Map();
+    for (const f of this.balancingFields) {
+      let arr = byGroup.get(f.group);
+      if (!arr) { arr = []; byGroup.set(f.group, arr); }
+      arr.push(f);
+    }
+
+    const groupOrder = [
+      "tageszyklus", "wachstum", "caps", "ernte", "regrow",
+      "einheiten", "essen", "jagd", "campfire",
+      "tier_spawn", "tiere", "fische", "weltobjekte",
+    ];
+
+    let body = "";
+    for (const gKey of groupOrder) {
+      const fields = byGroup.get(gKey);
+      if (!fields) continue;
+      const label = GameScene.BAL_GROUP_LABELS[gKey] ?? gKey;
+      const open = this.balancingExpandedGroups.has(gKey);
+      const caret = open ? "▼" : "▶";
+      let fieldsHtml = "";
+      if (open) {
+        fieldsHtml = `<div class="bal-group-body">` +
+          fields.map((f) => {
+            const current = this.balancingValues[f.key] ?? f.defaultValue;
+            const isDefault = Math.abs(current - f.defaultValue) < 1e-9;
+            return (
+              `<div class="bal-row${isDefault ? "" : " bal-modified"}" title="${escapeHtml(f.key)}">` +
+              `<span class="bal-lbl">${escapeHtml(f.label)}</span>` +
+              `<input class="bal-input" type="number" ` +
+              `data-bal-key="${escapeHtml(f.key)}" ` +
+              `min="${f.min}" max="${f.max}" step="${f.step}" ` +
+              `value="${current}" />` +
+              `</div>`
+            );
+          }).join("") +
+          `</div>`;
+      }
+      body +=
+        `<div class="bal-group">` +
+        `<button class="bal-group-head" data-bal-action="group" data-bal-group="${escapeHtml(gKey)}">${caret} ${escapeHtml(label)}</button>` +
+        fieldsHtml +
+        `</div>`;
+    }
+
+    return header + body + `</div>`;
+  }
+
+  private hookBalancingPanelEvents(): void {
+    if (!this.infoEl) return;
+    const root = this.infoEl;
+
+    root.querySelectorAll<HTMLElement>("[data-bal-action]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const action = btn.dataset.balAction;
+        if (action === "toggle") {
+          this.balancingVisible = !this.balancingVisible;
+          this.renderInfo();
+        } else if (action === "group") {
+          const g = btn.dataset.balGroup ?? "";
+          if (this.balancingExpandedGroups.has(g)) this.balancingExpandedGroups.delete(g);
+          else this.balancingExpandedGroups.add(g);
+          this.renderInfo();
+        } else if (action === "reset") {
+          if (!window.confirm("Alle Balancing-Werte auf Standard zurücksetzen?")) return;
+          this.net.send({ type: "resetBalancing" });
+        }
+      });
+    });
+
+    root.querySelectorAll<HTMLInputElement>("input.bal-input").forEach((input) => {
+      const commit = () => {
+        const key = input.dataset.balKey ?? "";
+        if (!key) return;
+        const v = Number(input.value);
+        if (!Number.isFinite(v)) return;
+        const def = this.balancingFields.find((f) => f.key === key);
+        if (!def) return;
+        const clamped = Math.max(def.min, Math.min(def.max, v));
+        input.value = String(clamped);
+        if (Math.abs((this.balancingValues[key] ?? def.defaultValue) - clamped) < 1e-9) return;
+        this.balancingValues[key] = clamped;
+        this.net.send({ type: "setBalancing", updates: [{ key, value: clamped }] });
+      };
+      input.addEventListener("change", commit);
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); commit(); input.blur(); }
+      });
+      input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    });
   }
 
   private persistHelpSeen(): void {
@@ -3497,51 +3792,73 @@ export class GameScene extends Phaser.Scene {
   private triggerHelp(key: HelpKey): void {
     if (!this.helpVisible) return;
     if (this.helpSeen.has(key)) return;
-    if (this.helpCurrentKey) return;
     this.helpSeen.add(key);
     this.persistHelpSeen();
     this.showHelpCard(key);
   }
 
   private showHelpCard(key: HelpKey): void {
-    const el = this.helpEl;
-    const img = this.helpImgEl;
-    const text = this.helpTextEl;
-    if (!el || !img || !text) return;
+    const stack = this.helpStackEl;
+    if (!stack) return;
     const tip = HELP_TIPS[key];
+
+    const card = document.createElement("div");
+    card.className = "help-card";
+
+    const img = document.createElement("img");
     img.src = tip.img;
     img.alt = "";
+    card.appendChild(img);
+
+    const text = document.createElement("div");
+    text.className = "help-text";
     text.textContent = tip.text(t());
-    el.setAttribute("aria-hidden", "false");
-    this.helpCurrentKey = key;
-    requestAnimationFrame(() => el.classList.add("show"));
-    if (this.helpHideTimerId !== null) {
-      window.clearTimeout(this.helpHideTimerId);
-    }
-    this.helpHideTimerId = window.setTimeout(
-      () => this.hideHelpCard(),
-      HELP_DURATION_MS,
-    );
+    card.appendChild(text);
+
+    stack.appendChild(card);
+    requestAnimationFrame(() => card.classList.add("show"));
+
+    window.setTimeout(() => {
+      card.classList.remove("show");
+      window.setTimeout(() => card.remove(), 250);
+    }, HELP_DURATION_MS);
   }
 
-  private hideHelpCard(): void {
-    if (this.helpHideTimerId !== null) {
-      window.clearTimeout(this.helpHideTimerId);
-      this.helpHideTimerId = null;
-    }
-    const el = this.helpEl;
-    if (!el) {
-      this.helpCurrentKey = null;
-      return;
-    }
-    el.classList.remove("show");
-    el.setAttribute("aria-hidden", "true");
-    this.helpCurrentKey = null;
+  private clearHelpStack(): void {
+    const stack = this.helpStackEl;
+    if (!stack) return;
+    while (stack.firstChild) stack.removeChild(stack.firstChild);
   }
 
   private onResourceGain(key: keyof Resources, amount: number): void {
     if (amount <= 0) return;
     if (key === "beeren") this.triggerHelp("berry");
+    const now = performance.now();
+    const expiresAt = now + GAIN_DISPLAY_MS;
+    const cur = this.recentGains[key];
+    this.recentGains[key] = {
+      amount: (cur?.amount ?? 0) + amount,
+      expiresAt,
+    };
+    if (expiresAt > this.nextGainExpiry) this.nextGainExpiry = expiresAt;
+  }
+
+  private pruneRecentGains(): boolean {
+    const now = performance.now();
+    let changed = false;
+    let nextExpiry = 0;
+    for (const k of RESOURCE_KEYS) {
+      const g = this.recentGains[k];
+      if (!g) continue;
+      if (g.expiresAt <= now) {
+        delete this.recentGains[k];
+        changed = true;
+      } else if (g.expiresAt > nextExpiry) {
+        nextExpiry = g.expiresAt;
+      }
+    }
+    this.nextGainExpiry = nextExpiry;
+    return changed;
   }
 
   private spawnFloatingResource(ev: ResourceFlowEvent): void {

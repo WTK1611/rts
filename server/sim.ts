@@ -16,8 +16,6 @@ import {
   DAY_LENGTH_SEC,
   DayPhase,
   EncounterEvent,
-  NIGHT_CAMPFIRE_HOLZ_PER_NIGHT,
-  PHASE_LENGTH_SEC,
   phaseAt,
   emptyResources,
   FishSnapshot,
@@ -42,7 +40,8 @@ import {
   UnitSnapshot,
 } from "../shared/protocol";
 import { NameLanguage, languageForSlot, pickFirstName } from "../shared/names";
-import { AnimalSpec, ANIMAL_SPECS, kindHash } from "./animals";
+import { AnimalSpec, animalSpec, ALL_ANIMAL_KINDS, kindHash } from "./animals";
+import { BAL, D } from "./balancing";
 import { craftBetterWeapon, payWeaponCost } from "./weapons";
 import { SPATIAL_CELL, gridKey, pushBucket, updateBucketForId } from "./spatial";
 import { objKey } from "../shared/objectKey";
@@ -68,46 +67,8 @@ import {
   volcanoForCell,
 } from "../shared/worldgen";
 
-const HARVEST_INTERVAL = 1.2;
-const TREE_HARVEST_AMOUNT = 5;
-const BUSH_HARVEST_AMOUNT = 3;
-const MUSH_HARVEST_AMOUNT = 1;
 const STARTING_GENDERS: UnitGender[] = ["m", "f", "m", "f"];
 const TRIBE_SIZE = STARTING_GENDERS.length;
-const GROWTH_REQUIRED_SEC = DAY_LENGTH_SEC * 1.2;
-const PREGNANCY_HEALTH_MIN_FRAC = 0.30;
-const ENCOUNTER_RANGE = 5;
-const ENCOUNTER_COOLDOWN_TICKS = TICK_RATE * 60;
-const MUSHROOM_REGROW_TICKS = TICK_RATE * 60;
-const MUSHROOM_AUTOPICK_GAIN = 1;
-const BUSH_REGROW_TICKS = TICK_RATE * 120;
-const BUSH_AUTOPICK_GAIN = 1;
-const TREE_REGROW_TICKS = TICK_RATE * DAY_LENGTH_SEC * 5;
-const TREE_STAGE_TICKS = TREE_REGROW_TICKS / 4;
-const TREE_AUTOPICK_GAIN = 1;
-const STONE_AUTOPICK_GAIN = 1;
-const STONE_HARVEST_AMOUNT = 2;
-const FISH_AUTOPICK_GAIN = 1;
-const WATER_AUTOPICK_GAIN = 1;
-const CACTUS_REGROW_TICKS = TICK_RATE * 180;
-const CACTUS_AUTOPICK_HOLZ = 1;
-const CACTUS_AUTOPICK_WASSER = 1;
-const CACTUS_HARVEST_HOLZ = 1;
-const CACTUS_HARVEST_WASSER = 1;
-
-const CAMPFIRE_IGNITE_MIN_UNITS = 2;
-const CAMPFIRE_IGNITE_HOLZ_COST = 5;
-const CAMPFIRE_IGNITE_STEIN_COST = 1;
-const CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2.5;
-const CAMPFIRE_BURN_PER_FUEL_SEC =
-  PHASE_LENGTH_SEC / NIGHT_CAMPFIRE_HOLZ_PER_NIGHT;
-const CAMPFIRE_GROW_RADIUS = 1.5;
-const CAMPFIRE_MAX_SIZE = 6;
-const CAMPFIRE_HP_REGEN_PER_SEC = 1.2;
-const CAMPFIRE_REPEL_RADIUS = CAMPFIRE_RANGE + 2.5;
-const NIGHT_PREDATOR_DETECT_MULT = 1.6;
-const NIGHT_PREDATOR_AGGRO_DURATION_MULT = 1.4;
-const NIGHT_PREDATOR_DAMAGE_MULT = 1.25;
 
 export const PLAYER_COLORS: number[] = [
   0x4ea1ff, 0xff6b6b, 0x6cdf6c, 0xffd84d, 0xc066ff,
@@ -145,46 +106,6 @@ export interface SimUnit {
   autoFollowScanTimer: number;
 }
 
-const MAX_AGE_SEC = DAY_LENGTH_SEC * 4;
-const CHILD_AGE_SEC = DAY_LENGTH_SEC;
-const OLD_THRESHOLD_SEC = DAY_LENGTH_SEC * 3;
-
-const UNIT_HP_MAX = 100;
-const UNIT_HP_LOSS_PER_TILE = 0.4;
-const UNIT_HP_LOSS_PER_SEC_IDLE = 0.12;
-const EAT_INTERVAL = 1.0;
-const HP_GAIN_FLEISCH = 15;
-const HP_GAIN_FISCH = 12;
-const HP_GAIN_BEEREN = 3;
-const HP_GAIN_PILZE = 2;
-const HP_GAIN_WASSER = 1;
-const AUTOEAT_HP_THRESHOLD = 0.51;
-
-const ANIMAL_SPAWN_RADIUS = 200;
-const HUNT_INTERVAL = 0.9;
-const FIST_HUNT_DAMAGE = 2;
-const STONE_HUNT_DAMAGE = 3;
-const CLUB_HUNT_DAMAGE = 4;
-const SPEAR_HUNT_DAMAGE = 5;
-const HUNT_RANGE = 1.5;
-const ANIMAL_ATTACK_INTERVAL = 1.0;
-const UNIT_AUTO_HUNT_SCAN_INTERVAL = 0.5;
-const GROUP_FIGHT_RANGE = 7;
-const ANIMAL_ESCAPE_RANGE_MULT = 1.8;
-const PREY_FLEE_RANGE = 6;
-const PREY_FLEE_REPATH_SEC = 0.8;
-const ANIMAL_BREED_RANGE_SQ = 2.5 * 2.5;
-const ANIMAL_KIND_CAP_FACTOR = 2.0;
-const ANIMAL_RESPAWN_INTERVAL = 0.5;
-const ANIMAL_RESPAWN_PER_TICK = 140;
-const ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ = 12 * 12;
-const ANIMAL_RESPAWN_TILE_ATTEMPTS = 60;
-const ANIMAL_FULL_STEP_RADIUS = 12;
-const ANIMAL_PASSIVE_STEP_BUCKETS = 10;
-const FOLLOW_CHIEF_NEAR = 5;
-const FOLLOW_CHIEF_SCAN_INTERVAL = 0.3;
-const CHIEF_VISION_RADIUS = 9;
-const AUTO_HUNT_ABORT_DIST = CHIEF_VISION_RADIUS + 3;
 
 export interface SimCampfire {
   id: string;
@@ -240,18 +161,6 @@ export interface SimFish {
   breedTimer: number;
 }
 
-const FISH_SPEED = 0.6;
-const FISH_TURN_INTERVAL_MIN = 1.2;
-const FISH_TURN_INTERVAL_MAX = 3.5;
-const FISH_HOME_RADIUS = 4.5;
-const FISH_SHORE_BIAS = 0.35;
-const FISH_CATCH_RADIUS = 1.4;
-const FISH_MATURE_AGE_SEC = 30;
-const FISH_BREED_INTERVAL_SEC = 55;
-const FISH_BREED_SCAN_INTERVAL_SEC = 1.0;
-const FISH_BREED_RANGE_SQ = 1.6 * 1.6;
-const FISH_DENSITY_CAP_FACTOR = 1.8;
-
 interface SimDropPile {
   id: string;
   gx: number;
@@ -304,6 +213,7 @@ export class Sim {
   artifactFinds: ArtifactFindEvent[] = [];
   tribeSplits: TribeSplit[] = [];
   resourceFlows: ResourceFlowEvent[] = [];
+  waterDebt: number[] = new Array(MAX_PLAYERS).fill(0);
   damageEvents: DamageEvent[] = [];
   fishes: Map<string, SimFish> = new Map();
   removedFishIds: string[] = [];
@@ -347,7 +257,7 @@ export class Sim {
   }
 
   private scanVolcanoes(): void {
-    const r = ANIMAL_SPAWN_RADIUS;
+    const r = BAL.animalSpawnRadius;
     const cR = Math.ceil(r / VOLCANO_CELL) + 1;
     for (let cj = -cR; cj <= cR; cj++) {
       for (let ci = -cR; ci <= cR; ci++) {
@@ -454,8 +364,8 @@ export class Sim {
   }
 
   private spawnAnimals(): void {
-    const r = ANIMAL_SPAWN_RADIUS;
-    const kinds = Object.keys(ANIMAL_SPECS) as AnimalKind[];
+    const r = BAL.animalSpawnRadius;
+    const kinds = [...ALL_ANIMAL_KINDS];
     const counts: Map<AnimalKind, number> = new Map();
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
@@ -464,7 +374,7 @@ export class Sim {
         const isLand = isLandTile(this.seed, i, j);
         if (!isWater && !isLand) continue;
         for (const kind of kinds) {
-          const spec = ANIMAL_SPECS[kind];
+          const spec = animalSpec(kind);
           if (spec.aquatic ? !isWater : !isLand) continue;
           if (!spec.biomes.includes(b)) continue;
           const r01 = rand01(this.seed ^ kindHash(kind), i, j);
@@ -502,7 +412,7 @@ export class Sim {
       }
     }
     for (const [kind, c] of counts) {
-      this.animalKindCap.set(kind, Math.max(20, Math.ceil(c * ANIMAL_KIND_CAP_FACTOR)));
+      this.animalKindCap.set(kind, Math.max(20, Math.ceil(c * BAL.animalKindCapFactor)));
       this.animalKindFloor.set(kind, c);
     }
   }
@@ -529,7 +439,7 @@ export class Sim {
   }
 
   private spawnFishes(): void {
-    const r = ANIMAL_SPAWN_RADIUS;
+    const r = BAL.animalSpawnRadius;
     let count = 0;
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
@@ -543,18 +453,18 @@ export class Sim {
           gy: j + 0.5,
           homeI: i,
           homeJ: j,
-          vx: Math.cos(ang) * FISH_SPEED,
-          vy: Math.sin(ang) * FISH_SPEED,
+          vx: Math.cos(ang) * BAL.fishSpeed,
+          vy: Math.sin(ang) * BAL.fishSpeed,
           turnTimer: rand01(this.seed ^ 0xf15b, i, j) *
-            (FISH_TURN_INTERVAL_MAX - FISH_TURN_INTERVAL_MIN) +
-            FISH_TURN_INTERVAL_MIN,
-          ageSec: FISH_MATURE_AGE_SEC + ageR * 30,
-          breedTimer: -FISH_BREED_INTERVAL_SEC * ageR,
+            (BAL.fishTurnIntervalMax - BAL.fishTurnIntervalMin) +
+            BAL.fishTurnIntervalMin,
+          ageSec: BAL.fishMatureAgeSec + ageR * 30,
+          breedTimer: -BAL.fishBreedIntervalSec * ageR,
         });
         count++;
       }
     }
-    this.fishCap = Math.max(80, Math.ceil(count * FISH_DENSITY_CAP_FACTOR));
+    this.fishCap = Math.max(80, Math.ceil(count * BAL.fishDensityCapFactor));
   }
 
   fishesSnapshot(): FishSnapshot[] {
@@ -593,7 +503,7 @@ export class Sim {
     const ti = Math.floor(f.gx);
     const tj = Math.floor(f.gy);
     let ang = Math.random() * Math.PI * 2;
-    if (Math.random() < FISH_SHORE_BIAS) {
+    if (Math.random() < BAL.fishShoreBias) {
       const dirs: Array<[number, number]> = [];
       for (let dj = -1; dj <= 1; dj++) {
         for (let di = -1; di <= 1; di++) {
@@ -607,10 +517,10 @@ export class Sim {
         ang = Math.atan2(dy, dx);
       }
     }
-    f.vx = Math.cos(ang) * FISH_SPEED;
-    f.vy = Math.sin(ang) * FISH_SPEED;
-    f.turnTimer = FISH_TURN_INTERVAL_MIN +
-      Math.random() * (FISH_TURN_INTERVAL_MAX - FISH_TURN_INTERVAL_MIN);
+    f.vx = Math.cos(ang) * BAL.fishSpeed;
+    f.vy = Math.sin(ang) * BAL.fishSpeed;
+    f.turnTimer = BAL.fishTurnIntervalMin +
+      Math.random() * (BAL.fishTurnIntervalMax - BAL.fishTurnIntervalMin);
   }
 
   private stepFishes(dt: number): void {
@@ -622,9 +532,9 @@ export class Sim {
       const homeDx = (f.homeI + 0.5) - f.gx;
       const homeDy = (f.homeJ + 0.5) - f.gy;
       const homeDist = Math.hypot(homeDx, homeDy);
-      if (homeDist > FISH_HOME_RADIUS) {
-        f.vx = (homeDx / homeDist) * FISH_SPEED;
-        f.vy = (homeDy / homeDist) * FISH_SPEED;
+      if (homeDist > BAL.fishHomeRadius) {
+        f.vx = (homeDx / homeDist) * BAL.fishSpeed;
+        f.vy = (homeDy / homeDist) * BAL.fishSpeed;
       }
 
       const nx = f.gx + f.vx * dt;
@@ -643,7 +553,7 @@ export class Sim {
 
     this.fishBreedScanTimer -= dt;
     if (this.fishBreedScanTimer > 0) return;
-    const stepDt = FISH_BREED_SCAN_INTERVAL_SEC;
+    const stepDt = BAL.fishBreedScanIntervalSec;
     this.fishBreedScanTimer = stepDt;
 
     const newborns: SimFish[] = [];
@@ -651,7 +561,7 @@ export class Sim {
       const cellSize = 2;
       const buckets: Map<string, SimFish[]> = new Map();
       for (const f of this.fishes.values()) {
-        if (f.ageSec < FISH_MATURE_AGE_SEC) continue;
+        if (f.ageSec < BAL.fishMatureAgeSec) continue;
         const ci = Math.floor(f.gx / cellSize);
         const cj = Math.floor(f.gy / cellSize);
         const key = `${ci}|${cj}`;
@@ -661,7 +571,7 @@ export class Sim {
       }
 
       for (const f of this.fishes.values()) {
-        if (f.ageSec < FISH_MATURE_AGE_SEC) continue;
+        if (f.ageSec < BAL.fishMatureAgeSec) continue;
         const ci = Math.floor(f.gx / cellSize);
         const cj = Math.floor(f.gy / cellSize);
         let mate: SimFish | null = null;
@@ -674,7 +584,7 @@ export class Sim {
               if (g.id <= f.id) continue;
               const dx = g.gx - f.gx;
               const dy = g.gy - f.gy;
-              if (dx * dx + dy * dy < FISH_BREED_RANGE_SQ) {
+              if (dx * dx + dy * dy < D.fishBreedRangeSq) {
                 mate = g;
                 break outer;
               }
@@ -683,8 +593,8 @@ export class Sim {
         }
         if (mate) {
           f.breedTimer += stepDt;
-          if (f.breedTimer >= FISH_BREED_INTERVAL_SEC) {
-            f.breedTimer = -FISH_BREED_INTERVAL_SEC * 0.6;
+          if (f.breedTimer >= BAL.fishBreedIntervalSec) {
+            f.breedTimer = -BAL.fishBreedIntervalSec * 0.6;
             const ti = Math.floor(f.gx);
             const tj = Math.floor(f.gy);
             if (this.isWaterTileAt(ti, tj)) {
@@ -696,11 +606,11 @@ export class Sim {
                 gy: f.gy,
                 homeI: ti,
                 homeJ: tj,
-                vx: Math.cos(ang) * FISH_SPEED,
-                vy: Math.sin(ang) * FISH_SPEED,
-                turnTimer: FISH_TURN_INTERVAL_MIN,
+                vx: Math.cos(ang) * BAL.fishSpeed,
+                vy: Math.sin(ang) * BAL.fishSpeed,
+                turnTimer: BAL.fishTurnIntervalMin,
                 ageSec: 0,
-                breedTimer: -FISH_BREED_INTERVAL_SEC,
+                breedTimer: -BAL.fishBreedIntervalSec,
               });
               if (this.fishes.size + newborns.length >= this.fishCap) break;
             }
@@ -822,7 +732,7 @@ export class Sim {
         owner: f.owner,
         gx: f.gx,
         gy: f.gy,
-        fuel: Math.max(0, Math.min(1, f.fuelTimer / CAMPFIRE_BURN_PER_FUEL_SEC)),
+        fuel: Math.max(0, Math.min(1, f.fuelTimer / D.campfireBurnPerFuelSec)),
         size: f.size,
       });
     }
@@ -855,24 +765,24 @@ export class Sim {
   private animalDetectRange(spec: AnimalSpec): number {
     if (!this.isNight()) return spec.detectRange;
     if (!spec.aggressive && !spec.predator) return spec.detectRange;
-    return spec.detectRange * NIGHT_PREDATOR_DETECT_MULT;
+    return spec.detectRange * BAL.nightPredatorDetectMult;
   }
 
   private animalDamage(spec: AnimalSpec): number {
     if (!this.isNight()) return spec.damage;
     if (!spec.aggressive && !spec.predator) return spec.damage;
-    return Math.ceil(spec.damage * NIGHT_PREDATOR_DAMAGE_MULT);
+    return Math.ceil(spec.damage * BAL.nightPredatorDamageMult);
   }
 
   private animalAggroDurationTicks(spec: AnimalSpec): number {
     const base = spec.aggroDurationSec;
     if (!this.isNight()) return Math.floor(base * TICK_RATE);
     if (!spec.aggressive && !spec.predator) return Math.floor(base * TICK_RATE);
-    return Math.floor(base * NIGHT_PREDATOR_AGGRO_DURATION_MULT * TICK_RATE);
+    return Math.floor(base * BAL.nightPredatorAggroDurationMult * TICK_RATE);
   }
 
   private animalSnap = (a: SimAnimal): AnimalSnapshot => {
-    const spec = ANIMAL_SPECS[a.kind];
+    const spec = animalSpec(a.kind);
     return {
       id: a.id,
       kind: a.kind,
@@ -886,6 +796,7 @@ export class Sim {
   };
 
   cmdHunt(owner: PlayerId, unitIds: string[], animalId: string): void {
+    if (this.lockedAtFire(owner)) return;
     const a = this.animals.get(animalId);
     if (!a) return;
     const claimed = new Set<string>();
@@ -938,7 +849,7 @@ export class Sim {
   ): ReturnType<typeof findPath> {
     const ti = Math.floor(a.gx);
     const tj = Math.floor(a.gy);
-    const aquaticTarget = ANIMAL_SPECS[a.kind].aquatic;
+    const aquaticTarget = animalSpec(a.kind).aquatic;
     const walkable = (x: number, y: number) =>
       aquaticTarget ? this.unitHuntWalkable(x, y) : this.isWalkable(x, y);
     const candidates: Array<{ i: number; j: number }> = [];
@@ -991,7 +902,7 @@ export class Sim {
       if (a.hp <= 0) continue;
       const k = gridKey(Math.floor(a.gx / cs), Math.floor(a.gy / cs));
       pushBucket(this.animalGrid, k, a);
-      const spec = ANIMAL_SPECS[a.kind];
+      const spec = animalSpec(a.kind);
       if (spec.predator) pushBucket(this.predatorGrid, k, a);
       else if (!spec.aggressive) pushBucket(this.preyGrid, k, a);
     }
@@ -1008,7 +919,7 @@ export class Sim {
 
   private rebuildActiveAnimalSet(): void {
     this.activeAnimalIds.clear();
-    const radius = ANIMAL_FULL_STEP_RADIUS;
+    const radius = BAL.animalFullStepRadius;
     const r2 = radius * radius;
     const cs = SPATIAL_CELL;
     const rr = Math.ceil(radius / cs);
@@ -1130,7 +1041,7 @@ export class Sim {
 
   private stepAnimals(dt: number): void {
     const dead: string[] = [];
-    const passiveBucket = this.tick % ANIMAL_PASSIVE_STEP_BUCKETS;
+    const passiveBucket = this.tick % BAL.animalPassiveStepBuckets;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) {
         dead.push(a.id);
@@ -1142,13 +1053,13 @@ export class Sim {
         dead.push(a.id);
         continue;
       }
-      const spec = ANIMAL_SPECS[a.kind];
+      const spec = animalSpec(a.kind);
       const fullStep =
         this.activeAnimalIds.has(a.id) ||
         a.attackTargetUnitId !== null;
       if (
         !fullStep &&
-        updateBucketForId(a.id, ANIMAL_PASSIVE_STEP_BUCKETS) !== passiveBucket
+        updateBucketForId(a.id, BAL.animalPassiveStepBuckets) !== passiveBucket
       ) {
         continue;
       }
@@ -1161,11 +1072,11 @@ export class Sim {
           a.state = "flee";
           a.fleeRepathTimer -= dt;
           if (a.path.length === 0 || a.fleeRepathTimer <= 0) {
-            a.fleeRepathTimer = PREY_FLEE_REPATH_SEC;
+            a.fleeRepathTimer = BAL.preyFleeRepathSec;
             const dx = a.gx - nearestRepel.gx;
             const dy = a.gy - nearestRepel.gy;
             const d = Math.hypot(dx, dy) || 1;
-            const fd = CAMPFIRE_REPEL_RADIUS + 2;
+            const fd = D.campfireRepelRadius + 2;
             const ti = Math.floor(a.gx + (dx / d) * fd);
             const tj = Math.floor(a.gy + (dy / d) * fd);
             if (this.animalWalkable(spec, ti, tj)) {
@@ -1216,7 +1127,7 @@ export class Sim {
           const tdx = t.gx - a.gx;
           const tdy = t.gy - a.gy;
           const detect = this.animalDetectRange(spec);
-          const escapeR = detect * ANIMAL_ESCAPE_RANGE_MULT;
+          const escapeR = detect * BAL.animalEscapeRangeMult;
           if (
             detect > 0 &&
             tdx * tdx + tdy * tdy > escapeR * escapeR
@@ -1335,11 +1246,11 @@ export class Sim {
 
       if (!spec.aggressive && !spec.predator) {
         let predator: SimAnimal | null = null;
-        let pdist2 = PREY_FLEE_RANGE * PREY_FLEE_RANGE;
+        let pdist2 = BAL.preyFleeRange * BAL.preyFleeRange;
         const cs = SPATIAL_CELL;
         const ax = Math.floor(a.gx / cs);
         const ay = Math.floor(a.gy / cs);
-        const rr = Math.ceil(PREY_FLEE_RANGE / cs);
+        const rr = Math.ceil(BAL.preyFleeRange / cs);
         for (let cy = ay - rr; cy <= ay + rr; cy++) {
           for (let cx = ax - rr; cx <= ax + rr; cx++) {
             const arr = this.predatorGrid.get(gridKey(cx, cy));
@@ -1361,11 +1272,11 @@ export class Sim {
           a.state = "flee";
           a.fleeRepathTimer -= dt;
           if (a.path.length === 0 || a.fleeRepathTimer <= 0) {
-            a.fleeRepathTimer = PREY_FLEE_REPATH_SEC;
+            a.fleeRepathTimer = BAL.preyFleeRepathSec;
             const dx = a.gx - predator.gx;
             const dy = a.gy - predator.gy;
             const d = Math.hypot(dx, dy) || 1;
-            const fd = PREY_FLEE_RANGE;
+            const fd = BAL.preyFleeRange;
             const ti = Math.floor(a.gx + (dx / d) * fd);
             const tj = Math.floor(a.gy + (dy / d) * fd);
             if (this.animalWalkable(spec, ti, tj)) {
@@ -1465,7 +1376,7 @@ export class Sim {
     for (const a of this.animals.values()) {
       kindCounts.set(a.kind, (kindCounts.get(a.kind) ?? 0) + 1);
       if (a.hp <= 0) continue;
-      const spec = ANIMAL_SPECS[a.kind];
+      const spec = animalSpec(a.kind);
       if (a.ageSec < spec.matureAgeSec) continue;
       if (a.attackTargetUnitId || a.attackTargetAnimalId) continue;
       if (a.state === "flee" || a.state === "hunt") continue;
@@ -1479,7 +1390,7 @@ export class Sim {
     const newborns: SimAnimal[] = [];
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
-      const spec = ANIMAL_SPECS[a.kind];
+      const spec = animalSpec(a.kind);
       if (a.ageSec < spec.matureAgeSec) continue;
       if (a.attackTargetUnitId || a.attackTargetAnimalId) continue;
       if (a.state === "flee" || a.state === "hunt") continue;
@@ -1496,7 +1407,7 @@ export class Sim {
             if (b.id <= a.id) continue;
             const dx = b.gx - a.gx;
             const dy = b.gy - a.gy;
-            if (dx * dx + dy * dy < ANIMAL_BREED_RANGE_SQ) {
+            if (dx * dx + dy * dy < D.animalBreedRangeSq) {
               mate = b;
               break outer;
             }
@@ -1522,7 +1433,7 @@ export class Sim {
   }
 
   private makeAnimalChild(parent: SimAnimal): SimAnimal | null {
-    const spec = ANIMAL_SPECS[parent.kind];
+    const spec = animalSpec(parent.kind);
     const ti = Math.floor(parent.gx);
     const tj = Math.floor(parent.gy);
     if (!this.animalWalkable(spec, ti, tj)) return null;
@@ -1554,7 +1465,7 @@ export class Sim {
   private stepAnimalRespawn(dt: number): void {
     this.animalRespawnTimer -= dt;
     if (this.animalRespawnTimer > 0) return;
-    this.animalRespawnTimer = ANIMAL_RESPAWN_INTERVAL;
+    this.animalRespawnTimer = BAL.animalRespawnInterval;
 
     const counts: Map<AnimalKind, number> = new Map();
     for (const a of this.animals.values()) {
@@ -1569,20 +1480,20 @@ export class Sim {
     if (deficits.length === 0) return;
     deficits.sort((a, b) => b.missing - a.missing);
 
-    const r = ANIMAL_SPAWN_RADIUS;
+    const r = BAL.animalSpawnRadius;
     let spawnedTotal = 0;
     const totalMissing = deficits.reduce((s, d) => s + d.missing, 0);
     for (const { kind, missing } of deficits) {
-      if (spawnedTotal >= ANIMAL_RESPAWN_PER_TICK) break;
+      if (spawnedTotal >= BAL.animalRespawnPerTick) break;
       const share = Math.max(
         1,
-        Math.ceil((missing / totalMissing) * ANIMAL_RESPAWN_PER_TICK),
+        Math.ceil((missing / totalMissing) * BAL.animalRespawnPerTick),
       );
-      const budget = Math.min(share, missing, ANIMAL_RESPAWN_PER_TICK - spawnedTotal);
-      const spec = ANIMAL_SPECS[kind];
+      const budget = Math.min(share, missing, BAL.animalRespawnPerTick - spawnedTotal);
+      const spec = animalSpec(kind);
       let spawnedHere = 0;
       let attempts = 0;
-      const maxAttempts = ANIMAL_RESPAWN_TILE_ATTEMPTS * budget;
+      const maxAttempts = BAL.animalRespawnTileAttempts * budget;
       while (spawnedHere < budget && attempts < maxAttempts) {
         attempts++;
         const i = Math.floor((Math.random() * 2 - 1) * r);
@@ -1596,7 +1507,7 @@ export class Sim {
         const cs = SPATIAL_CELL;
         const gx = Math.floor(cx / cs);
         const gy = Math.floor(cy / cs);
-        const rr = Math.ceil(Math.sqrt(ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) / cs);
+        const rr = Math.ceil(Math.sqrt(D.animalRespawnMinUnitDistSq) / cs);
         outer: for (let dgy = -rr; dgy <= rr; dgy++) {
           for (let dgx = -rr; dgx <= rr; dgx++) {
             const arr = this.unitGrid.get(gridKey(gx + dgx, gy + dgy));
@@ -1605,7 +1516,7 @@ export class Sim {
               if (u.hp <= 0) continue;
               const dx = cx - u.gx;
               const dy = cy - u.gy;
-              if (dx * dx + dy * dy < ANIMAL_RESPAWN_MIN_UNIT_DIST_SQ) {
+              if (dx * dx + dy * dy < D.animalRespawnMinUnitDistSq) {
                 nearUnit = true;
                 break outer;
               }
@@ -1656,7 +1567,7 @@ export class Sim {
     if (dist <= spec.attackRange) {
       a.path = [];
       a.attackTimer += dt;
-      if (a.attackTimer >= ANIMAL_ATTACK_INTERVAL) {
+      if (a.attackTimer >= BAL.animalAttackInterval) {
         a.attackTimer = 0;
         const dmg = this.animalDamage(spec);
         if (dmg > 0) {
@@ -1728,7 +1639,7 @@ export class Sim {
     if (dist <= spec.attackRange) {
       a.path = [];
       a.attackTimer += dt;
-      if (a.attackTimer >= ANIMAL_ATTACK_INTERVAL) {
+      if (a.attackTimer >= BAL.animalAttackInterval) {
         a.attackTimer = 0;
         if (spec.preyDamage > 0) {
           const applied = Math.min(t.hp, spec.preyDamage);
@@ -1792,7 +1703,7 @@ export class Sim {
 
   private maybeAutoEngage(u: SimUnit): void {
     let allyTarget: string | null = null;
-    let allyD2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
+    let allyD2 = BAL.groupFightRange * BAL.groupFightRange;
     const allies = this.byOwnerCache[u.owner];
     for (const ally of allies) {
       if (ally.id === u.id) continue;
@@ -1824,7 +1735,7 @@ export class Sim {
         const arr = this.animalGrid.get(gridKey(cx, cy));
         if (!arr) continue;
         for (const a of arr) {
-          const spec = ANIMAL_SPECS[a.kind];
+          const spec = animalSpec(a.kind);
           if (!spec.autoHuntable) continue;
           if (a.hp <= 0) continue;
           const dx = a.gx - u.gx;
@@ -1860,7 +1771,7 @@ export class Sim {
 
   private rallyAlliesToHunt(hunter: SimUnit, a: SimAnimal): void {
     const claimed = new Set<string>();
-    const r2 = GROUP_FIGHT_RANGE * GROUP_FIGHT_RANGE;
+    const r2 = BAL.groupFightRange * BAL.groupFightRange;
     const list = this.byOwnerCache[hunter.owner];
     for (const u of list) {
       if (u.id === hunter.id) continue;
@@ -1894,7 +1805,7 @@ export class Sim {
       if (c) {
         const cdx = u.gx - c.gx;
         const cdy = u.gy - c.gy;
-        if (cdx * cdx + cdy * cdy > AUTO_HUNT_ABORT_DIST * AUTO_HUNT_ABORT_DIST) {
+        if (cdx * cdx + cdy * cdy > D.autoHuntAbortDist * D.autoHuntAbortDist) {
           u.huntTarget = null;
           u.huntAuto = false;
           u.huntWeapon = null;
@@ -1904,11 +1815,19 @@ export class Sim {
         }
       }
     }
+    if (u.huntAuto && this.resourceRoom(u.owner, "fleisch") <= 0) {
+      u.huntTarget = null;
+      u.huntAuto = false;
+      u.huntWeapon = null;
+      u.state = "idle";
+      u.path = [];
+      return true;
+    }
     const dx = a.gx - u.gx;
     const dy = a.gy - u.gy;
     const dist = Math.hypot(dx, dy);
 
-    if (dist <= HUNT_RANGE) {
+    if (dist <= BAL.huntRange) {
       u.path = [];
       u.state = "hunting";
       u.huntFacing = a.gx >= u.gx ? 1 : -1;
@@ -1928,16 +1847,16 @@ export class Sim {
       }
       u.huntWeapon = u.weapon;
       u.huntTimer += dt;
-      if (u.huntTimer >= HUNT_INTERVAL) {
+      if (u.huntTimer >= BAL.huntInterval) {
         u.huntTimer = 0;
-        let damage = FIST_HUNT_DAMAGE;
-        if (u.weapon === "spear") damage = SPEAR_HUNT_DAMAGE;
-        else if (u.weapon === "club") damage = CLUB_HUNT_DAMAGE;
-        else if (u.weapon === "stones") damage = STONE_HUNT_DAMAGE;
+        let damage = BAL.fistHuntDamage;
+        if (u.weapon === "spear") damage = BAL.spearHuntDamage;
+        else if (u.weapon === "club") damage = BAL.clubHuntDamage;
+        else if (u.weapon === "stones") damage = BAL.stoneHuntDamage;
         const applied = Math.min(a.hp, damage);
         a.hp -= damage;
         this.pushDamage(applied, a.gx, a.gy);
-        const spec = ANIMAL_SPECS[a.kind];
+        const spec = animalSpec(a.kind);
         if (spec.damage > 0) {
           if (!a.attackTargetUnitId) a.attackTargetUnitId = u.id;
           a.aggroExpireTick =
@@ -2011,7 +1930,7 @@ export class Sim {
     for (let k = 0; k < TRIBE_SIZE; k++) {
       const [di, dj] = offsets[k % offsets.length];
       const isParent = k < 2;
-      const startAge = isParent ? CHILD_AGE_SEC * 2 : CHILD_AGE_SEC;
+      const startAge = isParent ? BAL.childAgeSec * 2 : BAL.childAgeSec;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, k, usedNames);
       usedNames.add(firstName);
@@ -2033,10 +1952,10 @@ export class Sim {
         huntAuto: false,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
-        hp: UNIT_HP_MAX,
-        hpMax: UNIT_HP_MAX,
+        hp: BAL.unitHpMax,
+        hpMax: BAL.unitHpMax,
         eatCooldown: 0,
-        autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
+        autoHuntScanTimer: rand01(this.seed ^ 0xb33, k, p) * BAL.unitAutoHuntScanInterval,
         ageSec: startAge,
         gender,
         firstName,
@@ -2078,7 +1997,7 @@ export class Sim {
       const [di, dj] = offsets[k % offsets.length];
       const idx = base + k;
       const isParent = k < 2;
-      const startAge = isParent ? CHILD_AGE_SEC * 2 : CHILD_AGE_SEC;
+      const startAge = isParent ? BAL.childAgeSec * 2 : BAL.childAgeSec;
       const gender = STARTING_GENDERS[k];
       const firstName = pickFirstName(this.seed, lang, gender, p, idx, usedNames);
       usedNames.add(firstName);
@@ -2100,10 +2019,10 @@ export class Sim {
         huntAuto: false,
         harvestTimer: 0,
         lastFootprintTile: { i: a.cx + di, j: a.cy + dj },
-        hp: UNIT_HP_MAX,
-        hpMax: UNIT_HP_MAX,
+        hp: BAL.unitHpMax,
+        hpMax: BAL.unitHpMax,
         eatCooldown: 0,
-        autoHuntScanTimer: rand01(this.seed ^ 0xb33, idx, p) * UNIT_AUTO_HUNT_SCAN_INTERVAL,
+        autoHuntScanTimer: rand01(this.seed ^ 0xb33, idx, p) * BAL.unitAutoHuntScanInterval,
         ageSec: startAge,
         gender,
         firstName,
@@ -2174,8 +2093,28 @@ export class Sim {
     return this.isWalkable(i, j) || this.isShallowWater(i, j);
   }
 
+  private isNearWater(i: number, j: number, range: number): boolean {
+    if (range <= 0) return false;
+    for (let dj = -range; dj <= range; dj++) {
+      for (let di = -range; di <= range; di++) {
+        if (this.isWaterTile(i + di, j + dj)) return true;
+      }
+    }
+    return false;
+  }
+
   private animalWalkable(spec: AnimalSpec, i: number, j: number): boolean {
-    if (spec.aquatic) return this.isWaterTile(i, j);
+    if (spec.aquatic) {
+      if (this.isWaterTile(i, j)) return true;
+      if (
+        spec.amphibianRange > 0 &&
+        this.isWalkable(i, j) &&
+        this.isNearWater(i, j, spec.amphibianRange)
+      ) {
+        return true;
+      }
+      return false;
+    }
     return this.isWalkable(i, j);
   }
 
@@ -2186,6 +2125,13 @@ export class Sim {
   ): { i: number; j: number } | null {
     if (!spec.aquatic) return { i: ti, j: tj };
     if (this.isWaterTile(ti, tj)) return { i: ti, j: tj };
+    if (
+      spec.amphibianRange > 0 &&
+      this.isWalkable(ti, tj) &&
+      this.isNearWater(ti, tj, spec.amphibianRange)
+    ) {
+      return { i: ti, j: tj };
+    }
     const maxR = 4;
     let best: { i: number; j: number } | null = null;
     let bestD = Infinity;
@@ -2255,6 +2201,7 @@ export class Sim {
   }
 
   cmdMove(owner: PlayerId, unitIds: string[], i: number, j: number): void {
+    if (this.lockedAtFire(owner)) return;
     const claimed = new Set<string>();
     for (const id of unitIds) {
       const u = this.units.get(id);
@@ -2275,6 +2222,7 @@ export class Sim {
   }
 
   cmdHarvest(owner: PlayerId, unitIds: string[], i: number, j: number): void {
+    if (this.lockedAtFire(owner)) return;
     if (this.isNight()) {
       this.cmdMove(owner, unitIds, i, j);
       return;
@@ -2321,15 +2269,15 @@ export class Sim {
       const ddx = existing.gx - cx;
       const ddy = existing.gy - cy;
       const closeEnough =
-        ddx * ddx + ddy * ddy <= CAMPFIRE_GROW_RADIUS * CAMPFIRE_GROW_RADIUS;
+        ddx * ddx + ddy * ddy <= BAL.campfireGrowRadius * BAL.campfireGrowRadius;
       if (closeEnough) {
-        if (existing.size >= CAMPFIRE_MAX_SIZE) return;
+        if (existing.size >= BAL.campfireMaxSize) return;
         r.holz -= 1;
         r.stein -= 1;
         this.pushFlow(owner, "holz", -1, existing.gx, existing.gy);
         this.pushFlow(owner, "stein", -1, existing.gx, existing.gy);
         existing.size += 1;
-        existing.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
+        existing.fuelTimer = D.campfireBurnPerFuelSec;
         return;
       }
       this.campfires.delete(id);
@@ -2344,7 +2292,7 @@ export class Sim {
       owner,
       gx: cx,
       gy: cy,
-      fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+      fuelTimer: D.campfireBurnPerFuelSec,
       size: 1,
     });
   }
@@ -2485,7 +2433,7 @@ export class Sim {
     this.footprints.push(fp);
     this.newFootprints.push(fp);
     if (!this.unitAtAnyFire(u)) {
-      u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_TILE);
+      u.hp = Math.max(0, u.hp - BAL.unitHpLossPerTile);
     }
     this.tryAutoPick(u, ti, tj);
     this.tryEngageAnimalOnTile(u, ti, tj);
@@ -2493,6 +2441,7 @@ export class Sim {
 
   private tryEngageAnimalOnTile(u: SimUnit, ti: number, tj: number): void {
     if (u.huntTarget) return;
+    if (this.resourceRoom(u.owner, "fleisch") <= 0) return;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
       if (Math.floor(a.gx) !== ti) continue;
@@ -2507,11 +2456,11 @@ export class Sim {
       const k = objKey("tree", ti, tj);
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "holz") >= TREE_AUTOPICK_GAIN
+        this.resourceRoom(u.owner, "holz") >= BAL.treeAutopickGain
       ) {
         this.autoPickAndRegrow(
           u, "tree", ti, tj, "holz",
-          TREE_AUTOPICK_GAIN, TREE_REGROW_TICKS,
+          BAL.treeAutopickGain, D.treeRegrowTicks,
         );
         return;
       }
@@ -2520,11 +2469,11 @@ export class Sim {
       const k = objKey("bush", ti, tj);
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "beeren") >= BUSH_AUTOPICK_GAIN
+        this.resourceRoom(u.owner, "beeren") >= BAL.bushAutopickGain
       ) {
         this.autoPickAndRegrow(
           u, "bush", ti, tj, "beeren",
-          BUSH_AUTOPICK_GAIN, BUSH_REGROW_TICKS,
+          BAL.bushAutopickGain, D.bushRegrowTicks,
         );
         return;
       }
@@ -2533,11 +2482,11 @@ export class Sim {
       const k = objKey("mushroom", ti, tj);
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "pilze") >= MUSHROOM_AUTOPICK_GAIN
+        this.resourceRoom(u.owner, "pilze") >= BAL.mushroomAutopickGain
       ) {
         this.autoPickAndRegrow(
           u, "mushroom", ti, tj, "pilze",
-          MUSHROOM_AUTOPICK_GAIN, MUSHROOM_REGROW_TICKS,
+          BAL.mushroomAutopickGain, D.mushroomRegrowTicks,
         );
         return;
       }
@@ -2546,11 +2495,11 @@ export class Sim {
       const k = objKey("stone", ti, tj);
       if (
         !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "stein") >= STONE_AUTOPICK_GAIN
+        this.resourceRoom(u.owner, "stein") >= BAL.stoneAutopickGain
       ) {
         this.autoPickAndRegrow(
           u, "stone", ti, tj, "stein",
-          STONE_AUTOPICK_GAIN, 0,
+          BAL.stoneAutopickGain, 0,
         );
       }
     }
@@ -2558,14 +2507,14 @@ export class Sim {
       const k = objKey("cactus", ti, tj);
       if (
         !this.removedKeys.has(k) &&
-        (this.resourceRoom(u.owner, "holz") >= CACTUS_AUTOPICK_HOLZ ||
-          this.resourceRoom(u.owner, "wasser") >= CACTUS_AUTOPICK_WASSER)
+        (this.resourceRoom(u.owner, "holz") >= BAL.cactusAutopickHolz ||
+          this.resourceRoom(u.owner, "wasser") >= BAL.cactusAutopickWasser)
       ) {
         this.autoPickAndRegrow(
           u, "cactus", ti, tj, "holz",
-          CACTUS_AUTOPICK_HOLZ, CACTUS_REGROW_TICKS,
+          BAL.cactusAutopickHolz, D.cactusRegrowTicks,
         );
-        this.gainResource(u.owner, "wasser", CACTUS_AUTOPICK_WASSER, ti + 0.5, tj + 0.5);
+        this.gainResource(u.owner, "wasser", BAL.cactusAutopickWasser, ti + 0.5, tj + 0.5);
         return;
       }
     }
@@ -2582,7 +2531,7 @@ export class Sim {
     for (const [di, dj] of adj) {
       const b = biomeAt(this.seed, ti + di, tj + dj);
       if (b === "lake" || b === "river") {
-        this.gainResource(u.owner, "wasser", WATER_AUTOPICK_GAIN, u.gx, u.gy);
+        this.gainResource(u.owner, "wasser", BAL.waterAutopickGain, u.gx, u.gy);
         return;
       }
     }
@@ -2592,7 +2541,7 @@ export class Sim {
     if (this.resourceRoom(u.owner, "fisch") <= 0) return;
     const cx = ti + 0.5;
     const cy = tj + 0.5;
-    const r2 = FISH_CATCH_RADIUS * FISH_CATCH_RADIUS;
+    const r2 = BAL.fishCatchRadius * BAL.fishCatchRadius;
     let caught: SimFish | null = null;
     let bestD = Infinity;
     for (const f of this.fishes.values()) {
@@ -2612,7 +2561,7 @@ export class Sim {
     if (!caught) return;
     this.fishes.delete(caught.id);
     this.removedFishIds.push(caught.id);
-    this.gainResource(u.owner, "fisch", FISH_AUTOPICK_GAIN, caught.gx, caught.gy);
+    this.gainResource(u.owner, "fisch", BAL.fishAutopickGain, caught.gx, caught.gy);
   }
 
   private autoPickAndRegrow(
@@ -2636,7 +2585,7 @@ export class Sim {
           i: ti,
           j: tj,
           stage: 0,
-          nextStageTick: this.tick + TREE_STAGE_TICKS,
+          nextStageTick: this.tick + D.treeStageTicks,
         });
       } else {
         this.regrow.set(k, this.tick + regrowTicks);
@@ -2646,19 +2595,18 @@ export class Sim {
   }
 
   private hpGainForResource(resKey: keyof Resources): number {
-    if (resKey === "fleisch") return HP_GAIN_FLEISCH;
-    if (resKey === "fisch") return HP_GAIN_FISCH;
-    if (resKey === "beeren") return HP_GAIN_BEEREN;
-    if (resKey === "pilze") return HP_GAIN_PILZE;
-    if (resKey === "wasser") return HP_GAIN_WASSER;
+    if (resKey === "fleisch") return BAL.hpGainFleisch;
+    if (resKey === "fisch") return BAL.hpGainFisch;
+    if (resKey === "beeren") return BAL.hpGainBeeren;
+    if (resKey === "pilze") return BAL.hpGainPilze;
     return 0;
   }
 
   private autoEat(u: SimUnit): void {
-    if (u.hp >= u.hpMax * AUTOEAT_HP_THRESHOLD) return;
+    if (u.hp >= u.hpMax * BAL.autoeatHpThreshold) return;
     const r = this.resources[u.owner];
     const order: Array<keyof Resources> = [
-      "fleisch", "fisch", "pilze", "beeren", "wasser",
+      "fleisch", "fisch", "pilze", "beeren",
     ];
     for (const key of order) {
       if (r[key] <= 0) continue;
@@ -2668,6 +2616,27 @@ export class Sim {
       u.hp = Math.min(u.hpMax, u.hp + heal);
       this.pushFlow(u.owner, key, -1, u.gx, u.gy);
       return;
+    }
+  }
+
+  private consumeWater(dt: number): void {
+    const ratePerUnit = BAL.waterPerUnitPerDay / DAY_LENGTH_SEC;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!this.active[p]) continue;
+      const count = this.byOwnerCache[p].length;
+      if (count === 0) {
+        this.waterDebt[p] = 0;
+        continue;
+      }
+      this.waterDebt[p] += count * ratePerUnit * dt;
+      const r = this.resources[p];
+      while (this.waterDebt[p] >= 1 && r.wasser > 0) {
+        r.wasser -= 1;
+        this.waterDebt[p] -= 1;
+        const ref = this.chiefByOwnerCache[p] ?? this.byOwnerCache[p][0];
+        if (ref) this.pushFlow(p, "wasser", -1, ref.gx, ref.gy);
+      }
+      if (r.wasser <= 0 && this.waterDebt[p] > 1) this.waterDebt[p] = 1;
     }
   }
 
@@ -2708,7 +2677,7 @@ export class Sim {
             stage: 4,
           });
         } else {
-          entry.nextStageTick = this.tick + TREE_STAGE_TICKS;
+          entry.nextStageTick = this.tick + D.treeStageTicks;
           this.treeGrowthEvents.push({
             i: entry.i,
             j: entry.j,
@@ -2759,16 +2728,18 @@ export class Sim {
     for (const u of this.units.values()) {
       u.eatCooldown -= dt;
       if (u.eatCooldown <= 0) {
-        u.eatCooldown = EAT_INTERVAL;
+        u.eatCooldown = BAL.eatInterval;
         this.autoEat(u);
       }
-      if (this.unitAtAnyFire(u)) {
-        u.hp = Math.min(u.hpMax, u.hp + CAMPFIRE_HP_REGEN_PER_SEC * 1.5 * dt);
+      if (this.resources[u.owner].wasser <= 0) {
+        u.hp = Math.max(0, u.hp - (BAL.unitHpMax / D.dayLengthSec) * dt);
+      } else if (this.unitAtAnyFire(u)) {
+        u.hp = Math.min(u.hpMax, u.hp + BAL.campfireHpRegenPerSec * 1.5 * dt);
       } else {
-        u.hp = Math.max(0, u.hp - UNIT_HP_LOSS_PER_SEC_IDLE * dt);
+        u.hp = Math.max(0, u.hp - BAL.unitHpLossPerSecIdle * dt);
       }
       u.ageSec += dt;
-      if (u.ageSec >= MAX_AGE_SEC) u.hp = 0;
+      if (u.ageSec >= BAL.maxAgeSec) u.hp = 0;
       if (u.huntTarget) {
         if (this.tickHunt(u, dt)) continue;
       }
@@ -2807,7 +2778,7 @@ export class Sim {
           continue;
         }
         u.harvestTimer += dt;
-        if (u.harvestTimer >= HARVEST_INTERVAL) {
+        if (u.harvestTimer >= BAL.harvestInterval) {
           u.harvestTimer = 0;
           this.applyHarvestTick(u, tgt);
         }
@@ -2823,6 +2794,7 @@ export class Sim {
         u.idleSec = 0;
       }
     }
+    this.consumeWater(dt);
     this.expireFootprints();
     this.expireRegrows();
     this.reapDeadUnits();
@@ -2846,7 +2818,7 @@ export class Sim {
     const r2 = r * r;
     for (const a of this.animals.values()) {
       if (a.hp <= 0) continue;
-      const spec = ANIMAL_SPECS[a.kind];
+      const spec = animalSpec(a.kind);
       if (!spec.autoHuntable) continue;
       const dx = a.gx - cx;
       const dy = a.gy - cy;
@@ -2888,10 +2860,12 @@ export class Sim {
   }
 
   private gatherAtCampfireStep(): void {
-    // Once a campfire is lit (afternoon/night), the tribe heads home and
-    // stays until sunrise; the campfire is auto-removed in the morning.
-    // Repath every 5 ticks (~250ms) — fast enough to hold them in place.
+    // Afternoon: the tribe heads home and is held at the fire.
+    // Night: members are locked at the fire — player move/hunt/harvest
+    // commands are rejected by cmd* and stray paths are rerouted home.
+    // The campfire is auto-removed in the morning.
     if (this.tick % 5 !== 3) return;
+    const isNight = this.isNight();
     const GATHER_RADIUS = CAMPFIRE_RANGE - 0.4;
     const gatherR2 = GATHER_RADIUS * GATHER_RADIUS;
     const fireR2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
@@ -2905,14 +2879,14 @@ export class Sim {
       const targetJ = Math.floor(f.gy);
       const claimed = new Set<string>();
       for (const u of this.byOwnerCache[p]) {
-        u.harvestTarget = null;
+        if (!isNight) u.harvestTarget = null;
         if (u.huntTarget) {
           const a = this.animals.get(u.huntTarget);
           if (!a || a.hp <= 0) {
             u.huntTarget = null;
             u.huntAuto = false;
             u.huntWeapon = null;
-          } else {
+          } else if (!isNight) {
             const adx = a.gx - u.gx;
             const ady = a.gy - u.gy;
             if (adx * adx + ady * ady > DEFEND_R2) {
@@ -2968,6 +2942,10 @@ export class Sim {
     }
   }
 
+  private lockedAtFire(owner: PlayerId): boolean {
+    return this.isNight() && this.campfires.has(this.campfireIdFor(owner));
+  }
+
   private unitAtAnyFire(u: SimUnit): boolean {
     const r2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
     for (const f of this.campfires.values()) {
@@ -2990,7 +2968,7 @@ export class Sim {
     ay: number,
   ): { gx: number; gy: number; d2: number } | null {
     let best: { gx: number; gy: number; d2: number } | null = null;
-    const limit = CAMPFIRE_REPEL_RADIUS * CAMPFIRE_REPEL_RADIUS;
+    const limit = D.campfireRepelRadius * D.campfireRepelRadius;
     for (const f of this.campfires.values()) {
       const dx = f.gx - ax;
       const dy = f.gy - ay;
@@ -3052,7 +3030,7 @@ export class Sim {
       if (r.holz >= cost) {
         r.holz -= cost;
         this.pushFlow(f.owner, "holz", -cost, f.gx, f.gy);
-        f.fuelTimer = CAMPFIRE_BURN_PER_FUEL_SEC;
+        f.fuelTimer = D.campfireBurnPerFuelSec;
       } else {
         this.campfires.delete(f.id);
         this.removedCampfireIds.push(f.id);
@@ -3063,8 +3041,8 @@ export class Sim {
   private tickIgniteFor(p: PlayerId, _dt: number): void {
     if (this.campfires.has(this.campfireIdFor(p))) return;
     const r = this.resources[p];
-    if (r.holz < CAMPFIRE_IGNITE_HOLZ_COST) return;
-    if (r.stein < CAMPFIRE_IGNITE_STEIN_COST) return;
+    if (r.holz < BAL.campfireIgniteHolzCost) return;
+    if (r.stein < BAL.campfireIgniteSteinCost) return;
     let cx = 0;
     let cy = 0;
     let stationary = 0;
@@ -3077,11 +3055,11 @@ export class Sim {
       cy += u.gy;
       stationary++;
     }
-    if (stationary < CAMPFIRE_IGNITE_MIN_UNITS) return;
+    if (stationary < BAL.campfireIgniteMinUnits) return;
     cx /= stationary;
     cy /= stationary;
     let cluster = 0;
-    const r2 = CAMPFIRE_IGNITE_CLUSTER_RADIUS * CAMPFIRE_IGNITE_CLUSTER_RADIUS;
+    const r2 = BAL.campfireIgniteClusterRadius * BAL.campfireIgniteClusterRadius;
     for (const u of this.units.values()) {
       if (u.owner !== p) continue;
       if (u.path.length > 0) continue;
@@ -3091,24 +3069,24 @@ export class Sim {
       const dy = u.gy - cy;
       if (dx * dx + dy * dy <= r2) cluster++;
     }
-    if (cluster < CAMPFIRE_IGNITE_MIN_UNITS) return;
+    if (cluster < BAL.campfireIgniteMinUnits) return;
     const volR2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
     for (const v of this.volcanoes) {
       const dx = v.gx - cx;
       const dy = v.gy - cy;
       if (dx * dx + dy * dy <= volR2) return;
     }
-    r.holz -= CAMPFIRE_IGNITE_HOLZ_COST;
-    r.stein -= CAMPFIRE_IGNITE_STEIN_COST;
-    this.pushFlow(p, "holz", -CAMPFIRE_IGNITE_HOLZ_COST, cx, cy);
-    this.pushFlow(p, "stein", -CAMPFIRE_IGNITE_STEIN_COST, cx, cy);
+    r.holz -= BAL.campfireIgniteHolzCost;
+    r.stein -= BAL.campfireIgniteSteinCost;
+    this.pushFlow(p, "holz", -BAL.campfireIgniteHolzCost, cx, cy);
+    this.pushFlow(p, "stein", -BAL.campfireIgniteSteinCost, cx, cy);
     const id = this.campfireIdFor(p);
     this.campfires.set(id, {
       id,
       owner: p,
       gx: cx,
       gy: cy,
-      fuelTimer: CAMPFIRE_BURN_PER_FUEL_SEC,
+      fuelTimer: D.campfireBurnPerFuelSec,
       size: 1,
     });
   }
@@ -3139,7 +3117,7 @@ export class Sim {
       centers[p] = { x: sx / list.length, y: sy / list.length };
     }
 
-    const r2 = ENCOUNTER_RANGE * ENCOUNTER_RANGE;
+    const r2 = BAL.encounterRange * BAL.encounterRange;
     for (let a = 0; a < MAX_PLAYERS; a++) {
       const cA = centers[a];
       if (!cA) continue;
@@ -3147,8 +3125,8 @@ export class Sim {
         const cB = centers[b];
         if (!cB) continue;
         const key = `${a}_${b}`;
-        const last = this.lastEncounterTick.get(key) ?? -ENCOUNTER_COOLDOWN_TICKS;
-        if (this.tick - last < ENCOUNTER_COOLDOWN_TICKS) continue;
+        const last = this.lastEncounterTick.get(key) ?? -D.encounterCooldownTicks;
+        if (this.tick - last < D.encounterCooldownTicks) continue;
 
         const dx = cA.x - cB.x;
         const dy = cA.y - cB.y;
@@ -3261,7 +3239,7 @@ export class Sim {
       let cx = 0;
       let cy = 0;
       for (const u of list) {
-        if (u.gender === "m" && u.ageSec >= CHILD_AGE_SEC) matureMales++;
+        if (u.gender === "m" && u.ageSec >= BAL.childAgeSec) matureMales++;
         cx += u.gx;
         cy += u.gy;
       }
@@ -3275,18 +3253,18 @@ export class Sim {
 
       for (const u of list) {
         if (u.gender !== "f") continue;
-        if (u.ageSec < CHILD_AGE_SEC) {
+        if (u.ageSec < BAL.childAgeSec) {
           this.pregnancyTimer.delete(u.id);
           continue;
         }
         const frac = u.hpMax > 0 ? u.hp / u.hpMax : 0;
-        if (!canConceive || frac < PREGNANCY_HEALTH_MIN_FRAC) {
+        if (!canConceive || frac < BAL.pregnancyHealthMinFrac) {
           this.pregnancyTimer.delete(u.id);
           continue;
         }
         const t = (this.pregnancyTimer.get(u.id) ?? 0) + dt;
-        if (t < GROWTH_REQUIRED_SEC || birthsRemaining <= 0) {
-          this.pregnancyTimer.set(u.id, Math.min(t, GROWTH_REQUIRED_SEC));
+        if (t < BAL.growthRequiredSec || birthsRemaining <= 0) {
+          this.pregnancyTimer.set(u.id, Math.min(t, BAL.growthRequiredSec));
           continue;
         }
         if (list.length < MAX_TRIBE_SIZE) {
@@ -3300,7 +3278,7 @@ export class Sim {
             this.spawnNewTribeMember(p, centerX, centerY);
             birthsRemaining = 0;
           } else {
-            this.pregnancyTimer.set(u.id, GROWTH_REQUIRED_SEC);
+            this.pregnancyTimer.set(u.id, BAL.growthRequiredSec);
           }
         }
       }
@@ -3395,7 +3373,7 @@ export class Sim {
     for (const [id, t] of this.pregnancyTimer) {
       const u = this.units.get(id);
       if (!u) continue;
-      const frac = Math.min(1, t / GROWTH_REQUIRED_SEC);
+      const frac = Math.min(1, t / BAL.growthRequiredSec);
       if (frac > progress[u.owner]) progress[u.owner] = frac;
       active[u.owner] = true;
     }
@@ -3450,8 +3428,8 @@ export class Sim {
       huntAuto: false,
       harvestTimer: 0,
       lastFootprintTile: { i: spot.i, j: spot.j },
-      hp: UNIT_HP_MAX,
-      hpMax: UNIT_HP_MAX,
+      hp: BAL.unitHpMax,
+      hpMax: BAL.unitHpMax,
       eatCooldown: 0,
       autoHuntScanTimer: 0,
       ageSec: 0,
@@ -3702,7 +3680,7 @@ export class Sim {
     // (~250ms) keeps the same gameplay feel at 1/5 the cost.
     // Offset from spread/gather/encounter.
     if (this.tick % 5 !== 2) return;
-    const r2 = FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR;
+    const r2 = BAL.followChiefNear * BAL.followChiefNear;
     const claimed = new Set<string>();
     for (const u of this.units.values()) {
       if (u.isChief) continue;
@@ -3754,7 +3732,7 @@ export class Sim {
       }
 
       if (u.autoFollowScanTimer > 0) continue;
-      u.autoFollowScanTimer = FOLLOW_CHIEF_SCAN_INTERVAL;
+      u.autoFollowScanTimer = BAL.followChiefScanInterval;
 
       const foraged = this.tryAutoForage(u, c);
       if (foraged) {
@@ -3766,7 +3744,7 @@ export class Sim {
       if (u.path.length === 0) {
         const dx = u.gx - c.gx;
         const dy = u.gy - c.gy;
-        if (dx * dx + dy * dy > FOLLOW_CHIEF_NEAR * FOLLOW_CHIEF_NEAR) {
+        if (dx * dx + dy * dy > BAL.followChiefNear * BAL.followChiefNear) {
           const ti = Math.floor(c.gx);
           const tj = Math.floor(c.gy);
           const blocked = this.blockedTilesFor(u, new Set());
@@ -3785,7 +3763,7 @@ export class Sim {
 
   private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
     const seed = this.seed;
-    const R = CHIEF_VISION_RADIUS;
+    const R = BAL.chiefVisionRadius;
     const R2 = R * R;
     const ci0 = Math.floor(chief.gx);
     const cj0 = Math.floor(chief.gy);
@@ -3852,7 +3830,7 @@ export class Sim {
           if (!arr) continue;
           for (const a of arr) {
             if (a.hp <= 0) continue;
-            const spec = ANIMAL_SPECS[a.kind];
+            const spec = animalSpec(a.kind);
             if (!spec.autoHuntable) continue;
             const cdx = a.gx - chief.gx;
             const cdy = a.gy - chief.gy;
@@ -3897,23 +3875,23 @@ export class Sim {
     let resKey: keyof Resources;
     let baseTotal: number;
     if (t.kind === "tree") {
-      amount = TREE_HARVEST_AMOUNT;
+      amount = BAL.treeHarvestAmount;
       resKey = "holz";
       baseTotal = treeWoodAt(this.seed, t.i, t.j);
     } else if (t.kind === "bush") {
-      amount = BUSH_HARVEST_AMOUNT;
+      amount = BAL.bushHarvestAmount;
       resKey = "beeren";
       baseTotal = bushBerriesAt(this.seed, t.i, t.j);
     } else if (t.kind === "mushroom") {
-      amount = MUSH_HARVEST_AMOUNT;
+      amount = BAL.mushHarvestAmount;
       resKey = "pilze";
       baseTotal = mushroomBerriesAt(this.seed, t.i, t.j);
     } else if (t.kind === "cactus") {
-      amount = CACTUS_HARVEST_HOLZ;
+      amount = BAL.cactusHarvestHolz;
       resKey = "holz";
       baseTotal = cactusYieldAt(this.seed, t.i, t.j);
     } else {
-      amount = STONE_HARVEST_AMOUNT;
+      amount = BAL.stoneHarvestAmount;
       resKey = "stein";
       baseTotal = stoneAmountAt(this.seed, t.i, t.j);
     }
@@ -3922,7 +3900,7 @@ export class Sim {
     );
     if (t.kind === "cactus" && gained > 0) {
       this.gainResource(
-        u.owner, "wasser", CACTUS_HARVEST_WASSER, t.i + 0.5, t.j + 0.5, false,
+        u.owner, "wasser", BAL.cactusHarvestWasser, t.i + 0.5, t.j + 0.5, false,
       );
     }
     if (gained <= 0) {

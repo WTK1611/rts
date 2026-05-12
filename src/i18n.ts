@@ -111,6 +111,20 @@ export interface Strings {
   helpTipVolcano: string;
   helpEnabled: string;
   helpDisabled: string;
+
+  // info panel
+  infoTitle: string;
+  infoSectionOverview: string;
+  infoSectionResources: string;
+  infoPhase: string;
+  infoSurvival: string;
+  infoTribeSize: string;
+  infoMales: string;
+  infoFemales: string;
+  infoMaxTribe: string;
+  infoGrowth: string;
+  infoCollectedTotal: string;
+  infoHint: string;
 }
 
 const STRINGS: Record<Language, Strings> = {
@@ -223,12 +237,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Noch keine Einträge.",
     lbYourRank: (r) => `Dein Platz: #${r}`,
 
-    helpTipBerry: "Beeren ernten: Klicke auf einen Beerenstrauch, damit dein Stamm ihn pflückt. Beeren sind eine wichtige Nahrungs- und Energiequelle.",
-    helpTipWater: "Im Wasser kannst du Fische jagen, aber Vorsicht vor den Alligatoren.",
+    helpTipBerry: "Läufe an Beeren vorbei und dein Stamm sammelt sie ein...",
+    helpTipWater: "Wasser brauchst du zum Leben — aber auch Fische… Vorsicht vor Alligatoren!",
     helpTipBirth: "Geburt! Wenn Mann und Frau zusammen sind und genug Nahrung haben, wächst dein Stamm. Jedes Kind braucht Zeit, bevor es selbst sammeln oder jagen kann.",
-    helpTipVolcano: "Ein Vulkan! In seiner Nähe spendet er Wärme und Erholung — und schützt deinen Stamm nachts vor wilden Tieren.",
-    helpEnabled: "Hilfetexte: An (i)",
-    helpDisabled: "Hilfetexte: Aus (i)",
+    helpTipVolcano: "Ein Vulkan! In seiner Nähe kann sich dein Stamm das Holz für das nächtliche Lagerfeuer sparen.",
+    helpEnabled: "Hilfetexte: An (h)",
+    helpDisabled: "Hilfetexte: Aus (h)",
+
+    infoTitle: "Stamm – Übersicht",
+    infoSectionOverview: "Stamm",
+    infoSectionResources: "Vorräte",
+    infoPhase: "Tageszeit",
+    infoSurvival: "Überlebenszeit",
+    infoTribeSize: "Stammesmitglieder",
+    infoMales: "Männer",
+    infoFemales: "Frauen",
+    infoMaxTribe: "Max. Stammesgröße",
+    infoGrowth: "Wachstum",
+    infoCollectedTotal: "Gesammelt gesamt",
+    infoHint: "i schließen · h Hilfetipps",
   },
 
   en: {
@@ -336,12 +363,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "No entries yet.",
     lbYourRank: (r) => `Your rank: #${r}`,
 
-    helpTipBerry: "Harvest berries: click on a berry bush so your tribe picks it. Berries are an important source of food and energy.",
-    helpTipWater: "You can hunt fish in the water — but watch out for alligators.",
+    helpTipBerry: "Walk past berries and your tribe will collect them...",
+    helpTipWater: "You need water to live — and fish too… watch out for alligators!",
     helpTipBirth: "A birth! When men and women are together and have enough food, your tribe grows. Every child needs time before it can gather or hunt on its own.",
-    helpTipVolcano: "A volcano! Nearby it gives warmth and rest — and at night it shields your tribe from wild animals.",
-    helpEnabled: "Help tips: On (i)",
-    helpDisabled: "Help tips: Off (i)",
+    helpTipVolcano: "A volcano! Nearby, your tribe can save the wood for the nightly campfire.",
+    helpEnabled: "Help tips: On (h)",
+    helpDisabled: "Help tips: Off (h)",
+
+    infoTitle: "Tribe – Overview",
+    infoSectionOverview: "Tribe",
+    infoSectionResources: "Stockpile",
+    infoPhase: "Time of day",
+    infoSurvival: "Survival time",
+    infoTribeSize: "Tribe members",
+    infoMales: "Men",
+    infoFemales: "Women",
+    infoMaxTribe: "Max. tribe size",
+    infoGrowth: "Growth",
+    infoCollectedTotal: "Total collected",
+    infoHint: "i close · h help tips",
   },
 
   it: {
@@ -450,12 +490,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Ancora nessuna voce.",
     lbYourRank: (r) => `La tua posizione: #${r}`,
 
-    helpTipBerry: "Raccogli bacche: clicca su un cespuglio per farlo raccogliere alla tua tribù. Le bacche sono un'importante fonte di cibo ed energia.",
-    helpTipWater: "Nell'acqua puoi pescare, ma attento agli alligatori.",
+    helpTipBerry: "Passa accanto alle bacche e la tua tribù le raccoglierà...",
+    helpTipWater: "L'acqua ti serve per vivere — e anche i pesci… attento agli alligatori!",
     helpTipBirth: "Una nascita! Quando uomini e donne stanno insieme e c'è cibo a sufficienza, la tribù cresce. Ogni bambino ha bisogno di tempo prima di poter raccogliere o cacciare da solo.",
-    helpTipVolcano: "Un vulcano! Nelle sue vicinanze offre calore e ristoro — e di notte protegge la tua tribù dagli animali selvatici.",
-    helpEnabled: "Suggerimenti: Attivi (i)",
-    helpDisabled: "Suggerimenti: Disattivati (i)",
+    helpTipVolcano: "Un vulcano! Nelle sue vicinanze la tua tribù può risparmiare la legna per il falò notturno.",
+    helpEnabled: "Suggerimenti: Attivi (h)",
+    helpDisabled: "Suggerimenti: Disattivati (h)",
+
+    infoTitle: "Tribù – Riepilogo",
+    infoSectionOverview: "Tribù",
+    infoSectionResources: "Scorte",
+    infoPhase: "Momento del giorno",
+    infoSurvival: "Tempo di sopravvivenza",
+    infoTribeSize: "Membri della tribù",
+    infoMales: "Uomini",
+    infoFemales: "Donne",
+    infoMaxTribe: "Dim. max. tribù",
+    infoGrowth: "Crescita",
+    infoCollectedTotal: "Raccolto totale",
+    infoHint: "i chiudi · h suggerimenti",
   },
 
   es: {
@@ -564,12 +617,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Aún no hay entradas.",
     lbYourRank: (r) => `Tu posición: #${r}`,
 
-    helpTipBerry: "Recolecta bayas: haz clic en un arbusto para que tu tribu lo recoja. Las bayas son una importante fuente de alimento y energía.",
-    helpTipWater: "En el agua puedes pescar, pero cuidado con los caimanes.",
+    helpTipBerry: "Pasa junto a las bayas y tu tribu las recogerá...",
+    helpTipWater: "Necesitas agua para vivir — y también peces… ¡cuidado con los caimanes!",
     helpTipBirth: "¡Un nacimiento! Cuando hombres y mujeres están juntos y hay suficiente comida, tu tribu crece. Cada niño necesita tiempo antes de poder recolectar o cazar por sí solo.",
-    helpTipVolcano: "¡Un volcán! Cerca de él ofrece calor y descanso — y de noche protege a tu tribu de los animales salvajes.",
-    helpEnabled: "Consejos: Activados (i)",
-    helpDisabled: "Consejos: Desactivados (i)",
+    helpTipVolcano: "¡Un volcán! Cerca de él tu tribu puede ahorrarse la leña para la hoguera nocturna.",
+    helpEnabled: "Consejos: Activados (h)",
+    helpDisabled: "Consejos: Desactivados (h)",
+
+    infoTitle: "Tribu – Resumen",
+    infoSectionOverview: "Tribu",
+    infoSectionResources: "Reservas",
+    infoPhase: "Momento del día",
+    infoSurvival: "Tiempo de supervivencia",
+    infoTribeSize: "Miembros de la tribu",
+    infoMales: "Hombres",
+    infoFemales: "Mujeres",
+    infoMaxTribe: "Tamaño máx. de la tribu",
+    infoGrowth: "Crecimiento",
+    infoCollectedTotal: "Total recolectado",
+    infoHint: "i cerrar · h consejos",
   },
 
   pt: {
@@ -678,12 +744,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Ainda sem entradas.",
     lbYourRank: (r) => `A tua posição: #${r}`,
 
-    helpTipBerry: "Colhe bagas: clica num arbusto para a tua tribo o apanhar. As bagas são uma importante fonte de alimento e energia.",
-    helpTipWater: "Na água podes pescar, mas cuidado com os jacarés.",
+    helpTipBerry: "Passa pelas bagas e a tua tribo irá recolhê-las...",
+    helpTipWater: "Precisas de água para viver — e também de peixes… cuidado com os jacarés!",
     helpTipBirth: "Um nascimento! Quando homens e mulheres estão juntos e há comida suficiente, a tua tribo cresce. Cada criança precisa de tempo antes de poder colher ou caçar sozinha.",
-    helpTipVolcano: "Um vulcão! Por perto dá calor e descanso — e à noite protege a tua tribo dos animais selvagens.",
-    helpEnabled: "Sugestões: Ativadas (i)",
-    helpDisabled: "Sugestões: Desativadas (i)",
+    helpTipVolcano: "Um vulcão! Por perto, a tua tribo pode poupar a lenha para a fogueira noturna.",
+    helpEnabled: "Sugestões: Ativadas (h)",
+    helpDisabled: "Sugestões: Desativadas (h)",
+
+    infoTitle: "Tribo – Resumo",
+    infoSectionOverview: "Tribo",
+    infoSectionResources: "Reservas",
+    infoPhase: "Hora do dia",
+    infoSurvival: "Tempo de sobrevivência",
+    infoTribeSize: "Membros da tribo",
+    infoMales: "Homens",
+    infoFemales: "Mulheres",
+    infoMaxTribe: "Tamanho máx. da tribo",
+    infoGrowth: "Crescimento",
+    infoCollectedTotal: "Total recolhido",
+    infoHint: "i fechar · h sugestões",
   },
 
   fr: {
@@ -792,12 +871,25 @@ const STRINGS: Record<Language, Strings> = {
     lbEmpty: "Aucune entrée pour l'instant.",
     lbYourRank: (r) => `Ta position : #${r}`,
 
-    helpTipBerry: "Récolter des baies : clique sur un buisson pour que ta tribu le cueille. Les baies sont une importante source de nourriture et d'énergie.",
-    helpTipWater: "Dans l'eau, tu peux pêcher des poissons — mais attention aux alligators.",
+    helpTipBerry: "Passe à côté des baies et ta tribu les ramassera...",
+    helpTipWater: "Tu as besoin d'eau pour vivre — et de poissons aussi… attention aux alligators !",
     helpTipBirth: "Une naissance ! Quand hommes et femmes sont ensemble et qu'il y a assez de nourriture, ta tribu grandit. Chaque enfant a besoin de temps avant de pouvoir cueillir ou chasser seul.",
-    helpTipVolcano: "Un volcan ! À proximité, il offre chaleur et repos — et la nuit, il protège ta tribu des animaux sauvages.",
-    helpEnabled: "Astuces : Activées (i)",
-    helpDisabled: "Astuces : Désactivées (i)",
+    helpTipVolcano: "Un volcan ! À proximité, ta tribu peut économiser le bois du feu de camp nocturne.",
+    helpEnabled: "Astuces : Activées (h)",
+    helpDisabled: "Astuces : Désactivées (h)",
+
+    infoTitle: "Tribu – Aperçu",
+    infoSectionOverview: "Tribu",
+    infoSectionResources: "Réserves",
+    infoPhase: "Moment de la journée",
+    infoSurvival: "Temps de survie",
+    infoTribeSize: "Membres de la tribu",
+    infoMales: "Hommes",
+    infoFemales: "Femmes",
+    infoMaxTribe: "Taille max. de la tribu",
+    infoGrowth: "Croissance",
+    infoCollectedTotal: "Total récolté",
+    infoHint: "i fermer · h astuces",
   },
 };
 

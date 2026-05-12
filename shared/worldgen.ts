@@ -427,7 +427,7 @@ export function mushroomBerriesAt(seed: number, i: number, j: number): number {
 export function hasFishAt(seed: number, i: number, j: number): boolean {
   const b = biomeAt(seed, i, j);
   if (b !== "lake" && b !== "river") return false;
-  return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.10 : 0.13);
+  return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.22 : 0.28);
 }
 
 export function fishIdAt(i: number, j: number): string {
@@ -454,10 +454,12 @@ export function hasStoneAt(seed: number, i: number, j: number): boolean {
   if (!isLandTile(seed, i, j)) return false;
   const b = biomeAt(seed, i, j);
   const base =
-    b === "wueste" ? 0.04 :
-    b === "savanne" ? 0.03 :
-    b === "wald" ? 0.02 :
-    0.025;
+    b === "felsen" ? 0.12 :
+    b === "canyon" ? 0.09 :
+    b === "wueste" ? 0.06 :
+    b === "savanne" ? 0.05 :
+    b === "wald" ? 0.03 :
+    0.04;
   return rand01(seed ^ 0x57e, i, j) < base;
 }
 

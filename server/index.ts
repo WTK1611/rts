@@ -3,10 +3,14 @@ import { Sim } from "./sim";
 import { AIBot } from "./aiBot";
 import {
   AnimalSnapshot,
+  BalancingSnapshotMsg,
   ClientMessage,
   FishSnapshot,
   MAX_PLAYERS,
   PlayerId,
+  RESOURCE_CAP_PER_PERSON,
+  RESOURCE_KEYS,
+  Resources,
   ScoreEntry,
   ServerMessage,
   TICK_RATE,
@@ -21,7 +25,57 @@ import {
   languageForSlot,
   tribeNameAt,
 } from "../shared/names";
-import { addScore, rankFor, topScores } from "./db";
+import {
+  addScore,
+  loadBalancing,
+  rankFor,
+  resetBalancing as dbResetBalancing,
+  saveBalancing,
+  topScores,
+} from "./db";
+import {
+  ALL_DEFS,
+  applyValue,
+  defOf,
+  getCurrentValue,
+  hydrateFromMap,
+  isValidKey,
+} from "./balancing";
+
+// Hydrate live balancing state from SQLite overrides on startup.
+hydrateFromMap(loadBalancing());
+
+function balancingSnapshotMsg(): BalancingSnapshotMsg {
+  const values: Record<string, number> = {};
+  for (const d of ALL_DEFS) {
+    const v = getCurrentValue(d.key);
+    values[d.key] = v ?? d.defaultValue;
+  }
+  return {
+    fields: ALL_DEFS.map((d) => ({
+      key: d.key,
+      group: d.group,
+      label: d.label,
+      min: d.min,
+      max: d.max,
+      step: d.step,
+      defaultValue: d.defaultValue,
+    })),
+    values,
+  };
+}
+
+function resourceCapsSnapshot(): Resources {
+  return {
+    holz: RESOURCE_CAP_PER_PERSON.holz,
+    wasser: RESOURCE_CAP_PER_PERSON.wasser,
+    beeren: RESOURCE_CAP_PER_PERSON.beeren,
+    pilze: RESOURCE_CAP_PER_PERSON.pilze,
+    fleisch: RESOURCE_CAP_PER_PERSON.fleisch,
+    fisch: RESOURCE_CAP_PER_PERSON.fisch,
+    stein: RESOURCE_CAP_PER_PERSON.stein,
+  };
+}
 
 const LEADERBOARD_TOP_N = 50;
 
@@ -335,6 +389,8 @@ function joinPlayer(
     gameTimeSec: world.sim.gameTimeSec,
     treeGrowth: world.sim.treeGrowthSnapshot(),
     tribeOrigin: [...world.sim.tribeOrigin],
+    balancing: balancingSnapshotMsg(),
+    resourceCapPerPerson: resourceCapsSnapshot(),
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -634,6 +690,43 @@ wss.on("connection", (ws) => {
         entries: topScores(LEADERBOARD_TOP_N),
         myRank: rankFor(entry.score, entry.ts),
         myEntryTs: entry.ts,
+      });
+      return;
+    }
+
+    if (msg.type === "setBalancing") {
+      const accepted: Record<string, number> = {};
+      const touchesCap = msg.updates.some((u) => u.key.startsWith("caps."));
+      for (const u of msg.updates) {
+        if (!isValidKey(u.key)) continue;
+        const v = Number(u.value);
+        if (!Number.isFinite(v)) continue;
+        const applied = applyValue(u.key, v);
+        if (applied === null) continue;
+        saveBalancing(u.key, applied);
+        accepted[u.key] = applied;
+      }
+      if (Object.keys(accepted).length === 0) return;
+      const update: ServerMessage = {
+        type: "balancingUpdate",
+        values: accepted,
+      };
+      if (touchesCap) (update as any).resourceCapPerPerson = resourceCapsSnapshot();
+      broadcast(update);
+      return;
+    }
+
+    if (msg.type === "resetBalancing") {
+      dbResetBalancing();
+      const accepted: Record<string, number> = {};
+      for (const def of ALL_DEFS) {
+        applyValue(def.key, def.defaultValue);
+        accepted[def.key] = def.defaultValue;
+      }
+      broadcast({
+        type: "balancingUpdate",
+        values: accepted,
+        resourceCapPerPerson: resourceCapsSnapshot(),
       });
       return;
     }
