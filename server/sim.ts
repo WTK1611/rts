@@ -8,6 +8,10 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
+  CATASTROPHE_DAILY_CHANCE,
+  CatastropheEvent,
+  CatastropheKind,
+  CatastropheSeverity,
   DROP_PILE_LIFETIME_SEC,
   DROP_PILE_PICKUP_DELAY_SEC,
   DROP_PILE_PICKUP_RADIUS,
@@ -17,6 +21,8 @@ import {
   DayPhase,
   EncounterEvent,
   phaseAt,
+  TileOverride,
+  TileOverrideEvent,
   Season,
   seasonAt,
   seasonAllowsBush,
@@ -58,6 +64,7 @@ import { SPATIAL_CELL, gridKey, pushBucket, updateBucketForId } from "./spatial"
 import { objKey } from "../shared/objectKey";
 import {
   artifactsFromSeed,
+  Biome,
   biomeAt,
   bushBerriesAt,
   cactusYieldAt,
@@ -117,6 +124,9 @@ export interface SimUnit {
   idleSec: number;
   autoFollowing: boolean;
   autoFollowScanTimer: number;
+  // When true, the unit follows an explicit player command and is exempt
+  // from the campfire auto-gather pull until the path completes.
+  manualOrder: boolean;
 }
 
 
@@ -183,6 +193,36 @@ interface SimDropPile {
   pickupDelaySec: number;
 }
 
+interface ActiveCatastrophe {
+  kind: CatastropheKind;
+  cx: number;
+  cy: number;
+  radius: number;
+  severity: CatastropheSeverity;
+  startTick: number;
+  endTick: number;
+  // Per-kind state
+  // wildfire: tile keys currently burning, BFS frontier
+  burning?: Map<string, number>; // tileKey -> burn-out tick
+  frontier?: string[];
+  // storm: drift velocity in tiles/sec
+  vx?: number;
+  vy?: number;
+  // locusts: per-tick eat target
+  // meteor: not used here (handled via pendingMeteors)
+  // landslide: traveling tile column
+  pathTiles?: Array<{ i: number; j: number }>;
+  pathIdx?: number;
+}
+
+interface PendingMeteor {
+  cx: number;
+  cy: number;
+  radius: number;
+  severity: CatastropheSeverity;
+  impactTick: number;
+}
+
 export class Sim {
   seed: number;
   spawns: SpawnArea[];
@@ -247,6 +287,17 @@ export class Sim {
   private unitGrid: Map<number, SimUnit[]> = new Map();
   private fishGrid: Map<number, SimFish[]> = new Map();
   private activeAnimalIds = new Set<string>();
+
+  // Catastrophes
+  private catastropheEvents: CatastropheEvent[] = [];
+  private tileOverrideEvents: TileOverrideEvent[] = [];
+  private tileOverrides: Map<string, { kind: TileOverride; expiresTick: number }> = new Map();
+  private activeCatastrophes: ActiveCatastrophe[] = [];
+  private pendingMeteors: PendingMeteor[] = [];
+  private lastCatastropheDayIdx = -1;
+  private droughtMult = 1;
+  private freezeMult = 1;
+  private rngCounter = 0;
 
   // Per-tick caches. Rebuilt at the start of each step() and refreshed
   // after mutations that change ownership or chief state. Used by hot
@@ -809,7 +860,6 @@ export class Sim {
   };
 
   cmdHunt(owner: PlayerId, unitIds: string[], animalId: string): void {
-    if (this.lockedAtFire(owner)) return;
     const a = this.animals.get(animalId);
     if (!a) return;
     const claimed = new Set<string>();
@@ -817,6 +867,7 @@ export class Sim {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
       u.autoFollowing = false;
+      u.manualOrder = true;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHunt(u, a, blocked, false);
       const last = u.path[u.path.length - 1];
@@ -2011,6 +2062,7 @@ export class Sim {
         autoFollowing: false,
         autoFollowScanTimer: 0,
         idleSec: 0,
+        manualOrder: false,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -2078,6 +2130,7 @@ export class Sim {
         idleSec: 0,
         autoFollowing: false,
         autoFollowScanTimer: 0,
+        manualOrder: false,
       };
       this.units.set(u.id, u);
       created.push(u);
@@ -2119,10 +2172,18 @@ export class Sim {
   }
 
   isWalkable(i: number, j: number): boolean {
+    const ov = this.tileOverrides.get(`${i},${j}`);
+    if (ov) {
+      if (ov.kind === "flood" || ov.kind === "lava" || ov.kind === "crack") return false;
+      if (ov.kind === "ice" || ov.kind === "ash") return true;
+    }
     return isLandTile(this.seed, i, j);
   }
 
   private isWaterTile(i: number, j: number): boolean {
+    const ov = this.tileOverrides.get(`${i},${j}`);
+    if (ov?.kind === "flood") return true;
+    if (ov?.kind === "ice" || ov?.kind === "ash") return false;
     const b = biomeAt(this.seed, i, j);
     return b === "lake" || b === "river";
   }
@@ -2249,12 +2310,14 @@ export class Sim {
   }
 
   cmdMove(owner: PlayerId, unitIds: string[], i: number, j: number): void {
-    if (this.lockedAtFire(owner)) return;
     const claimed = new Set<string>();
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
       u.autoFollowing = false;
+      u.manualOrder = true;
+      u.huntTarget = null;
+      u.harvestTarget = null;
       const blocked = this.blockedTilesFor(u, claimed);
       let target = { i, j };
       if (blocked.has(`${i},${j}`) || !this.isWalkable(i, j)) {
@@ -2270,7 +2333,6 @@ export class Sim {
   }
 
   cmdHarvest(owner: PlayerId, unitIds: string[], i: number, j: number): void {
-    if (this.lockedAtFire(owner)) return;
     if (this.isNight()) {
       this.cmdMove(owner, unitIds, i, j);
       return;
@@ -2285,6 +2347,7 @@ export class Sim {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
       u.autoFollowing = false;
+      u.manualOrder = true;
       const blocked = this.blockedTilesFor(u, claimed);
       this.startHarvest(u, kind, i, j, blocked);
       const last = u.path[u.path.length - 1];
@@ -2722,7 +2785,8 @@ export class Sim {
 
   private consumeWater(dt: number): void {
     const seasonMult = seasonWaterMultiplier(seasonAt(this.gameTimeSec));
-    const ratePerUnit = (BAL.waterPerUnitPerDay / DAY_LENGTH_SEC) * seasonMult;
+    const ratePerUnit =
+      (BAL.waterPerUnitPerDay / DAY_LENGTH_SEC) * seasonMult * this.droughtMult;
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!this.active[p]) continue;
       const count = this.byOwnerCache[p].length;
@@ -2854,6 +2918,7 @@ export class Sim {
           } else {
             u.harvestTarget = null;
             u.state = "idle";
+            u.manualOrder = false;
           }
         } else {
           const wp = u.path[0];
@@ -2892,6 +2957,7 @@ export class Sim {
         !u.huntTarget
       ) {
         u.idleSec += dt;
+        u.manualOrder = false;
       } else {
         u.idleSec = 0;
       }
@@ -2914,6 +2980,8 @@ export class Sim {
     this.campfireStep(dt);
     this.gatherAtCampfireStep();
     this.checkArtifactDiscovery();
+    this.maybeTriggerDailyCatastrophes();
+    this.stepCatastrophes(dt);
   }
 
   private hasNearbyForageOrHunt(p: PlayerId, cx: number, cy: number, r: number): boolean {
@@ -2985,6 +3053,15 @@ export class Sim {
       const targetJ = Math.floor(f.gy);
       const claimed = new Set<string>();
       for (const u of this.byOwnerCache[p]) {
+        if (u.manualOrder) {
+          if (u.path.length > 0) {
+            const lastWp = u.path[u.path.length - 1];
+            claimed.add(`${Math.floor(lastWp.gx)},${Math.floor(lastWp.gy)}`);
+          } else {
+            claimed.add(`${Math.floor(u.gx)},${Math.floor(u.gy)}`);
+          }
+          continue;
+        }
         if (!isNight) u.harvestTarget = null;
         if (u.huntTarget) {
           const a = this.animals.get(u.huntTarget);
@@ -3046,10 +3123,6 @@ export class Sim {
         if (last) claimed.add(`${Math.floor(last.gx)},${Math.floor(last.gy)}`);
       }
     }
-  }
-
-  private lockedAtFire(owner: PlayerId): boolean {
-    return this.isNight() && this.campfires.has(this.campfireIdFor(owner));
   }
 
   private unitAtAnyFire(u: SimUnit): boolean {
@@ -3545,6 +3618,7 @@ export class Sim {
       idleSec: 0,
       autoFollowing: false,
       autoFollowScanTimer: 0,
+      manualOrder: false,
     };
     this.units.set(u.id, u);
     this.newUnits.push(this.snap(u));
@@ -4038,5 +4112,838 @@ export class Sim {
     } else {
       this.remaining.set(k, remaining);
     }
+  }
+
+  // ========================================================================
+  // CATASTROPHES
+  // ========================================================================
+
+  consumeCatastropheEvents(): CatastropheEvent[] {
+    const out = this.catastropheEvents;
+    this.catastropheEvents = [];
+    return out;
+  }
+
+  consumeTileOverrideEvents(): TileOverrideEvent[] {
+    const out = this.tileOverrideEvents;
+    this.tileOverrideEvents = [];
+    return out;
+  }
+
+  tileOverridesSnapshot(): TileOverrideEvent[] {
+    const out: TileOverrideEvent[] = [];
+    for (const [key, v] of this.tileOverrides) {
+      const [is, js] = key.split(",");
+      out.push({ i: Number(is), j: Number(js), kind: v.kind });
+    }
+    return out;
+  }
+
+  getTileOverride(i: number, j: number): TileOverride | null {
+    const v = this.tileOverrides.get(`${i},${j}`);
+    return v ? v.kind : null;
+  }
+
+  /** True if a catastrophe override blocks walking through this tile. */
+  isOverrideBlocked(i: number, j: number): boolean {
+    const o = this.getTileOverride(i, j);
+    // ice is walkable; ash/flood/lava/crack block; (callers can override).
+    return o === "flood" || o === "lava" || o === "crack";
+  }
+
+  /** Allows movement onto frozen water (ice override). */
+  isOverrideWalkOverWater(i: number, j: number): boolean {
+    return this.getTileOverride(i, j) === "ice";
+  }
+
+  private setTileOverride(
+    i: number,
+    j: number,
+    kind: TileOverride | null,
+    durationSec: number,
+  ): void {
+    const key = `${i},${j}`;
+    if (kind === null) {
+      if (!this.tileOverrides.has(key)) return;
+      this.tileOverrides.delete(key);
+      this.tileOverrideEvents.push({ i, j, kind: null });
+      return;
+    }
+    const expiresTick =
+      durationSec > 0
+        ? this.tick + Math.ceil(durationSec * TICK_RATE)
+        : Number.POSITIVE_INFINITY;
+    const prev = this.tileOverrides.get(key);
+    this.tileOverrides.set(key, { kind, expiresTick });
+    if (!prev || prev.kind !== kind) {
+      this.tileOverrideEvents.push({ i, j, kind });
+    }
+  }
+
+  private expireTileOverrides(): void {
+    if (this.tileOverrides.size === 0) return;
+    for (const [key, v] of this.tileOverrides) {
+      if (this.tick < v.expiresTick) continue;
+      this.tileOverrides.delete(key);
+      const [is, js] = key.split(",");
+      this.tileOverrideEvents.push({ i: Number(is), j: Number(js), kind: null });
+    }
+  }
+
+  private nextRand(): number {
+    this.rngCounter = (this.rngCounter + 1) | 0;
+    return rand01(this.seed ^ 0xc47a51, this.tick & 0xffff, this.rngCounter);
+  }
+
+  /** Tile pick around a center, ignoring water/sequoia/spawn-guard. */
+  private pickRandomTileInRange(
+    cx: number,
+    cy: number,
+    minR: number,
+    maxR: number,
+    filter: (i: number, j: number) => boolean,
+    tries = 30,
+  ): { i: number; j: number } | null {
+    for (let t = 0; t < tries; t++) {
+      const ang = this.nextRand() * Math.PI * 2;
+      const r = minR + this.nextRand() * (maxR - minR);
+      const i = Math.round(cx + Math.cos(ang) * r);
+      const j = Math.round(cy + Math.sin(ang) * r);
+      if (filter(i, j)) return { i, j };
+    }
+    return null;
+  }
+
+  /** Sums HP-damage on all units in radius (also kills if applicable). */
+  private aoeDamageUnits(cx: number, cy: number, radius: number, damage: number): void {
+    if (damage <= 0) return;
+    const r2 = radius * radius;
+    for (const u of this.units.values()) {
+      if (u.hp <= 0) continue;
+      const dx = u.gx - cx;
+      const dy = u.gy - cy;
+      if (dx * dx + dy * dy > r2) continue;
+      const applied = Math.min(damage, u.hp);
+      u.hp = Math.max(0, u.hp - damage);
+      this.pushDamage(applied, u.gx, u.gy);
+    }
+  }
+
+  private aoeDamageAnimals(cx: number, cy: number, radius: number, damage: number): void {
+    if (damage <= 0) return;
+    const r2 = radius * radius;
+    for (const a of this.animals.values()) {
+      if (a.hp <= 0) continue;
+      const dx = a.gx - cx;
+      const dy = a.gy - cy;
+      if (dx * dx + dy * dy > r2) continue;
+      const applied = Math.min(damage, a.hp);
+      a.hp = Math.max(0, a.hp - damage);
+      this.pushDamage(applied, a.gx, a.gy);
+    }
+  }
+
+  /** Destroys a world object (tree, bush, mushroom, kreuter, stone) at a tile. */
+  private destroyObjectAt(
+    kind: ObjectKind,
+    i: number,
+    j: number,
+    regrowTicks = 0,
+  ): boolean {
+    if (!this.objectIsThere(kind, i, j)) return false;
+    const k = objKey(kind, i, j);
+    if (this.removedKeys.has(k)) return false;
+    this.removedKeys.add(k);
+    this.remaining.delete(k);
+    const ro: RemovedObject = { kind, i, j };
+    this.removedObjects.push(ro);
+    this.newRemovedObjects.push(ro);
+    if (regrowTicks > 0) {
+      if (kind === "tree") {
+        this.treeRegrow.set(k, {
+          i,
+          j,
+          stage: 0,
+          nextStageTick: this.tick + regrowTicks,
+        });
+      } else {
+        this.regrow.set(k, this.tick + regrowTicks);
+      }
+    }
+    return true;
+  }
+
+  private objectIsThere(kind: ObjectKind, i: number, j: number): boolean {
+    const k = objKey(kind, i, j);
+    if (this.removedKeys.has(k)) return false;
+    switch (kind) {
+      case "tree": return hasTreeAt(this.seed, i, j);
+      case "bush": return hasBushAt(this.seed, i, j);
+      case "mushroom": return hasMushroomAt(this.seed, i, j);
+      case "fish": return hasFishAt(this.seed, i, j);
+      case "stone": return hasStoneAt(this.seed, i, j);
+      case "cactus": return hasCactusAt(this.seed, i, j);
+      case "kreuter": return hasKreuterAt(this.seed, i, j);
+    }
+    return false;
+  }
+
+  /** Destroy all destructible vegetation/stone within radius. */
+  private destroyVegetationIn(
+    cx: number,
+    cy: number,
+    radius: number,
+    opts: { trees?: number; bush?: number; mushroom?: number; kreuter?: number; stone?: number } = {},
+  ): void {
+    const r = Math.ceil(radius);
+    const r2 = radius * radius;
+    const ci = Math.round(cx);
+    const cj = Math.round(cy);
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (di * di + dj * dj > r2) continue;
+        const i = ci + di;
+        const j = cj + dj;
+        if (opts.trees && this.nextRand() < opts.trees) this.destroyObjectAt("tree", i, j, D.treeStageTicks);
+        if (opts.bush && this.nextRand() < opts.bush) this.destroyObjectAt("bush", i, j, TICK_RATE * 120);
+        if (opts.mushroom && this.nextRand() < opts.mushroom) this.destroyObjectAt("mushroom", i, j, TICK_RATE * 90);
+        if (opts.kreuter && this.nextRand() < opts.kreuter) this.destroyObjectAt("kreuter", i, j, TICK_RATE * 150);
+        if (opts.stone && this.nextRand() < opts.stone) this.destroyObjectAt("stone", i, j, TICK_RATE * 240);
+      }
+    }
+  }
+
+  private extinguishCampfiresIn(cx: number, cy: number, radius: number): void {
+    const r2 = radius * radius;
+    const toRemove: string[] = [];
+    for (const f of this.campfires.values()) {
+      const dx = f.gx - cx;
+      const dy = f.gy - cy;
+      if (dx * dx + dy * dy <= r2) toRemove.push(f.id);
+    }
+    for (const id of toRemove) {
+      this.campfires.delete(id);
+      this.removedCampfireIds.push(id);
+    }
+  }
+
+  /** Push a Catastrophe event for the client (toast + FX). */
+  private pushCatastrophe(
+    kind: CatastropheKind,
+    cx: number,
+    cy: number,
+    radius: number,
+    severity: CatastropheSeverity,
+    durationSec: number,
+    leadSec?: number,
+  ): void {
+    this.catastropheEvents.push({
+      kind, cx, cy, radius, severity, durationSec,
+      ...(leadSec !== undefined ? { leadSec } : {}),
+    });
+  }
+
+  /** External trigger e.g. for debug or chain effects. */
+  triggerCatastrophe(
+    kind: CatastropheKind,
+    cx?: number,
+    cy?: number,
+    severity: CatastropheSeverity = 2,
+  ): boolean {
+    const loc = this.pickLocationFor(kind, cx, cy);
+    if (!loc) return false;
+    this.startCatastrophe(kind, loc.cx, loc.cy, severity);
+    return true;
+  }
+
+  /** Default location picker per catastrophe kind. */
+  private pickLocationFor(
+    kind: CatastropheKind,
+    cx?: number,
+    cy?: number,
+  ): { cx: number; cy: number } | null {
+    if (cx !== undefined && cy !== undefined) return { cx, cy };
+    // pick around a random tribe so the event is observable
+    const actives: PlayerId[] = [];
+    for (let p = 0; p < MAX_PLAYERS; p++) if (this.active[p]) actives.push(p);
+    let baseX = 0;
+    let baseY = 0;
+    if (actives.length > 0) {
+      const p = actives[Math.floor(this.nextRand() * actives.length)];
+      const ref = this.chiefByOwnerCache[p] ?? this.byOwnerCache[p][0];
+      if (ref) {
+        baseX = ref.gx;
+        baseY = ref.gy;
+      }
+    }
+    const searchR = 18;
+    const filterFor = (i: number, j: number): boolean => {
+      const b = biomeAt(this.seed, i, j);
+      switch (kind) {
+        case "flood":
+          // start over/near water and spread inland in step
+          return b === "lake" || b === "river";
+        case "wildfire": {
+          if (b !== "wald" && b !== "wiesen" && b !== "savanne") return false;
+          return hasTreeAt(this.seed, i, j) &&
+            !this.removedKeys.has(objKey("tree", i, j));
+        }
+        case "eruption":
+          // tile that has a volcano nearby
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              if (this.volcanoes.some(v => Math.floor(v.gx) === i + di && Math.floor(v.gy) === j + dj)) return true;
+            }
+          }
+          return false;
+        case "landslide":
+          return b === "felsen" || b === "gebirge" || b === "canyon";
+        case "drought":
+        case "freeze":
+          return isLandTile(this.seed, i, j);
+        case "locusts":
+          return b === "wiesen" || b === "wald" || b === "savanne";
+        case "quake":
+        case "meteor":
+        case "storm":
+        case "lightning":
+        default:
+          return isLandTile(this.seed, i, j);
+      }
+    };
+    const pick = this.pickRandomTileInRange(baseX, baseY, 4, searchR, filterFor, 80) ??
+      this.pickRandomTileInRange(0, 0, 6, 120, filterFor, 200);
+    if (!pick) return null;
+    return { cx: pick.i + 0.5, cy: pick.j + 0.5 };
+  }
+
+  /** Decide whether and what catastrophe to trigger at a season-day boundary. */
+  private maybeTriggerDailyCatastrophes(): void {
+    const dayIdx = Math.floor(this.gameTimeSec / DAY_LENGTH_SEC);
+    if (dayIdx === this.lastCatastropheDayIdx) return;
+    this.lastCatastropheDayIdx = dayIdx;
+    // Skip catastrophes during the very first in-game day.
+    if (dayIdx < 1) return;
+    const season = seasonAt(this.gameTimeSec);
+    for (const [kindStr, byS] of Object.entries(CATASTROPHE_DAILY_CHANCE)) {
+      const kind = kindStr as CatastropheKind;
+      const chance = byS[season];
+      if (chance <= 0) continue;
+      if (this.nextRand() > chance) continue;
+      const sevRoll = this.nextRand();
+      const severity: CatastropheSeverity = sevRoll > 0.92 ? 3 : sevRoll > 0.65 ? 2 : 1;
+      this.triggerCatastrophe(kind, undefined, undefined, severity);
+    }
+  }
+
+  /** Start a catastrophe with all kind-specific initial side effects. */
+  private startCatastrophe(
+    kind: CatastropheKind,
+    cx: number,
+    cy: number,
+    severity: CatastropheSeverity,
+  ): void {
+    const sev = severity;
+    switch (kind) {
+      case "quake": {
+        const radius = 4 + sev * 2;
+        const dmg = 18 + sev * 22; // sev3 -> ~84 dmg
+        this.aoeDamageUnits(cx, cy, radius, dmg);
+        this.aoeDamageAnimals(cx, cy, radius, dmg * 0.7);
+        this.destroyVegetationIn(cx, cy, radius, {
+          trees: 0.25 + sev * 0.1,
+          stone: 0.05,
+        });
+        this.extinguishCampfiresIn(cx, cy, radius * 0.5);
+        // Open a few permanent cracks near the epicenter
+        const cracks = 2 + sev * 2;
+        for (let n = 0; n < cracks; n++) {
+          const pick = this.pickRandomTileInRange(
+            cx, cy, 0, radius * 0.6,
+            (i, j) => isLandTile(this.seed, i, j) && !this.tileOverrides.has(`${i},${j}`),
+            20,
+          );
+          if (pick) this.setTileOverride(pick.i, pick.j, "crack", 9999 * 60);
+        }
+        // Spawn a couple of new stones at rims as compensation (regrow stones)
+        this.pushCatastrophe(kind, cx, cy, radius, sev, 0);
+        break;
+      }
+      case "flood": {
+        const radius = 5 + sev * 2;
+        const dur = 60 + sev * 60; // 2-4 minutes
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+        });
+        // Pre-flood a tight inner ring
+        const r = Math.ceil(radius);
+        const r2 = radius * radius;
+        for (let dj = -r; dj <= r; dj++) {
+          for (let di = -r; di <= r; di++) {
+            if (di * di + dj * dj > r2) continue;
+            const i = Math.round(cx) + di;
+            const j = Math.round(cy) + dj;
+            const b = biomeAt(this.seed, i, j);
+            if (b === "gebirge") continue;
+            if (b === "lake" || b === "river") continue;
+            const elev = di * di + dj * dj;
+            if (elev <= (radius * 0.65) * (radius * 0.65)) {
+              this.setTileOverride(i, j, "flood", dur);
+              this.destroyObjectAt("bush", i, j, TICK_RATE * 120);
+              this.destroyObjectAt("mushroom", i, j, TICK_RATE * 90);
+              this.destroyObjectAt("kreuter", i, j, TICK_RATE * 150);
+            }
+          }
+        }
+        this.extinguishCampfiresIn(cx, cy, radius * 0.7);
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "drought": {
+        const radius = 14 + sev * 6;
+        const dur = 90 + sev * 60;
+        this.droughtMult = Math.max(this.droughtMult, 1 + 0.25 * sev);
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+        });
+        // Dry up small lakes inside
+        const r = Math.ceil(radius);
+        const r2 = radius * radius;
+        for (let dj = -r; dj <= r; dj++) {
+          for (let di = -r; di <= r; di++) {
+            if (di * di + dj * dj > r2) continue;
+            const i = Math.round(cx) + di;
+            const j = Math.round(cy) + dj;
+            const b = biomeAt(this.seed, i, j);
+            if (b === "lake" && this.nextRand() < 0.25 + 0.15 * sev) {
+              this.setTileOverride(i, j, "ash", dur);
+            }
+          }
+        }
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "freeze": {
+        const radius = 12 + sev * 5;
+        const dur = 80 + sev * 50;
+        this.freezeMult = Math.max(this.freezeMult, 1 + 0.4 * sev);
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+        });
+        // Freeze water tiles -> ice (walkable but not drinkable)
+        const r = Math.ceil(radius);
+        const r2 = radius * radius;
+        for (let dj = -r; dj <= r; dj++) {
+          for (let di = -r; di <= r; di++) {
+            if (di * di + dj * dj > r2) continue;
+            const i = Math.round(cx) + di;
+            const j = Math.round(cy) + dj;
+            const b = biomeAt(this.seed, i, j);
+            if (b === "lake" || b === "river") {
+              this.setTileOverride(i, j, "ice", dur);
+            }
+          }
+        }
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "meteor": {
+        const radius = 5 + sev * 3;
+        const leadSec = 6;
+        this.pendingMeteors.push({
+          cx, cy, radius, severity: sev,
+          impactTick: this.tick + Math.ceil(leadSec * TICK_RATE),
+        });
+        // Warning event right now
+        this.pushCatastrophe(kind, cx, cy, radius, sev, 0, leadSec);
+        break;
+      }
+      case "eruption": {
+        const radius = 5 + sev * 2;
+        const dur = 30 + sev * 30;
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+        });
+        // Initial damage burst
+        this.aoeDamageUnits(cx, cy, radius * 0.6, 30 + sev * 25);
+        this.aoeDamageAnimals(cx, cy, radius * 0.6, 25 + sev * 20);
+        this.destroyVegetationIn(cx, cy, radius * 0.7, {
+          trees: 0.35,
+          bush: 0.5,
+          mushroom: 0.6,
+          kreuter: 0.6,
+        });
+        this.extinguishCampfiresIn(cx, cy, radius * 0.5);
+        // A few permanent lava tiles near epicenter
+        const lavaCount = 3 + sev * 3;
+        for (let n = 0; n < lavaCount; n++) {
+          const p = this.pickRandomTileInRange(cx, cy, 0, radius * 0.5,
+            (i, j) => isLandTile(this.seed, i, j) && !this.tileOverrides.has(`${i},${j}`), 20);
+          if (p) this.setTileOverride(p.i, p.j, "lava", 9999 * 60);
+        }
+        // Chain: try to start a wildfire in forest within radius
+        const fireSeed = this.pickRandomTileInRange(cx, cy, radius * 0.3, radius,
+          (i, j) => biomeAt(this.seed, i, j) === "wald" &&
+            hasTreeAt(this.seed, i, j) && !this.removedKeys.has(objKey("tree", i, j)), 30);
+        if (fireSeed) this.startCatastrophe("wildfire", fireSeed.i + 0.5, fireSeed.j + 0.5, sev);
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "wildfire": {
+        const radius = 6 + sev * 2;
+        const dur = 60 + sev * 40;
+        const burning = new Map<string, number>();
+        const frontier: string[] = [];
+        // seed at center if tree
+        const ci = Math.round(cx);
+        const cj = Math.round(cy);
+        const tryIgnite = (i: number, j: number): void => {
+          if (!this.objectIsThere("tree", i, j)) return;
+          const k = `${i},${j}`;
+          if (burning.has(k)) return;
+          burning.set(k, this.tick + Math.ceil(8 * TICK_RATE));
+          frontier.push(k);
+        };
+        tryIgnite(ci, cj);
+        if (frontier.length === 0) {
+          // find a nearby tree
+          for (let r = 1; r <= 3 && frontier.length === 0; r++) {
+            for (let dj = -r; dj <= r; dj++) {
+              for (let di = -r; di <= r; di++) {
+                if (Math.abs(di) !== r && Math.abs(dj) !== r) continue;
+                tryIgnite(ci + di, cj + dj);
+                if (frontier.length) break;
+              }
+              if (frontier.length) break;
+            }
+          }
+        }
+        if (frontier.length === 0) return; // nothing to burn
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+          burning, frontier,
+        });
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "storm": {
+        const radius = 5 + sev * 2;
+        const dur = 30 + sev * 25;
+        const ang = this.nextRand() * Math.PI * 2;
+        const speed = 0.3 + 0.15 * sev; // tiles per sec
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+          vx: Math.cos(ang) * speed,
+          vy: Math.sin(ang) * speed,
+        });
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "lightning": {
+        const radius = 1.5;
+        const ci = Math.round(cx);
+        const cj = Math.round(cy);
+        // Direct damage at center
+        this.aoeDamageUnits(cx, cy, radius, 40 + sev * 25);
+        this.aoeDamageAnimals(cx, cy, radius, 35 + sev * 20);
+        // Hit a tree if one is there -> start a wildfire
+        if (this.objectIsThere("tree", ci, cj) || this.objectIsThere("tree", ci + 1, cj) || this.objectIsThere("tree", ci, cj + 1)) {
+          this.startCatastrophe("wildfire", cx, cy, Math.max(1, sev - 1) as CatastropheSeverity);
+        }
+        this.pushCatastrophe(kind, cx, cy, radius, sev, 0);
+        break;
+      }
+      case "locusts": {
+        const radius = 4 + sev * 2;
+        const dur = 60 + sev * 30;
+        const ang = this.nextRand() * Math.PI * 2;
+        const speed = 0.4 + 0.2 * sev;
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+          vx: Math.cos(ang) * speed,
+          vy: Math.sin(ang) * speed,
+        });
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+      case "landslide": {
+        const radius = 3 + sev;
+        const dur = 8 + sev * 4;
+        // Build a path of tiles down-slope (toward center 0,0 as proxy)
+        const len = 6 + sev * 3;
+        const ang = this.nextRand() * Math.PI * 2;
+        const dirX = Math.cos(ang);
+        const dirY = Math.sin(ang);
+        const path: Array<{ i: number; j: number }> = [];
+        for (let t = 0; t < len; t++) {
+          path.push({
+            i: Math.round(cx + dirX * t),
+            j: Math.round(cy + dirY * t),
+          });
+        }
+        this.activeCatastrophes.push({
+          kind, cx, cy, radius, severity: sev,
+          startTick: this.tick,
+          endTick: this.tick + Math.ceil(dur * TICK_RATE),
+          pathTiles: path,
+          pathIdx: 0,
+        });
+        this.pushCatastrophe(kind, cx, cy, radius, sev, dur);
+        break;
+      }
+    }
+  }
+
+  private stepCatastrophes(dt: number): void {
+    // Pending meteors -> impact
+    if (this.pendingMeteors.length > 0) {
+      const stillPending: PendingMeteor[] = [];
+      for (const m of this.pendingMeteors) {
+        if (this.tick < m.impactTick) {
+          stillPending.push(m);
+          continue;
+        }
+        // Impact: inner kill ring + outer damage ring
+        const inner = m.radius * 0.45;
+        const outer = m.radius;
+        this.aoeDamageUnits(m.cx, m.cy, inner, 999);
+        this.aoeDamageUnits(m.cx, m.cy, outer, 35 + m.severity * 25);
+        this.aoeDamageAnimals(m.cx, m.cy, outer, 50 + m.severity * 25);
+        this.destroyVegetationIn(m.cx, m.cy, outer, {
+          trees: 0.9, bush: 0.9, mushroom: 0.9, kreuter: 0.9, stone: 0.3,
+        });
+        this.extinguishCampfiresIn(m.cx, m.cy, outer);
+        // Permanent crater (felsen/rock) tiles
+        const cR = Math.ceil(inner);
+        for (let dj = -cR; dj <= cR; dj++) {
+          for (let di = -cR; di <= cR; di++) {
+            if (di * di + dj * dj > inner * inner) continue;
+            const i = Math.round(m.cx) + di;
+            const j = Math.round(m.cy) + dj;
+            if (biomeAt(this.seed, i, j) === "gebirge") continue;
+            this.setTileOverride(i, j, "ash", 9999 * 60);
+          }
+        }
+      }
+      this.pendingMeteors = stillPending;
+    }
+
+    // Reset per-step multipliers (will be re-set by active drought/freeze)
+    this.droughtMult = 1;
+    this.freezeMult = 1;
+
+    const stillActive: ActiveCatastrophe[] = [];
+    for (const c of this.activeCatastrophes) {
+      const expired = this.tick >= c.endTick;
+      switch (c.kind) {
+        case "flood": {
+          if (!expired) {
+            this.aoeDamageUnits(c.cx, c.cy, c.radius * 0.5, 3 * dt);
+            this.aoeDamageAnimals(c.cx, c.cy, c.radius * 0.5, 2 * dt);
+          }
+          break;
+        }
+        case "drought": {
+          if (!expired) {
+            this.droughtMult = Math.max(this.droughtMult, 1 + 0.25 * c.severity);
+            // small chance to burn out a bush/kreuter per tick (rare)
+            if (this.nextRand() < 0.02 * dt) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasBushAt(this.seed, i, j) && !this.removedKeys.has(objKey("bush", i, j)), 10);
+              if (p) this.destroyObjectAt("bush", p.i, p.j, TICK_RATE * 240);
+            }
+            if (this.nextRand() < 0.02 * dt) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasKreuterAt(this.seed, i, j) && !this.removedKeys.has(objKey("kreuter", i, j)), 10);
+              if (p) this.destroyObjectAt("kreuter", p.i, p.j, TICK_RATE * 240);
+            }
+          }
+          break;
+        }
+        case "freeze": {
+          if (!expired) {
+            this.freezeMult = Math.max(this.freezeMult, 1 + 0.4 * c.severity);
+            // Damage units in radius that are NOT at a campfire
+            const r2 = c.radius * c.radius;
+            const dmg = (1 + c.severity * 0.8) * dt;
+            for (const u of this.units.values()) {
+              if (u.hp <= 0) continue;
+              const dx = u.gx - c.cx;
+              const dy = u.gy - c.cy;
+              if (dx * dx + dy * dy > r2) continue;
+              if (this.unitAtAnyFire(u) || this.nearVolcanoNight(u.gx, u.gy, 3)) continue;
+              const applied = Math.min(dmg, u.hp);
+              u.hp = Math.max(0, u.hp - dmg);
+              if (applied > 0.5) this.pushDamage(applied, u.gx, u.gy);
+            }
+          }
+          break;
+        }
+        case "eruption": {
+          if (!expired) {
+            // Periodic lava bomb landings within radius
+            if (this.nextRand() < 0.6 * dt) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                () => true, 10);
+              if (p) {
+                this.aoeDamageUnits(p.i + 0.5, p.j + 0.5, 1.5, 18 + c.severity * 10);
+                this.aoeDamageAnimals(p.i + 0.5, p.j + 0.5, 1.5, 15 + c.severity * 8);
+                this.destroyObjectAt("tree", p.i, p.j, D.treeStageTicks);
+              }
+            }
+          }
+          break;
+        }
+        case "wildfire": {
+          const burning = c.burning!;
+          const frontier = c.frontier!;
+          // Damage units inside burning tiles
+          for (const k of burning.keys()) {
+            const [is, js] = k.split(",");
+            const i = Number(is);
+            const j = Number(js);
+            this.aoeDamageUnits(i + 0.5, j + 0.5, 0.8, 8 * dt);
+            this.aoeDamageAnimals(i + 0.5, j + 0.5, 0.8, 6 * dt);
+          }
+          // Burn out finished trees
+          const finished: string[] = [];
+          for (const [k, outTick] of burning) {
+            if (this.tick >= outTick) finished.push(k);
+          }
+          for (const k of finished) {
+            burning.delete(k);
+            const idx = frontier.indexOf(k);
+            if (idx >= 0) frontier.splice(idx, 1);
+            const [is, js] = k.split(",");
+            const i = Number(is);
+            const j = Number(js);
+            this.destroyObjectAt("tree", i, j, D.treeStageTicks * 3);
+            this.destroyObjectAt("bush", i, j, TICK_RATE * 240);
+            this.destroyObjectAt("mushroom", i, j, TICK_RATE * 240);
+            this.destroyObjectAt("kreuter", i, j, TICK_RATE * 240);
+          }
+          // Spread: 5% chance per frontier tile per second to a tree neighbor
+          if (!expired) {
+            const spreadChance = 0.18 * dt;
+            const newFront: string[] = [];
+            for (const k of frontier) {
+              if (this.nextRand() > spreadChance) continue;
+              const [is, js] = k.split(",");
+              const i = Number(is);
+              const j = Number(js);
+              const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+              const [di, dj] = dirs[Math.floor(this.nextRand() * dirs.length)];
+              const ni = i + di;
+              const nj = j + dj;
+              const nk = `${ni},${nj}`;
+              if (burning.has(nk)) continue;
+              if (!this.objectIsThere("tree", ni, nj)) continue;
+              burning.set(nk, this.tick + Math.ceil(8 * TICK_RATE));
+              newFront.push(nk);
+            }
+            frontier.push(...newFront);
+          }
+          // End when nothing burns anymore
+          if (burning.size === 0) c.endTick = Math.min(c.endTick, this.tick);
+          break;
+        }
+        case "storm": {
+          if (!expired) {
+            c.cx += (c.vx ?? 0) * dt;
+            c.cy += (c.vy ?? 0) * dt;
+            // Occasionally fell a tree
+            if (this.nextRand() < 0.15 * dt) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasTreeAt(this.seed, i, j) && !this.removedKeys.has(objKey("tree", i, j)), 12);
+              if (p) {
+                this.destroyObjectAt("tree", p.i, p.j, D.treeStageTicks);
+                this.pushDamage(2, p.i + 0.5, p.j + 0.5);
+              }
+            }
+            // Occasionally spawn a lightning strike inside
+            if (this.nextRand() < 0.1 * dt) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                () => true, 8);
+              if (p) this.startCatastrophe("lightning", p.i + 0.5, p.j + 0.5, c.severity);
+            }
+          }
+          break;
+        }
+        case "locusts": {
+          if (!expired) {
+            c.cx += (c.vx ?? 0) * dt;
+            c.cy += (c.vy ?? 0) * dt;
+            // Aggressively destroy plant resources in the swarm radius
+            const eat = 0.6 * dt; // chance per tick per kind
+            if (this.nextRand() < eat) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasBushAt(this.seed, i, j) && !this.removedKeys.has(objKey("bush", i, j)), 14);
+              if (p) this.destroyObjectAt("bush", p.i, p.j, TICK_RATE * 180);
+            }
+            if (this.nextRand() < eat) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasMushroomAt(this.seed, i, j) && !this.removedKeys.has(objKey("mushroom", i, j)), 14);
+              if (p) this.destroyObjectAt("mushroom", p.i, p.j, TICK_RATE * 120);
+            }
+            if (this.nextRand() < eat) {
+              const p = this.pickRandomTileInRange(c.cx, c.cy, 0, c.radius,
+                (i, j) => hasKreuterAt(this.seed, i, j) && !this.removedKeys.has(objKey("kreuter", i, j)), 14);
+              if (p) this.destroyObjectAt("kreuter", p.i, p.j, TICK_RATE * 180);
+            }
+          }
+          break;
+        }
+        case "landslide": {
+          const path = c.pathTiles ?? [];
+          const idx = c.pathIdx ?? 0;
+          // Advance ~1 tile per second
+          const step = Math.max(1, Math.floor(dt * TICK_RATE / 8));
+          for (let s = 0; s < step && (c.pathIdx ?? 0) < path.length; s++) {
+            const t = path[c.pathIdx as number];
+            this.aoeDamageUnits(t.i + 0.5, t.j + 0.5, c.radius, 25 + c.severity * 15);
+            this.aoeDamageAnimals(t.i + 0.5, t.j + 0.5, c.radius, 20 + c.severity * 12);
+            this.destroyVegetationIn(t.i + 0.5, t.j + 0.5, c.radius, {
+              trees: 0.5, bush: 0.6, mushroom: 0.7, kreuter: 0.7,
+            });
+            if (!this.tileOverrides.has(`${t.i},${t.j}`)) {
+              this.setTileOverride(t.i, t.j, "ash", 9999 * 60);
+            }
+            c.pathIdx = (c.pathIdx ?? 0) + 1;
+          }
+          if ((c.pathIdx ?? 0) >= path.length) c.endTick = Math.min(c.endTick, this.tick);
+          break;
+        }
+      }
+      if (!expired) stillActive.push(c);
+      else {
+        // wildfire/landslide finalize: clear overrides if any temporary marks
+        // (nothing to do for now — overrides expire on their own timers)
+      }
+    }
+    this.activeCatastrophes = stillActive;
+
+    this.expireTileOverrides();
+  }
+
+  // Public accessors for external multipliers used by other systems
+  catastropheWaterMultiplier(): number {
+    return this.droughtMult;
+  }
+  catastropheColdMultiplier(): number {
+    return this.freezeMult;
   }
 }
