@@ -2686,14 +2686,31 @@ export class Sim {
   }
 
   private autoEat(u: SimUnit): void {
-    if (u.hp >= u.hpMax * BAL.autoeatHpThreshold) return;
     const r = this.resources[u.owner];
+    const hurt = u.hp < u.hpMax * BAL.autoeatHpThreshold;
     // Kräuter first: they heal injuries/illness, so consume them before food when hurt.
     const order: Array<keyof Resources> = [
       "kreuter", "fleisch", "fisch", "pilze", "beeren",
     ];
+    if (hurt) {
+      for (const key of order) {
+        if (r[key] <= 0) continue;
+        const heal = this.hpGainForResource(key);
+        if (heal <= 0) continue;
+        r[key] -= 1;
+        u.hp = Math.min(u.hpMax, u.hp + heal);
+        this.pushFlow(u.owner, key, -1, u.gx, u.gy);
+        return;
+      }
+      return;
+    }
+    // Healthy units eat anyway when storage of a food is at cap so the next
+    // kill/harvest does not get clamped — keeps food from going to waste.
+    const tribe = this.tribeSizeOf(u.owner);
     for (const key of order) {
       if (r[key] <= 0) continue;
+      const cap = resourceCap(key, tribe);
+      if (cap <= 0 || r[key] < cap) continue;
       const heal = this.hpGainForResource(key);
       if (heal <= 0) continue;
       r[key] -= 1;
