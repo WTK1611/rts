@@ -2017,6 +2017,21 @@ export class GameScene extends Phaser.Scene {
     return phaseLengthsAt(this.gameTimeSec);
   }
 
+  private moonPhase(): number {
+    // 0..1, 0 = new moon, 0.5 = full moon. Lunar cycle = 8 in-game days.
+    const LUNAR_CYCLE_DAYS = 8;
+    const dayIdx = Math.floor(this.gameTimeSec / DAY_LENGTH_SEC);
+    return (((dayIdx % LUNAR_CYCLE_DAYS) + LUNAR_CYCLE_DAYS) % LUNAR_CYCLE_DAYS) / LUNAR_CYCLE_DAYS;
+  }
+
+  private seasonSunScale(): number {
+    switch (this.lastSeason) {
+      case "summer": return 1.25;
+      case "winter": return 0.7;
+      default: return 1.0;
+    }
+  }
+
   private clockString(): string {
     const tt = this.timeOfDay();
     const p = this.phaseLens();
@@ -2155,16 +2170,20 @@ export class GameScene extends Phaser.Scene {
       this.nightOverlay.erase(er);
     }
     if (isNight) {
-      const moonAlpha = 0.18 + 0.12 * nightK;
-      const moonPos = this.celestialScreenPos(t, this.scale.width, this.scale.height);
-      if (moonPos) {
-        const z = cam.zoom;
-        const mx = (moonPos.x - (cam.width * (1 - z)) / 2) / z;
-        const my = (moonPos.y - (cam.height * (1 - z)) / 2) / z;
-        er.clear();
-        er.fillStyle(0xffffff, moonAlpha);
-        er.fillCircle(mx, my, 90 / z);
-        this.nightOverlay.erase(er);
+      const phase = this.moonPhase();
+      const brightFrac = (1 - Math.cos(phase * 2 * Math.PI)) / 2;
+      if (brightFrac > 0.05) {
+        const moonAlpha = (0.18 + 0.12 * nightK) * brightFrac;
+        const moonPos = this.celestialScreenPos(t, this.scale.width, this.scale.height);
+        if (moonPos) {
+          const z = cam.zoom;
+          const mx = (moonPos.x - (cam.width * (1 - z)) / 2) / z;
+          const my = (moonPos.y - (cam.height * (1 - z)) / 2) / z;
+          er.clear();
+          er.fillStyle(0xffffff, moonAlpha);
+          er.fillCircle(mx, my, (60 + 30 * brightFrac) / z);
+          this.nightOverlay.erase(er);
+        }
       }
     }
   }
@@ -2187,6 +2206,63 @@ export class GameScene extends Phaser.Scene {
     return { x, y, isNight: false };
   }
 
+  private drawMoon(g: Phaser.GameObjects.Graphics, cx: number, cy: number): void {
+    const r = 14;
+    const phase = this.moonPhase();
+    const theta = phase * 2 * Math.PI;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    const waxing = sinT >= 0;
+    const brightFrac = (1 - cosT) / 2;
+
+    // Always: faint disc outline so the moon's location stays visible.
+    g.lineStyle(1, 0xb8b0a0, 0.35);
+    g.strokeCircle(cx, cy, r);
+
+    if (brightFrac < 0.02) return; // new moon — nothing more to draw
+
+    // Outer glow scales with brightness.
+    g.fillStyle(0xfff4d6, 0.35 * brightFrac);
+    g.fillCircle(cx, cy, 26);
+    g.fillStyle(0xfff4d6, 0.55 * brightFrac);
+    g.fillCircle(cx, cy, 18);
+    // Bright disc + craters.
+    g.fillStyle(0xfffae8, 1);
+    g.fillCircle(cx, cy, r);
+    g.fillStyle(0xc8c0a0, 0.8);
+    g.fillCircle(cx - 4, cy - 3, 3);
+    g.fillCircle(cx + 3, cy + 4, 2);
+    g.fillCircle(cx + 5, cy - 4, 1.5);
+
+    if (brightFrac > 0.98) return; // full moon — no occluder
+
+    // Build a polygon covering the dark portion: far semicircle + terminator
+    // half-ellipse with x-radius |r*cos θ|, signed into bright side when
+    // crescent and into dark side when gibbous.
+    const xt = r * cosT * (waxing ? 1 : -1);
+    const N = 36;
+    const pts: { x: number; y: number }[] = [];
+    // Far semicircle (top → bottom via the dark side).
+    for (let i = 0; i <= N; i++) {
+      const k = i / N;
+      const a = waxing
+        ? -Math.PI / 2 - k * Math.PI // top → left → bottom
+        : -Math.PI / 2 + k * Math.PI; // top → right → bottom
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+    // Terminator half-ellipse from bottom back to top.
+    for (let i = 1; i <= N; i++) {
+      const k = i / N;
+      const a = Math.PI / 2 - k * Math.PI; // bottom (π/2) → top (-π/2)
+      const x = cx + (waxing ? xt : -xt) * Math.cos(a);
+      const y = cy + r * Math.sin(a);
+      pts.push({ x, y });
+    }
+    // Dark colour matches deep-night overlay.
+    g.fillStyle(0x0a1a30, 0.95);
+    g.fillPoints(pts, true);
+  }
+
   private drawCelestial(t: number, w: number, h: number): void {
     const g = this.celestialGfx;
     g.clear();
@@ -2197,16 +2273,7 @@ export class GameScene extends Phaser.Scene {
     const pos = this.celestialScreenPos(t, w, h);
     if (!pos) return;
     if (pos.isNight) {
-      g.fillStyle(0xfff4d6, 0.35);
-      g.fillCircle(pos.x, pos.y, 26);
-      g.fillStyle(0xfff4d6, 0.55);
-      g.fillCircle(pos.x, pos.y, 18);
-      g.fillStyle(0xfffae8, 1);
-      g.fillCircle(pos.x, pos.y, 14);
-      g.fillStyle(0xc8c0a0, 0.8);
-      g.fillCircle(pos.x - 4, pos.y - 3, 3);
-      g.fillCircle(pos.x + 3, pos.y + 4, 2);
-      g.fillCircle(pos.x + 5, pos.y - 4, 1.5);
+      this.drawMoon(g, pos.x, pos.y);
     } else {
       const p = this.phaseLens();
       const sunriseEnd = p.morning * 0.5;
@@ -2218,14 +2285,15 @@ export class GameScene extends Phaser.Scene {
         const span = Math.max(0.001, p.sunsetAt - sunsetStart);
         sunColor = lerpColor(0xffe27a, 0xff5a1a, (t - sunsetStart) / span);
       }
+      const s = this.seasonSunScale();
       g.fillStyle(sunColor, 0.18);
-      g.fillCircle(pos.x, pos.y, 50);
+      g.fillCircle(pos.x, pos.y, 50 * s);
       g.fillStyle(sunColor, 0.4);
-      g.fillCircle(pos.x, pos.y, 32);
+      g.fillCircle(pos.x, pos.y, 32 * s);
       g.fillStyle(sunColor, 1);
-      g.fillCircle(pos.x, pos.y, 20);
+      g.fillCircle(pos.x, pos.y, 20 * s);
       g.fillStyle(0xfff8d0, 1);
-      g.fillCircle(pos.x, pos.y, 13);
+      g.fillCircle(pos.x, pos.y, 13 * s);
     }
   }
 
