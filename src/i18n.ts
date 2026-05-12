@@ -129,6 +129,17 @@ export interface Strings {
   helpTipSpear: string;
   helpTipTracks: string;
   helpTipStoneHunt: string;
+  helpTipCataQuake: string;
+  helpTipCataFlood: string;
+  helpTipCataDrought: string;
+  helpTipCataFreeze: string;
+  helpTipCataMeteor: string;
+  helpTipCataEruption: string;
+  helpTipCataWildfire: string;
+  helpTipCataStorm: string;
+  helpTipCataLightning: string;
+  helpTipCataLocusts: string;
+  helpTipCataLandslide: string;
   helpEnabled: string;
   helpDisabled: string;
 
@@ -308,6 +319,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "Mit Speeren kann dein Stamm Tiere viel besser jagen — für einen Speer brauchst du Holz und Stein.",
     helpTipTracks: "Beim Laufen hinterlässt dein Stamm Spuren — daran lassen sich andere Stämme finden.",
     helpTipStoneHunt: "Deine erste Waffe: der Stein — damit lassen sich Tiere jagen.",
+    helpTipCataQuake: "Erdbeben! Der Boden bebt, Felsen rutschen und Risse zerreißen die Wege. Pflanzen werden zerstört, manche Stammesmitglieder werden verletzt.",
+    helpTipCataFlood: "Hochwasser! Eine Welle überschwemmt das Land. Überflutete Felder sind zeitweise unpassierbar — sucht einen anderen Weg.",
+    helpTipCataDrought: "Dürre! Anhaltende Hitze trocknet Beeren, Kräuter und Pilze aus. Eure Wasservorräte schwinden schneller.",
+    helpTipCataFreeze: "Eiskälte! Eis überzieht die Welt — ohne Lagerfeuer friert dein Stamm und Tiere verstecken sich.",
+    helpTipCataMeteor: "Ein Meteor stürzt vom Himmel! Bringt euren Stamm aus der Gefahrenzone — am Einschlagsort verbrennt alles.",
+    helpTipCataEruption: "Vulkanausbruch! Lava ergießt sich, Asche bedeckt die Felder. Meidet den Krater — dort kommt niemand durch.",
+    helpTipCataWildfire: "Waldbrand! Flammen fressen sich durch die Bäume. Brennende Felder sind tödlich — haltet Abstand.",
+    helpTipCataStorm: "Sturm! Heftige Böen reißen Bäume um und werfen Dinge umher. Sucht Schutz nahe dem Lagerfeuer.",
+    helpTipCataLightning: "Blitzschlag! Ein Blitz hat eingeschlagen und Bäume entzündet. Vorsicht in der Nähe großer Bäume.",
+    helpTipCataLocusts: "Heuschreckenplage! Ein Schwarm frisst Beeren, Kräuter und Pilze auf. Schnell ernten, bevor sie alles kahl fressen.",
+    helpTipCataLandslide: "Erdrutsch! Geröll und Steine begraben den Pfad. Der Weg ist hier zeitweise versperrt.",
     helpEnabled: "Hilfetexte: An (h)",
     helpDisabled: "Hilfetexte: Aus (h)",
 
@@ -481,6 +503,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "With spears your tribe hunts animals far better — to craft a spear you need wood and stone.",
     helpTipTracks: "Your tribe leaves footprints as it walks — that's how other tribes can find each other.",
     helpTipStoneHunt: "Your first weapon: the stone — use it to hunt animals.",
+    helpTipCataQuake: "Earthquake! The ground shakes, rocks slide and cracks tear paths apart. Plants are destroyed and some tribe members get hurt.",
+    helpTipCataFlood: "Flood! A surge of water sweeps the land. Flooded tiles are impassable for a while — find another way around.",
+    helpTipCataDrought: "Drought! Prolonged heat withers berries, herbs and mushrooms. Your water reserves drain faster.",
+    helpTipCataFreeze: "Deep freeze! Ice covers the world — without a campfire your tribe freezes and animals hide away.",
+    helpTipCataMeteor: "A meteor is falling from the sky! Move your tribe out of the impact zone — everything at the impact site burns.",
+    helpTipCataEruption: "Volcanic eruption! Lava pours out and ash blankets the tiles. Avoid the crater — no one gets through there.",
+    helpTipCataWildfire: "Wildfire! Flames eat through the trees. Burning tiles are deadly — stay clear.",
+    helpTipCataStorm: "Storm! Heavy gusts uproot trees and toss things around. Take shelter near the campfire.",
+    helpTipCataLightning: "Lightning strike! A bolt has hit and set trees ablaze. Beware around tall trees.",
+    helpTipCataLocusts: "Locust swarm! They devour berries, herbs and mushrooms. Harvest fast before they strip everything bare.",
+    helpTipCataLandslide: "Landslide! Rubble and stones bury the trail. The path here is blocked for a while.",
     helpEnabled: "Help tips: On (h)",
     helpDisabled: "Help tips: Off (h)",
 
@@ -649,6 +682,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "Con le lance la tua tribù caccia molto meglio — per fare una lancia servono legno e pietra.",
     helpTipTracks: "Camminando la tua tribù lascia impronte — così le altre tribù possono trovarsi.",
     helpTipStoneHunt: "La tua prima arma: la pietra — usala per cacciare gli animali.",
+    helpTipCataQuake: "Terremoto! Il suolo trema, le rocce scivolano e le crepe spezzano i sentieri. Le piante vengono distrutte e alcuni membri della tribù si feriscono.",
+    helpTipCataFlood: "Alluvione! Un'ondata sommerge la terra. Le caselle allagate sono per un po' invalicabili — cercate un'altra via.",
+    helpTipCataDrought: "Siccità! Il caldo prolungato fa appassire bacche, erbe e funghi. Le riserve d'acqua si esauriscono più in fretta.",
+    helpTipCataFreeze: "Gelo intenso! Il ghiaccio copre il mondo — senza falò la tribù congela e gli animali si nascondono.",
+    helpTipCataMeteor: "Un meteorite cade dal cielo! Allontanate la tribù dalla zona d'impatto — nel punto d'urto brucia tutto.",
+    helpTipCataEruption: "Eruzione vulcanica! Cola la lava e la cenere copre le caselle. Evitate il cratere — non si passa.",
+    helpTipCataWildfire: "Incendio boschivo! Le fiamme divorano gli alberi. Le caselle in fiamme sono mortali — state alla larga.",
+    helpTipCataStorm: "Tempesta! Forti raffiche sradicano gli alberi e lanciano oggetti in giro. Riparatevi vicino al falò.",
+    helpTipCataLightning: "Fulmine! Un lampo ha colpito e incendiato gli alberi. Attenzione vicino agli alberi alti.",
+    helpTipCataLocusts: "Sciame di cavallette! Divora bacche, erbe e funghi. Raccogliete in fretta prima che lascino tutto spoglio.",
+    helpTipCataLandslide: "Frana! Detriti e pietre seppelliscono il sentiero. Il passaggio qui è bloccato per un po'.",
     helpEnabled: "Suggerimenti: Attivi (h)",
     helpDisabled: "Suggerimenti: Disattivati (h)",
 
@@ -817,6 +861,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "Con lanzas tu tribu caza animales mucho mejor — para fabricar una lanza necesitas madera y piedra.",
     helpTipTracks: "Al caminar tu tribu deja huellas — así las tribus pueden encontrarse.",
     helpTipStoneHunt: "Tu primera arma: la piedra — úsala para cazar animales.",
+    helpTipCataQuake: "¡Terremoto! El suelo tiembla, las rocas se deslizan y las grietas rompen los senderos. Las plantas se destruyen y algunos miembros resultan heridos.",
+    helpTipCataFlood: "¡Inundación! Una crecida cubre la tierra. Las casillas inundadas son intransitables un tiempo — busquen otro camino.",
+    helpTipCataDrought: "¡Sequía! El calor prolongado marchita bayas, hierbas y setas. Las reservas de agua se agotan más rápido.",
+    helpTipCataFreeze: "¡Heladas intensas! El hielo cubre el mundo — sin hoguera la tribu se congela y los animales se esconden.",
+    helpTipCataMeteor: "¡Cae un meteorito del cielo! Saquen a la tribu de la zona de impacto — en el punto de choque arde todo.",
+    helpTipCataEruption: "¡Erupción volcánica! La lava se derrama y la ceniza cubre las casillas. Eviten el cráter — nadie pasa por ahí.",
+    helpTipCataWildfire: "¡Incendio forestal! Las llamas devoran los árboles. Las casillas en llamas son mortales — manténganse lejos.",
+    helpTipCataStorm: "¡Tormenta! Ráfagas violentas arrancan árboles y arrojan objetos. Refúgiense cerca de la hoguera.",
+    helpTipCataLightning: "¡Rayo! Un relámpago ha caído y encendido árboles. Cuidado cerca de árboles altos.",
+    helpTipCataLocusts: "¡Plaga de langostas! Devoran bayas, hierbas y setas. Cosechen rápido antes de que lo arrasen todo.",
+    helpTipCataLandslide: "¡Desprendimiento! Escombros y piedras sepultan el sendero. El paso está bloqueado un tiempo.",
     helpEnabled: "Consejos: Activados (h)",
     helpDisabled: "Consejos: Desactivados (h)",
 
@@ -985,6 +1040,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "Com lanças a tua tribo caça muito melhor — para fazer uma lança precisas de madeira e pedra.",
     helpTipTracks: "Ao caminhar a tua tribo deixa pegadas — é assim que as tribos se encontram.",
     helpTipStoneHunt: "A tua primeira arma: a pedra — usa-a para caçar animais.",
+    helpTipCataQuake: "Terramoto! O chão treme, as rochas escorregam e as fendas rasgam os caminhos. As plantas são destruídas e alguns membros ficam feridos.",
+    helpTipCataFlood: "Cheia! Uma vaga inunda a terra. Os tiles inundados ficam intransitáveis por um tempo — procurem outro caminho.",
+    helpTipCataDrought: "Seca! O calor prolongado faz murchar bagas, ervas e cogumelos. As reservas de água esgotam-se mais depressa.",
+    helpTipCataFreeze: "Frio intenso! O gelo cobre o mundo — sem fogueira a tribo congela e os animais escondem-se.",
+    helpTipCataMeteor: "Um meteoro cai do céu! Tirem a tribo da zona de impacto — no ponto de queda arde tudo.",
+    helpTipCataEruption: "Erupção vulcânica! A lava jorra e a cinza cobre os tiles. Evitem a cratera — ninguém passa por ali.",
+    helpTipCataWildfire: "Incêndio florestal! As chamas devoram as árvores. Os tiles em chamas são mortais — mantenham distância.",
+    helpTipCataStorm: "Tempestade! Rajadas violentas derrubam árvores e atiram coisas pelo ar. Abriguem-se perto da fogueira.",
+    helpTipCataLightning: "Relâmpago! Um raio caiu e incendiou árvores. Cuidado perto de árvores altas.",
+    helpTipCataLocusts: "Praga de gafanhotos! Devoram bagas, ervas e cogumelos. Colham rápido antes que arrasem tudo.",
+    helpTipCataLandslide: "Deslizamento! Escombros e pedras soterram o trilho. A passagem está bloqueada por um tempo.",
     helpEnabled: "Sugestões: Ativadas (h)",
     helpDisabled: "Sugestões: Desativadas (h)",
 
@@ -1153,6 +1219,17 @@ const STRINGS: Record<Language, Strings> = {
     helpTipSpear: "Avec des lances, ta tribu chasse bien mieux — pour fabriquer une lance, il faut du bois et de la pierre.",
     helpTipTracks: "En marchant, ta tribu laisse des traces — c'est ainsi que les tribus se trouvent.",
     helpTipStoneHunt: "Ta première arme : la pierre — utilise-la pour chasser les animaux.",
+    helpTipCataQuake: "Tremblement de terre ! Le sol tremble, les rochers glissent et les fissures déchirent les chemins. Les plantes sont détruites et certains membres sont blessés.",
+    helpTipCataFlood: "Inondation ! Une crue submerge la terre. Les tuiles inondées sont impraticables un moment — trouvez un autre chemin.",
+    helpTipCataDrought: "Sécheresse ! La chaleur prolongée flétrit baies, herbes et champignons. Vos réserves d'eau s'épuisent plus vite.",
+    helpTipCataFreeze: "Gel intense ! La glace recouvre le monde — sans feu de camp la tribu gèle et les animaux se cachent.",
+    helpTipCataMeteor: "Une météorite tombe du ciel ! Éloignez la tribu de la zone d'impact — au point de chute, tout brûle.",
+    helpTipCataEruption: "Éruption volcanique ! La lave coule et les cendres recouvrent les tuiles. Évitez le cratère — personne n'y passe.",
+    helpTipCataWildfire: "Feu de forêt ! Les flammes dévorent les arbres. Les tuiles en feu sont mortelles — gardez vos distances.",
+    helpTipCataStorm: "Tempête ! Des rafales violentes déracinent les arbres et projettent des objets. Abritez-vous près du feu de camp.",
+    helpTipCataLightning: "Foudre ! Un éclair a frappé et embrasé des arbres. Méfiez-vous près des grands arbres.",
+    helpTipCataLocusts: "Invasion de sauterelles ! Elles dévorent baies, herbes et champignons. Récoltez vite avant qu'elles ne ravagent tout.",
+    helpTipCataLandslide: "Éboulement ! Des gravats et des pierres ensevelissent la piste. Le passage est bloqué un moment.",
     helpEnabled: "Astuces : Activées (h)",
     helpDisabled: "Astuces : Désactivées (h)",
 

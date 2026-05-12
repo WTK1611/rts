@@ -158,7 +158,18 @@ type HelpKey =
   | "stone"
   | "spear"
   | "tracks"
-  | "stoneHunt";
+  | "stoneHunt"
+  | "cataQuake"
+  | "cataFlood"
+  | "cataDrought"
+  | "cataFreeze"
+  | "cataMeteor"
+  | "cataEruption"
+  | "cataWildfire"
+  | "cataStorm"
+  | "cataLightning"
+  | "cataLocusts"
+  | "cataLandslide";
 
 const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) => string }> = {
   berry: {
@@ -209,6 +220,64 @@ const HELP_TIPS: Record<HelpKey, { img: string; text: (s: ReturnType<typeof t>) 
     img: "/image/stein-hase-300.webp",
     text: (s) => s.helpTipStoneHunt,
   },
+  cataQuake: {
+    img: "/image/erdbeben-300.webp",
+    text: (s) => s.helpTipCataQuake,
+  },
+  cataFlood: {
+    img: "/image/hochwasser-300.webp",
+    text: (s) => s.helpTipCataFlood,
+  },
+  cataDrought: {
+    img: "/image/dürre-300.webp",
+    text: (s) => s.helpTipCataDrought,
+  },
+  cataFreeze: {
+    img: "/image/eisige-kälte-300.webp",
+    text: (s) => s.helpTipCataFreeze,
+  },
+  cataMeteor: {
+    img: "/image/meteoreinschalg-300.webp",
+    text: (s) => s.helpTipCataMeteor,
+  },
+  cataEruption: {
+    img: "/image/vulkan-300.webp",
+    text: (s) => s.helpTipCataEruption,
+  },
+  cataWildfire: {
+    img: "/image/waldbrand-300.webp",
+    text: (s) => s.helpTipCataWildfire,
+  },
+  cataStorm: {
+    img: "/image/sturm-300.webp",
+    text: (s) => s.helpTipCataStorm,
+  },
+  cataLightning: {
+    img: "/image/blitzeinschlag-300.webp",
+    text: (s) => s.helpTipCataLightning,
+  },
+  cataLocusts: {
+    img: "/image/heuschreckenplage-300.webp",
+    text: (s) => s.helpTipCataLocusts,
+  },
+  cataLandslide: {
+    img: "/image/erdrutsch-300.webp",
+    text: (s) => s.helpTipCataLandslide,
+  },
+};
+
+const CATASTROPHE_HELP: Record<CatastropheKind, HelpKey> = {
+  quake: "cataQuake",
+  flood: "cataFlood",
+  drought: "cataDrought",
+  freeze: "cataFreeze",
+  meteor: "cataMeteor",
+  eruption: "cataEruption",
+  wildfire: "cataWildfire",
+  storm: "cataStorm",
+  lightning: "cataLightning",
+  locusts: "cataLocusts",
+  landslide: "cataLandslide",
 };
 
 const HELP_VOLCANO_RADIUS = 4;
@@ -3065,6 +3134,7 @@ export class GameScene extends Phaser.Scene {
       const txt = s.toastCatastrophe(ev.kind, ev.severity);
       this.showToast(`${icon} ${txt}`, "death");
       this.spawnCatastropheFx(ev);
+      this.triggerHelp(CATASTROPHE_HELP[ev.kind]);
     }
   }
 
