@@ -619,11 +619,22 @@ function tick(): void {
 
 const tickInterval = setInterval(tick, 1000 / TICK_RATE);
 
+let shuttingDown = false;
 function shutdown(): void {
+  if (shuttingDown) {
+    process.exit(0);
+    return;
+  }
+  shuttingDown = true;
   clearInterval(tickInterval);
-  for (const client of wss.clients) client.terminate();
-  wss.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 300).unref();
+  try {
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+  } catch {
+    // ignore — we're exiting anyway
+  }
+  // Refd backstop: guarantees exit even if wss.close callback never fires.
+  setTimeout(() => process.exit(0), 200);
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
@@ -749,6 +760,8 @@ wss.on("connection", (ws) => {
       world.sim.cmdHunt(slot.id, msg.unitIds, msg.animalId);
     } else if (msg.type === "igniteCampfire") {
       world.sim.cmdIgniteCampfire(slot.id, msg.i, msg.j);
+    } else if (msg.type === "greetTribe") {
+      world.sim.cmdGreetTribe(slot.id, msg.targetUnitId);
     }
   });
 

@@ -8,8 +8,11 @@ export class Bush {
   j: number;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
+  private berries: Phaser.GameObjects.Arc[] = [];
+  private berriesVisible = true;
+  private berryTween?: Phaser.Tweens.Tween;
 
-  constructor(scene: Phaser.Scene, i: number, j: number, worldSeed: number) {
+  constructor(scene: Phaser.Scene, i: number, j: number, worldSeed: number, withoutBerries = false) {
     this.scene = scene;
     this.i = i;
     this.j = j;
@@ -31,7 +34,6 @@ export class Bush {
       .setStrokeStyle(1.2, 0x183818);
     const leafHi = scene.add.ellipse(-3, -8, 7, 5, 0x6cbf6c, 0.55);
 
-    const berries: Phaser.GameObjects.Arc[] = [];
     const berryCount = 3 + (seed % 4);
     for (let k = 0; k < berryCount; k++) {
       const ang = ((seed >> (k * 3 + 1)) & 0xff) / 255 * Math.PI * 2;
@@ -39,12 +41,55 @@ export class Bush {
       const bx = Math.cos(ang) * rr;
       const by = -6 + Math.sin(ang) * rr * 0.5;
       const berry = scene.add.circle(bx, by, 1.5, 0xc23a5a).setStrokeStyle(0.5, 0x6a1530);
-      berries.push(berry);
+      this.berries.push(berry);
     }
 
-    this.container = scene.add.container(x, wy, [leafShadow, leaves, leafHi, ...berries]);
+    this.container = scene.add.container(x, wy, [leafShadow, leaves, leafHi, ...this.berries]);
     this.container.setScale(scale);
     this.container.setDepth((i + 0.5 + j + 0.5) * TILE_H);
+
+    if (withoutBerries) {
+      this.berriesVisible = false;
+      for (const b of this.berries) {
+        b.setVisible(false);
+        b.setAlpha(0);
+        b.setScale(0);
+      }
+    }
+  }
+
+  pickBerries(): void {
+    if (!this.berriesVisible) return;
+    this.berriesVisible = false;
+    this.berryTween?.stop();
+    this.berryTween = this.scene.tweens.add({
+      targets: this.berries,
+      alpha: 0,
+      scale: 0,
+      duration: 220,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        for (const b of this.berries) b.setVisible(false);
+      },
+    });
+  }
+
+  growBerries(): void {
+    if (this.berriesVisible) return;
+    this.berriesVisible = true;
+    this.berryTween?.stop();
+    for (const b of this.berries) {
+      b.setVisible(true);
+      b.setAlpha(0);
+      b.setScale(0);
+    }
+    this.berryTween = this.scene.tweens.add({
+      targets: this.berries,
+      alpha: 1,
+      scale: 1,
+      duration: 320,
+      ease: "Cubic.easeOut",
+    });
   }
 
   remove(): void {

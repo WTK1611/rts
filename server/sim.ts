@@ -2439,6 +2439,39 @@ export class Sim {
     });
   }
 
+  cmdGreetTribe(owner: PlayerId, targetUnitId: string): void {
+    if (!this.active[owner]) return;
+    const target = this.units.get(targetUnitId);
+    if (!target) return;
+    if (!target.isChief) return;
+    if (target.owner === owner) return;
+    const other = target.owner;
+    if (!this.active[other]) return;
+
+    const lo = Math.min(owner, other);
+    const hi = Math.max(owner, other);
+    const key = `${lo}_${hi}`;
+    const last = this.lastEncounterTick.get(key) ?? -D.encounterCooldownTicks;
+    if (this.tick - last < D.encounterCooldownTicks) return;
+    this.lastEncounterTick.set(key, this.tick);
+
+    const listA: SimUnit[] = [];
+    const listB: SimUnit[] = [];
+    for (const u of this.units.values()) {
+      if (u.owner === owner) listA.push(u);
+      else if (u.owner === other) listB.push(u);
+    }
+    const { aToB, bToA } = this.transferWomenForBalance(
+      owner, other, listA, listB,
+    );
+    this.encounterEvents.push({
+      a: owner,
+      b: other,
+      transfersAtoB: aToB,
+      transfersBtoA: bToA,
+    });
+  }
+
   private objectKindAt(i: number, j: number): ObjectKind | null {
     if (
       hasTreeAt(this.seed, i, j) &&

@@ -18,27 +18,33 @@ Werte sind die aktuellen Konstanten zum Zeitpunkt dieses Dokuments.
 
 ## Lebenszyklus einer Einheit
 
-- **HP-Grenze:** 100. Volle HP zu Spielbeginn ([`sim.ts:92`](../server/sim.ts#L92)).
+Werte stammen aus [`server/balancing.ts`](../server/balancing.ts) und sind zur
+Laufzeit über die Balancing-DB überschreibbar.
+
+- **HP-Grenze:** 100. Volle HP zu Spielbeginn.
 - **HP-Verlust:**
-  - `0,2 HP` pro begangener Tile-Distanz ([`sim.ts:93`](../server/sim.ts#L93)).
-  - `0,12 HP/s` im Idle (Stoffwechsel, [`sim.ts:94`](../server/sim.ts#L94)).
-- **Essen** alle `1,0 s`, sofern Vorrat im Stamm vorhanden
-  ([`sim.ts:95`](../server/sim.ts#L95), [`sim.ts:1136`](../server/sim.ts#L1136)).
-  Die HP-Gewinne pro Ressource ([`sim.ts:96-100`](../server/sim.ts#L96-L100)):
+  - `0,4 HP` pro begangener Tile-Distanz (`unit.hpLossPerTile`).
+  - `0,12 HP/s` im Idle (Stoffwechsel, `unit.hpLossPerSecIdle`).
+  - Voller HP-Drain wenn `wasser ≤ 0` (Verdursten = `hpMax/Tageslänge` pro s).
+- **Essen** alle `1,0 s` (`eat.intervalSec`), sofern Vorrat im Stamm vorhanden.
+  Auto-Eat greift unter `eat.autoeatHpThreshold = 51 %` HP – in dieser Reihenfolge:
 
-  | Ressource | HP-Gewinn |
-  |---|---|
-  | Fleisch | 15 |
-  | Fisch | 12 |
-  | Beeren | 3 |
-  | Pilze | 2 |
-  | Wasser | 1 |
+  | Priorität | Ressource | HP-Gewinn |
+  |---|---|---|
+  | 1 | Kräuter | 35 |
+  | 2 | Fleisch | 15 |
+  | 3 | Fisch | 12 |
+  | 4 | Pilze | 2 |
+  | 5 | Beeren | 3 |
 
-- **Altern:** `ageSec` läuft mit der Zeit hoch. Erreicht eine Einheit
-  `MAX_AGE_SEC = 420 s` (7 Min), stirbt sie sofort
-  ([`sim.ts:89`](../server/sim.ts#L89), [`sim.ts:1140-1141`](../server/sim.ts#L1140-L1141)).
-- **Tod:** HP ≤ 0 → Einheit wird im Tick-Reaper entfernt
-  ([`sim.ts:1455-1462`](../server/sim.ts#L1455-L1462)).
+  Wasser heilt **nicht**, stillt nur den Durst (`eat.waterPerUnitPerDay = 1`,
+  saisonal moduliert: Sommer 1,6×, Winter 0,8×). Bei vollem Cap einer Nahrung
+  wird sie auch von gesunden Einheiten verbraucht, damit der nächste Drop nicht
+  geclampt wird.
+- **Altern:** `ageSec` läuft mit der Zeit hoch. Kindheit bis
+  `growth.childAgeSec = 240 s`, "alt" ab `growth.oldThresholdSec = 720 s`,
+  Tod bei `growth.maxAgeSec = 960 s` (16 Min).
+- **Tod:** HP ≤ 0 → Einheit wird im Tick-Reaper entfernt.
 
 ## Häuptling (`isChief`)
 
@@ -56,20 +62,34 @@ In [`growthCheck`](../server/sim.ts):
 - **Mehrere Schwangerschaften gleichzeitig:** Jede Frau im Stamm hat ihren
   **eigenen** Schwangerschafts-Timer. Mehrere Geburten pro Stamm parallel sind möglich.
 - **Voraussetzungen pro Frau und Tick:**
-  - Stamm hat ≥ 2 Mitglieder, < `MAX_TRIBE_SIZE`,
-  - mindestens **1 Mann** im Stamm,
-  - die Frau ist gesund (`hp/hpMax ≥ PREGNANCY_HEALTH_MIN_FRAC = 0.33`).
+  - Stamm hat ≥ 2 Mitglieder,
+  - mindestens **1 reifer Mann** (`ageSec ≥ growth.childAgeSec`) im Stamm,
+  - die Frau ist erwachsen (`ageSec ≥ growth.childAgeSec`),
+  - die Frau ist gesund (`hp/hpMax ≥ growth.pregnancyHealthMinFrac = 0.30`).
 - **Timer:** `pregnancyTimer[unitId]` läuft pro Frau hoch. Sobald
-  `pregnancyTimer ≥ GROWTH_REQUIRED_SEC = 120 s` wird ein neues Mitglied **am
+  `pregnancyTimer ≥ growth.requiredSec = 288 s` wird ein neues Mitglied **am
   Stammeszentrum** gespawnt und der Timer der Frau zurückgesetzt.
-- **Reset:** Bedingungen verletzt (zu wenig Männer, zu krank, Stamm voll,
+- **Reset:** Bedingungen verletzt (zu wenig Männer, zu krank, Frau ist Kind,
   Frau wechselt Stamm, Frau stirbt) → Timer der Frau wird gelöscht.
+- **Vollst-Stamm = Spaltung statt Blockade:** Erreicht ein Stamm
+  `MAX_TRIBE_SIZE = 12` und versucht eine Frau zu gebären, wird per
+  `splitOffNewTribe` ein Tochterstamm abgespalten:
+  - Voraussetzung: ein freier `PlayerId`-Slot existiert + ≥ 2 Founder + ≥ 1
+    Restmitglied beim Mutterstamm.
+  - Founder = jede zweite reife Frau / jeder zweite reife Mann (sortiert nach
+    Alter, absteigend), bis ≥ 2 zusammen.
+  - Founder behalten ihre Position, bekommen neue Farbe, leeres Inventar,
+    eigenen Spawn am Stamm-Schwerpunkt, gleiche Sprache + Toast-Event.
+  - Anschließend wird die geplante Geburt im Mutterstamm trotzdem ausgeführt.
+  - Klappt die Spaltung nicht (kein Slot, zu wenige Founder), bleibt der
+    Schwangerschafts-Timer bei `growth.requiredSec` stehen und wartet.
 - **Geburts-Cap pro Tick:** maximal so viele Geburten wie Plätze unter
   `MAX_TRIBE_SIZE` frei sind; weitere fertige Schwangerschaften halten ihren
   Timer und gebären, sobald wieder Platz ist.
 - **Geschlecht des Neugeborenen:** zufällig 50/50 (deterministisch aus Seed).
 - **Name:** aus der Sprache des Stamms.
-- **Start-Alter:** `0 s`. Das Neugeborene ist also Kind, bis `ageSec ≥ CHILD_AGE_SEC = 60 s`.
+- **Start-Alter:** `0 s`. Das Neugeborene ist also Kind, bis
+  `ageSec ≥ growth.childAgeSec = 240 s`.
 
 Im Snapshot (`growthSnapshot`) wird pro Stamm die **am weitesten fortgeschrittene**
 Schwangerschaft als Fortschritt gemeldet; `growthActive[p]` ist true, sobald
@@ -112,41 +132,51 @@ Logik in [`encounterCheck`](../server/sim.ts#L1194), läuft **jeden Tick**.
 
 ## Lagerfeuer
 
-Logik in [`campfireStep`](../server/sim.ts) — Konstanten am Datei-Anfang:
+Logik in [`campfireStep`](../server/sim.ts), Werte in
+[`balancing.ts`](../server/balancing.ts):
 
-- `CAMPFIRE_IGNITE_DELAY_SEC = 8` — wie lange ein Stamm ruhig zusammenstehen muss.
-- `CAMPFIRE_IGNITE_MIN_UNITS = 2` — mindestens zwei Stammesmitglieder im Cluster.
-- `CAMPFIRE_IGNITE_CLUSTER_RADIUS = 2,5` Tiles — Clusterradius um den Schwerpunkt.
-- `CAMPFIRE_RANGE = 2,5` Tiles — Heil-/Schutzradius um das Feuer.
-- `CAMPFIRE_BURN_PER_FUEL_SEC = 25` — Brenndauer je Brennstoff-Paar (1 Holz + 1 Stein).
-- `CAMPFIRE_HP_REGEN_PER_SEC = 1,2` — Heilung pro Sekunde am Feuer.
+- `fire.igniteMinUnits = 2` — mindestens zwei Stammesmitglieder im Cluster.
+- `fire.igniteClusterRadius = 2,5` Tiles — Clusterradius um den Schwerpunkt.
+- `fire.range = 2,5` Tiles — Heil-/Schutzradius um das Feuer.
+- `fire.igniteHolzCost = 5`, `fire.igniteSteinCost = 1` — Erstkosten.
+- **Brenndauer pro Nachlege-Paar (1 Holz + 1 Stein)** wird zur Laufzeit
+  saisonal berechnet (`Sim.campfireBurnPerFuelSec`):
+  `aktuelleNachtlänge / day.nightCampfireHolzPerNight`. Bei Standard-Werten:
+  Frühling/Herbst-Nacht 120 s ÷ 40 = 3 s; im Winter 192 s ÷ 40 ≈ 4,8 s; im
+  Sommer 60 s ÷ 40 = 1,5 s. Pro durchgehend brennender Nacht: ~40 Holz und
+  ~40 Stein, unabhängig von der Saison.
+- `fire.hpRegenPerSec = 1,2` — Heilung pro Sekunde am Feuer.
+- `fire.repelRadiusBonus = 2,5` — Räuber-Abwehr-Bonus zusätzlich zur Reichweite.
 
 ### Entzünden
 
 - Pro Stamm gibt es **maximal ein** Lagerfeuer.
-- Stehen ≥ 2 Mitglieder eines Stamms ohne Bewegung, Harvest- oder Hunt-Ziel
-  innerhalb des Clusterradius zusammen, läuft ein Ignite-Timer.
+- Stehen ≥ `fire.igniteMinUnits = 2` Mitglieder eines Stamms ohne Bewegung,
+  Harvest- oder Hunt-Ziel innerhalb des Clusterradius zusammen, läuft ein
+  Ignite-Timer.
 - Verlässt der Cluster die Position oder fällt unter zwei Mitglieder, wird der
   Timer zurückgesetzt.
-- Erreicht der Timer `CAMPFIRE_IGNITE_DELAY_SEC` und der Stamm hat ≥ 1 Holz und
-  ≥ 1 Stein im Vorrat, wird das Feuer am Cluster-Schwerpunkt entzündet:
-  - 1 Holz und 1 Stein werden verbraucht.
-  - Brennstoff-Timer startet bei `CAMPFIRE_BURN_PER_FUEL_SEC`.
+- Erreicht der Timer das Anzünd-Delay und der Stamm hat ≥
+  `fire.igniteHolzCost = 5` Holz + `fire.igniteSteinCost = 1` Stein im Vorrat,
+  wird das Feuer am Cluster-Schwerpunkt entzündet.
 
 ### Brennen, Nachlegen, Erlöschen
 
 - Pro Tick zählt der Brennstoff-Timer dt herunter.
 - Läuft er ab, wird **nur dann** nachgelegt, wenn mindestens eine eigene Einheit
-  innerhalb von `CAMPFIRE_RANGE` steht **und** der Stamm noch 1 Holz + 1 Stein
-  hat. Dann werden Holz und Stein verbraucht und der Timer wieder aufgefüllt.
+  innerhalb von `fire.range` steht **und** der Stamm noch 1 Holz + 1 Stein
+  hat. Dann werden Holz und Stein verbraucht und der Timer auf
+  `campfireBurnPerFuelSec()` (saisonal) wieder aufgefüllt.
 - Andernfalls erlischt das Feuer.
 
 ### Wirkung am Feuer
 
-Befindet sich eine Einheit innerhalb von `CAMPFIRE_RANGE` zum eigenen Lagerfeuer:
+Befindet sich eine Einheit innerhalb von `fire.range` zum eigenen Lagerfeuer:
 
-- **Kein Idle-HP-Verfall** (`UNIT_HP_LOSS_PER_SEC_IDLE` greift nicht).
-- **Heilung** mit `CAMPFIRE_HP_REGEN_PER_SEC` HP/s, ohne Vorrat zu verbrauchen.
+- **Kein Idle-HP-Verfall** (`unit.hpLossPerSecIdle` greift nicht).
+- **Heilung** mit `fire.hpRegenPerSec × 1,5` HP/s am Feuer, ohne Vorrat zu
+  verbrauchen.
+- **Räuber-Abwehr** bis `fire.range + fire.repelRadiusBonus`.
 
 Die normale `autoEat`-Logik läuft weiter, greift aber nur, wenn `hp < hpMax` —
 durch die stete Regeneration sind Einheiten am Feuer fast immer voll und essen

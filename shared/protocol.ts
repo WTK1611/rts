@@ -621,6 +621,11 @@ export interface IgniteCampfireCommand {
   j: number;
 }
 
+export interface GreetTribeCommand {
+  type: "greetTribe";
+  targetUnitId: string;
+}
+
 export interface SubmitScoreCommand {
   type: "submitScore";
   entry: ScoreEntry;
@@ -645,6 +650,7 @@ export type ClientMessage =
   | HarvestCommand
   | HuntCommand
   | IgniteCampfireCommand
+  | GreetTribeCommand
   | SubmitScoreCommand
   | FetchLeaderboardCommand
   | SetBalancingCommand
