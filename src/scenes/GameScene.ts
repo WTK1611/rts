@@ -117,6 +117,7 @@ interface Chunk {
   cx: number;
   cy: number;
   rt: Phaser.GameObjects.RenderTexture;
+  winterRt: Phaser.GameObjects.RenderTexture;
   trees: Map<string, Tree>;
   bushes: Map<string, Bush>;
   cacti: Map<string, Cactus>;
@@ -440,6 +441,7 @@ export class GameScene extends Phaser.Scene {
   private nightOverlay!: Phaser.GameObjects.RenderTexture;
   private nightEraser!: Phaser.GameObjects.Graphics;
   private celestialGfx!: Phaser.GameObjects.Graphics;
+  private snowParticles?: Phaser.GameObjects.Particles.ParticleEmitter;
   // UI-Kamera für bildschirmfixierte Layer (Nachtfilter, Sonne/Mond).
   // Sie ignoriert Zoom & Scroll der Hauptkamera, damit die Layer nicht
   // mit der Welt mitskalieren — sonst entstehen nach Pinch-Zoom oder
@@ -602,6 +604,33 @@ export class GameScene extends Phaser.Scene {
     this.celestialGfx = this.add.graphics()
       .setScrollFactor(0)
       .setDepth(1_820_000);
+
+    if (!this.textures.exists("__snowflake")) {
+      const tx = this.textures.createCanvas("__snowflake", 3, 3);
+      if (tx) {
+        const ctx = tx.getContext();
+        ctx.fillStyle = "rgba(255,255,255,1)";
+        ctx.fillRect(1, 0, 1, 3);
+        ctx.fillRect(0, 1, 3, 1);
+        tx.refresh();
+      }
+    }
+    this.snowParticles = this.add.particles(0, 0, "__snowflake", {
+      x: { min: -20, max: 2600 },
+      y: -8,
+      lifespan: 7000,
+      speedY: { min: 28, max: 55 },
+      speedX: { min: -14, max: 14 },
+      scale: { min: 0.6, max: 1.2 },
+      alpha: { min: 0.55, max: 0.9 },
+      quantity: 1,
+      frequency: 55,
+      emitting: false,
+    });
+    this.snowParticles
+      .setScrollFactor(0)
+      .setDepth(1_810_000);
+    if (this.lastSeason === "winter") this.snowParticles.start();
     // UI-Kamera erst nach der Hauptkamera anlegen, damit sie OBEN gerendert
     // wird. Sie sieht nur die Bildschirm-Overlays.
     this.uiCam = this.cameras.add(0, 0, screenW, screenH);
@@ -641,8 +670,9 @@ export class GameScene extends Phaser.Scene {
     const uiObjects = new Set<Phaser.GameObjects.GameObject>([
       this.nightOverlay,
       this.celestialGfx,
+      this.snowParticles!,
     ]);
-    cam.ignore([this.nightOverlay, this.celestialGfx]);
+    cam.ignore([this.nightOverlay, this.celestialGfx, this.snowParticles!]);
     for (const obj of this.children.list) {
       if (!uiObjects.has(obj)) this.uiCam.ignore(obj);
     }
@@ -1290,6 +1320,20 @@ export class GameScene extends Phaser.Scene {
     }
     rt.draw(g, -ofx, -ofy);
     g.destroy();
+
+    const winterRt = this.add.renderTexture(ofx, ofy, w, h);
+    winterRt.setOrigin(0, 0);
+    winterRt.setDepth(-99999);
+    winterRt.setVisible(this.lastSeason === "winter");
+    const wg = this.make.graphics({ x: 0, y: 0 }, false);
+    for (let dj = 0; dj < CHUNK_SIZE; dj++) {
+      for (let di = 0; di < CHUNK_SIZE; di++) {
+        this.drawWinterTile(wg, i0 + di, j0 + dj);
+      }
+    }
+    winterRt.draw(wg, -ofx, -ofy);
+    wg.destroy();
+
     const surfSegments: SurfSeg[] = [];
     const waterfalls: WaterfallSeg[] = [];
     for (let dj = 0; dj < CHUNK_SIZE; dj++) {
@@ -1299,12 +1343,92 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.chunks.set(`${cx},${cy}`, {
-      cx, cy, rt,
+      cx, cy, rt, winterRt,
       trees, bushes, cacti, mushrooms, kreuters, fishes, stones, sequoias, volcanoes,
       surfSegments,
       waterfalls,
       bbox: { x: ofx, y: ofy, w, h },
     });
+  }
+
+  private drawWinterTile(g: Phaser.GameObjects.Graphics, i: number, j: number): void {
+    const biome = biomeAt(this.seed, i, j);
+    if (biome === "lava") return;
+    const { x, y } = gridToScreen(i, j);
+    const isWater = biome === "lake" || biome === "river";
+
+    const cornerTouchesWater = (ci: number, cj: number): boolean =>
+      this.isWaterAt(ci - 1, cj - 1) ||
+      this.isWaterAt(ci, cj - 1) ||
+      this.isWaterAt(ci - 1, cj) ||
+      this.isWaterAt(ci, cj);
+    const hN = isWater || cornerTouchesWater(i, j) ? 0 : heightAt(this.seed, i, j);
+    const hE = isWater || cornerTouchesWater(i + 1, j) ? 0 : heightAt(this.seed, i + 1, j);
+    const hS = isWater || cornerTouchesWater(i + 1, j + 1) ? 0 : heightAt(this.seed, i + 1, j + 1);
+    const hW = isWater || cornerTouchesWater(i, j + 1) ? 0 : heightAt(this.seed, i, j + 1);
+
+    let fill: number;
+    let alpha: number;
+    if (isWater) {
+      fill = 0xd8e6f0;
+      alpha = biome === "river" ? 0.55 : 0.7;
+    } else if (biome === "gebirge") {
+      fill = 0xffffff;
+      alpha = 0.55;
+    } else if (biome === "wueste" || biome === "canyon") {
+      fill = 0xf2f0e8;
+      alpha = 0.28;
+    } else if (biome === "felsen") {
+      fill = 0xeef0f2;
+      alpha = 0.45;
+    } else {
+      fill = 0xf6f8fb;
+      alpha = 0.7;
+    }
+
+    const corners = [
+      { x: x, y: y - hN },
+      { x: x + TILE_W / 2, y: y + TILE_H / 2 - hE },
+      { x: x, y: y + TILE_H - hS },
+      { x: x - TILE_W / 2, y: y + TILE_H / 2 - hW },
+    ];
+    g.fillStyle(fill, alpha);
+    g.beginPath();
+    g.moveTo(corners[0].x, corners[0].y);
+    for (let e = 1; e < 4; e++) g.lineTo(corners[e].x, corners[e].y);
+    g.closePath();
+    g.fillPath();
+
+    if (isWater) {
+      const decor = tileDecor(this.seed, i, j);
+      const avgH = (hN + hE + hS + hW) * 0.25;
+      const cy = y + TILE_H / 2 - avgH;
+      if ((decor >> 5) % 4 === 0) {
+        g.lineStyle(1, 0x9ab0c0, 0.7);
+        g.beginPath();
+        g.moveTo(x - 4, cy - 1);
+        g.lineTo(x + 3, cy + 2);
+        g.strokePath();
+      }
+      if ((decor >> 9) % 5 === 0) {
+        g.lineStyle(0.8, 0xaec2d4, 0.5);
+        g.beginPath();
+        g.moveTo(x + 1, cy - 2);
+        g.lineTo(x - 2, cy + 3);
+        g.strokePath();
+      }
+    } else if (biome !== "gebirge") {
+      const decor = tileDecor(this.seed, i, j);
+      const avgH = (hN + hE + hS + hW) * 0.25;
+      const cy = y + TILE_H / 2 - avgH;
+      const flakes = biome === "wueste" || biome === "canyon" ? 1 : 3;
+      for (let k = 0; k < flakes; k++) {
+        const fx = Math.round(x + ((((decor >> (3 + k * 5)) & 0x1f) / 31) - 0.5) * TILE_W * 0.6);
+        const fy = Math.round(cy + ((((decor >> (8 + k * 5)) & 0xf) / 15) - 0.5) * TILE_H * 0.5);
+        g.fillStyle(0xffffff, 0.85);
+        g.fillRect(fx, fy, 1, 1);
+      }
+    }
   }
 
   private collectSurfSegmentsForTile(i: number, j: number, out: SurfSeg[]): void {
@@ -1402,6 +1526,7 @@ export class GameScene extends Phaser.Scene {
 
   private unloadChunk(key: string, chunk: Chunk): void {
     chunk.rt.destroy();
+    chunk.winterRt.destroy();
     for (const [tid, t] of chunk.trees) {
       t.container.destroy();
       t.shadow.destroy();
@@ -3865,12 +3990,26 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
+  private setSnowParticlesActive(active: boolean): void {
+    const p = this.snowParticles;
+    if (!p) return;
+    if (active) {
+      p.start();
+    } else {
+      p.stop();
+      p.killAll();
+    }
+  }
+
   private onSeasonChange(_prev: Season): void {
     const s = t();
     const label = s.seasonLabel(this.lastSeason);
     const icon = s.seasonIcon(this.lastSeason);
     this.showToast(`${icon} ${s.toastSeasonStart(label)}`, "join");
     for (const tree of this.trees.values()) tree.applySeason(this.lastSeason);
+    const winter = this.lastSeason === "winter";
+    for (const chunk of this.chunks.values()) chunk.winterRt.setVisible(winter);
+    this.setSnowParticlesActive(winter);
     this.updateHud();
   }
 
