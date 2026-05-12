@@ -27,6 +27,7 @@ export interface Strings {
   resFisch: string;
   resStein: string;
   resKreuter: string;
+  resFelle: string;
   hudTribeMembers: string;
   hudWaitingForOthers: string;
   hudYou: string;
@@ -167,6 +168,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Fisch",
     resStein: "Stein",
     resKreuter: "Kräuter",
+    resFelle: "Felle",
     hudTribeMembers: "Stammesmitglieder",
     hudWaitingForOthers: "Warte auf weitere Stämme …",
     hudYou: "Du",
@@ -343,6 +345,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Fish",
     resStein: "Stone",
     resKreuter: "Herbs",
+    resFelle: "Hides",
     hudTribeMembers: "Tribe members",
     hudWaitingForOthers: "Waiting for more tribes …",
     hudYou: "You",
@@ -515,6 +518,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Pesce",
     resStein: "Pietra",
     resKreuter: "Erbe",
+    resFelle: "Pelli",
     hudTribeMembers: "Membri della tribù",
     hudWaitingForOthers: "In attesa di altre tribù …",
     hudYou: "Tu",
@@ -682,6 +686,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Pescado",
     resStein: "Piedra",
     resKreuter: "Hierbas",
+    resFelle: "Pieles",
     hudTribeMembers: "Miembros de la tribu",
     hudWaitingForOthers: "Esperando a más tribus …",
     hudYou: "Tú",
@@ -849,6 +854,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Peixe",
     resStein: "Pedra",
     resKreuter: "Ervas",
+    resFelle: "Peles",
     hudTribeMembers: "Membros da tribo",
     hudWaitingForOthers: "À espera de mais tribos …",
     hudYou: "Tu",
@@ -1016,6 +1022,7 @@ const STRINGS: Record<Language, Strings> = {
     resFisch: "Poisson",
     resStein: "Pierre",
     resKreuter: "Herbes",
+    resFelle: "Peaux",
     hudTribeMembers: "Membres de la tribu",
     hudWaitingForOthers: "En attente d'autres tribus …",
     hudYou: "Toi",

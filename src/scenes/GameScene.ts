@@ -2981,7 +2981,7 @@ export class GameScene extends Phaser.Scene {
         this.campfires.delete(snap.id);
         this.visObjectCache.delete(`cf:${snap.id}`);
       } else {
-        existing.applyState(snap.gx, snap.gy, snap.fuel, snap.size);
+        existing.applyState(snap.gx, snap.gy, snap.fuel, snap.size, snap.hasTent);
         return;
       }
     }
@@ -2995,6 +2995,7 @@ export class GameScene extends Phaser.Scene {
       snap.size,
       this.seed,
     );
+    f.applyState(snap.gx, snap.gy, snap.fuel, snap.size, snap.hasTent);
     this.campfires.set(snap.id, f);
     if (notify) {
       const s = t();
@@ -3757,7 +3758,7 @@ export class GameScene extends Phaser.Scene {
     const myColor = this.playerColorCss(this.playerId);
     const myRes = this.resources[this.playerId] ?? {
       holz: 0, wasser: 0, beeren: 0, pilze: 0,
-      fleisch: 0, fisch: 0, stein: 0, kreuter: 0,
+      fleisch: 0, fisch: 0, stein: 0, kreuter: 0, felle: 0,
     };
     const labels: Record<keyof Resources, string> = {
       holz: s.resHolz,
@@ -3768,6 +3769,7 @@ export class GameScene extends Phaser.Scene {
       fisch: s.resFisch,
       stein: s.resStein,
       kreuter: s.resKreuter,
+      felle: s.resFelle,
     };
     const tribeCounts = this.tribeCounts;
     const myTribeSize = tribeCounts[this.playerId] ?? 0;
@@ -4413,6 +4415,7 @@ export class GameScene extends Phaser.Scene {
       fisch: tr.resFisch,
       stein: tr.resStein,
       kreuter: tr.resKreuter,
+      felle: tr.resFelle,
     };
     const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(
@@ -4474,6 +4477,7 @@ export class GameScene extends Phaser.Scene {
       fisch: tr.resFisch,
       stein: tr.resStein,
       kreuter: tr.resKreuter,
+      felle: tr.resFelle,
     };
     const totalCollected = RESOURCE_KEYS.reduce((a, k) => a + (collected[k] ?? 0), 0);
     const resHtml = RESOURCE_KEYS.map(

@@ -8,6 +8,8 @@ import {
   ArtifactReward,
   ArtifactSnapshot,
   CAMPFIRE_RANGE,
+  TENT_FELLE_THRESHOLD,
+  TENT_FELLE_PER_NIGHT,
   CATASTROPHE_DAILY_CHANCE,
   CatastropheEvent,
   CatastropheKind,
@@ -137,6 +139,7 @@ export interface SimCampfire {
   gy: number;
   fuelTimer: number;
   size: number;
+  hasTent: boolean;
 }
 
 export interface SimArtifact {
@@ -798,6 +801,7 @@ export class Sim {
         gy: f.gy,
         fuel: Math.max(0, Math.min(1, f.fuelTimer / D.campfireBurnPerFuelSec)),
         size: f.size,
+        hasTent: f.hasTent,
       });
     }
     return out;
@@ -866,6 +870,7 @@ export class Sim {
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
+      if (this.isSick(u)) continue;
       u.autoFollowing = false;
       u.manualOrder = true;
       const blocked = this.blockedTilesFor(u, claimed);
@@ -1793,6 +1798,7 @@ export class Sim {
   }
 
   private maybeAutoEngage(u: SimUnit): void {
+    if (this.isSick(u)) return;
     let allyTarget: string | null = null;
     let allyD2 = BAL.groupFightRange * BAL.groupFightRange;
     const allies = this.byOwnerCache[u.owner];
@@ -2348,6 +2354,7 @@ export class Sim {
     for (const id of unitIds) {
       const u = this.units.get(id);
       if (!u || u.owner !== owner) continue;
+      if (this.isSick(u)) continue;
       u.autoFollowing = false;
       u.manualOrder = true;
       const blocked = this.blockedTilesFor(u, claimed);
@@ -2400,6 +2407,7 @@ export class Sim {
     r.stein -= 1;
     this.pushFlow(owner, "holz", -1, cx, cy);
     this.pushFlow(owner, "stein", -1, cx, cy);
+    const hasTent = r.felle >= TENT_FELLE_THRESHOLD;
     this.campfires.set(id, {
       id,
       owner,
@@ -2407,6 +2415,7 @@ export class Sim {
       gy: cy,
       fuelTimer: D.campfireBurnPerFuelSec,
       size: 1,
+      hasTent,
     });
   }
 
@@ -2758,10 +2767,12 @@ export class Sim {
       "kreuter", "fleisch", "fisch", "pilze", "beeren",
     ];
     if (hurt) {
+      const inTent = this.isSick(u) && this.unitNearTent(u);
       for (const key of order) {
         if (r[key] <= 0) continue;
-        const heal = this.hpGainForResource(key);
+        let heal = this.hpGainForResource(key);
         if (heal <= 0) continue;
+        if (inTent && key === "kreuter") heal *= 2; // tent boosts kräuter healing for the sick
         r[key] -= 1;
         u.hp = Math.min(u.hpMax, u.hp + heal);
         this.pushFlow(u.owner, key, -1, u.gx, u.gy);
@@ -2885,7 +2896,9 @@ export class Sim {
   step(dt: number): void {
     this.tick++;
     this.gameTimeSec += dt;
+    const prevPhase = this.lastPhase;
     this.lastPhase = phaseAt(this.gameTimeSec);
+    if (prevPhase !== "night" && this.lastPhase === "night") this.onNightfall();
     this.rebuildSpatialIndex();
     this.rebuildActiveAnimalSet();
     this.rebuildOwnerCaches();
@@ -3262,6 +3275,7 @@ export class Sim {
     this.pushFlow(p, "holz", -BAL.campfireIgniteHolzCost, cx, cy);
     this.pushFlow(p, "stein", -BAL.campfireIgniteSteinCost, cx, cy);
     const id = this.campfireIdFor(p);
+    const hasTent = r.felle >= TENT_FELLE_THRESHOLD;
     this.campfires.set(id, {
       id,
       owner: p,
@@ -3269,6 +3283,7 @@ export class Sim {
       gy: cy,
       fuelTimer: D.campfireBurnPerFuelSec,
       size: 1,
+      hasTent,
     });
   }
 
@@ -3943,7 +3958,40 @@ export class Sim {
     }
   }
 
+  private isSick(u: SimUnit): boolean {
+    return u.hp < u.hpMax * 0.3;
+  }
+
+  private unitNearTent(u: SimUnit): boolean {
+    const r2 = CAMPFIRE_RANGE * CAMPFIRE_RANGE;
+    for (const f of this.campfires.values()) {
+      if (!f.hasTent) continue;
+      if (f.owner !== u.owner) continue;
+      const dx = f.gx - u.gx;
+      const dy = f.gy - u.gy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+
+  private onNightfall(): void {
+    // Tents require a stockpile of felle (≥ TENT_FELLE_THRESHOLD) at nightfall
+    // and consume TENT_FELLE_PER_NIGHT per night to stay up.
+    for (const f of this.campfires.values()) {
+      const r = this.resources[f.owner];
+      if (!r) continue;
+      if (r.felle >= TENT_FELLE_THRESHOLD) {
+        f.hasTent = true;
+        r.felle -= TENT_FELLE_PER_NIGHT;
+        this.pushFlow(f.owner, "felle", -TENT_FELLE_PER_NIGHT, f.gx, f.gy);
+      } else {
+        f.hasTent = false;
+      }
+    }
+  }
+
   private tryAutoForage(u: SimUnit, chief: SimUnit): boolean {
+    if (this.isSick(u)) return false;
     const seed = this.seed;
     const R = BAL.chiefVisionRadius;
     const R2 = R * R;

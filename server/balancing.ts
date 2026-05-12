@@ -241,6 +241,7 @@ const CAP_FIELD_META: Array<{ key: keyof Resources; label: string }> = [
   { key: "fisch",   label: "Fisch/Person" },
   { key: "stein",   label: "Stein/Person" },
   { key: "kreuter", label: "Kräuter/Person" },
+  { key: "felle",   label: "Felle/Person" },
 ];
 
 for (const m of CAP_FIELD_META) {

@@ -13,6 +13,7 @@ export class Campfire {
   gy: number;
   fuel = 1;
   size = 1;
+  hasTent = false;
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   rangeRing: Phaser.GameObjects.Graphics;
@@ -20,6 +21,8 @@ export class Campfire {
   flame1: Phaser.GameObjects.Ellipse;
   flame2: Phaser.GameObjects.Ellipse;
   ember: Phaser.GameObjects.Ellipse;
+  tent: Phaser.GameObjects.Container | null = null;
+  tentShadow: Phaser.GameObjects.Ellipse | null = null;
   private phase = Math.random() * Math.PI * 2;
   private worldSeed: number;
   private aboveFog = false;
@@ -80,7 +83,7 @@ export class Campfire {
     this.container.setDepth((gx + gy) * TILE_H);
   }
 
-  applyState(gx: number, gy: number, fuel: number, size: number): void {
+  applyState(gx: number, gy: number, fuel: number, size: number, hasTent: boolean): void {
     if (this.gx !== gx || this.gy !== gy) {
       this.gx = gx;
       this.gy = gy;
@@ -93,9 +96,69 @@ export class Campfire {
       this.rangeRing.setDepth((gx + gy) * TILE_H - 0.6);
       this.drawRangeRing(x, wy);
       this.applyDepth();
+      if (this.tent) this.repositionTent();
     }
     this.fuel = fuel;
     this.size = Math.max(1, size);
+    this.setTent(hasTent);
+  }
+
+  private repositionTent(): void {
+    if (!this.tent) return;
+    const { x, y } = gridToScreen(this.gx, this.gy);
+    const h = groundHeight(this.worldSeed, this.gx, this.gy);
+    const wy = y - h;
+    // Tent offset to the side of the fire so the flame stays visible.
+    this.tent.setPosition(x + 32, wy + 2);
+    if (this.tentShadow) {
+      this.tentShadow.setPosition(x + 32, wy + 12);
+      this.tentShadow.setDepth((this.gx + this.gy) * TILE_H - 0.45);
+    }
+    this.tent.setDepth((this.gx + this.gy) * TILE_H + 0.1);
+  }
+
+  private setTent(on: boolean): void {
+    if (this.hasTent === on && (!on || this.tent)) return;
+    this.hasTent = on;
+    if (on && !this.tent) {
+      // Simple skin-tent silhouette: triangular cover, two support poles, dark
+      // entrance flap.
+      const cover = this.scene.add.triangle(0, 0,
+        -16, 4,
+         16, 4,
+          0, -22,
+        0x8a6a40,
+      ).setStrokeStyle(1, 0x4a2e1a);
+      const darkSide = this.scene.add.triangle(0, 0,
+         0, -22,
+        16,  4,
+         3,  4,
+        0x6a4a26,
+      ).setStrokeStyle(1, 0x4a2e1a);
+      darkSide.setAlpha(0.85);
+      const pole1 = this.scene.add.rectangle(-16, -1, 1.5, 8, 0x3a2410);
+      const pole2 = this.scene.add.rectangle( 16, -1, 1.5, 8, 0x3a2410);
+      const entrance = this.scene.add.triangle(-2, 2,
+         0, -10,
+         6, 4,
+        -6, 4,
+        0x1a0e08,
+      );
+      entrance.setAlpha(0.65);
+      const { x, y } = gridToScreen(this.gx, this.gy);
+      const h = groundHeight(this.worldSeed, this.gx, this.gy);
+      const wy = y - h;
+      this.tentShadow = this.scene.add.ellipse(x + 32, wy + 12, 36, 6, 0x000000, 0.32);
+      this.tent = this.scene.add.container(x + 32, wy + 2, [cover, darkSide, pole1, pole2, entrance]);
+      this.repositionTent();
+    } else if (!on && this.tent) {
+      this.tent.destroy();
+      this.tent = null;
+      if (this.tentShadow) {
+        this.tentShadow.destroy();
+        this.tentShadow = null;
+      }
+    }
   }
 
   setAboveFog(above: boolean): void {
@@ -136,6 +199,22 @@ export class Campfire {
   remove(): void {
     this.shadow.destroy();
     this.rangeRing.destroy();
+    if (this.tent) {
+      const tent = this.tent;
+      this.scene.tweens.add({
+        targets: tent,
+        alpha: 0,
+        scale: 0.6,
+        duration: 350,
+        ease: "Cubic.easeIn",
+        onComplete: () => tent.destroy(),
+      });
+      this.tent = null;
+    }
+    if (this.tentShadow) {
+      this.tentShadow.destroy();
+      this.tentShadow = null;
+    }
     this.scene.tweens.add({
       targets: this.container,
       alpha: 0,

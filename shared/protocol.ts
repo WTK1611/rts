@@ -312,7 +312,11 @@ export interface CampfireSnapshot {
   gy: number;
   fuel: number;
   size: number;
+  hasTent: boolean;
 }
+
+export const TENT_FELLE_THRESHOLD = 3;
+export const TENT_FELLE_PER_NIGHT = 1;
 
 export let CAMPFIRE_RANGE = 2.5;
 
