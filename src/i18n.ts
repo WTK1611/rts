@@ -1,5 +1,10 @@
 import { Language, LANGUAGES } from "../shared/names";
-import { DayPhase, Season } from "../shared/protocol";
+import {
+  CatastropheKind,
+  CatastropheSeverity,
+  DayPhase,
+  Season,
+} from "../shared/protocol";
 
 export interface Strings {
   // lobby
@@ -78,6 +83,8 @@ export interface Strings {
   seasonLabel: (s: Season) => string;
   seasonIcon: (s: Season) => string;
   toastSeasonStart: (label: string) => string;
+  toastCatastrophe: (kind: CatastropheKind, severity: CatastropheSeverity) => string;
+  catastropheIcon: (kind: CatastropheKind) => string;
 
   // rewards
   rewardNewMember: string;
@@ -231,6 +238,33 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `${l} beginnt`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" :
+      k === "flood" ? "🌊" :
+      k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" :
+      k === "meteor" ? "☄️" :
+      k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" :
+      k === "storm" ? "🌪️" :
+      k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Verheerend" : sev === 2 ? "Schwer" : "Leicht";
+      const name =
+        k === "quake" ? "Erdbeben" :
+        k === "flood" ? "Hochwasser" :
+        k === "drought" ? "Dürre" :
+        k === "freeze" ? "Eiskälte" :
+        k === "meteor" ? "Meteoreinschlag droht!" :
+        k === "eruption" ? "Vulkanausbruch" :
+        k === "wildfire" ? "Waldbrand" :
+        k === "storm" ? "Sturm" :
+        k === "lightning" ? "Blitzschlag" :
+        k === "locusts" ? "Heuschreckenplage" : "Erdrutsch";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${intensity}es ${name}`;
+    },
 
     rewardNewMember: "ein neues Stammesmitglied",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -377,6 +411,33 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `${l} begins`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" :
+      k === "flood" ? "🌊" :
+      k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" :
+      k === "meteor" ? "☄️" :
+      k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" :
+      k === "storm" ? "🌪️" :
+      k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Devastating" : sev === 2 ? "Severe" : "Minor";
+      const name =
+        k === "quake" ? "earthquake" :
+        k === "flood" ? "flood" :
+        k === "drought" ? "drought" :
+        k === "freeze" ? "freeze" :
+        k === "meteor" ? "Meteor incoming!" :
+        k === "eruption" ? "volcanic eruption" :
+        k === "wildfire" ? "wildfire" :
+        k === "storm" ? "storm" :
+        k === "lightning" ? "lightning strike" :
+        k === "locusts" ? "locust swarm" : "landslide";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${intensity} ${name}`;
+    },
 
     rewardNewMember: "a new tribe member",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -523,6 +584,27 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `Inizia ${l}`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" : k === "flood" ? "🌊" : k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" : k === "meteor" ? "☄️" : k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" : k === "storm" ? "🌪️" : k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Devastante" : sev === 2 ? "Grave" : "Lieve";
+      const name =
+        k === "quake" ? "terremoto" :
+        k === "flood" ? "inondazione" :
+        k === "drought" ? "siccità" :
+        k === "freeze" ? "gelo" :
+        k === "meteor" ? "Meteorite in arrivo!" :
+        k === "eruption" ? "eruzione vulcanica" :
+        k === "wildfire" ? "incendio boschivo" :
+        k === "storm" ? "tempesta" :
+        k === "lightning" ? "fulmine" :
+        k === "locusts" ? "sciame di locuste" : "frana";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${name} ${intensity.toLowerCase()}`;
+    },
 
     rewardNewMember: "un nuovo membro della tribù",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -669,6 +751,27 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `Comienza ${l}`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" : k === "flood" ? "🌊" : k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" : k === "meteor" ? "☄️" : k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" : k === "storm" ? "🌪️" : k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Devastador" : sev === 2 ? "Grave" : "Leve";
+      const name =
+        k === "quake" ? "terremoto" :
+        k === "flood" ? "inundación" :
+        k === "drought" ? "sequía" :
+        k === "freeze" ? "ola de frío" :
+        k === "meteor" ? "¡Meteorito en camino!" :
+        k === "eruption" ? "erupción volcánica" :
+        k === "wildfire" ? "incendio forestal" :
+        k === "storm" ? "tormenta" :
+        k === "lightning" ? "rayo" :
+        k === "locusts" ? "plaga de langostas" : "deslizamiento";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${name} ${intensity.toLowerCase()}`;
+    },
 
     rewardNewMember: "un nuevo miembro de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -815,6 +918,27 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `Começa ${l}`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" : k === "flood" ? "🌊" : k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" : k === "meteor" ? "☄️" : k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" : k === "storm" ? "🌪️" : k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Devastador" : sev === 2 ? "Grave" : "Leve";
+      const name =
+        k === "quake" ? "terremoto" :
+        k === "flood" ? "enchente" :
+        k === "drought" ? "seca" :
+        k === "freeze" ? "onda de frio" :
+        k === "meteor" ? "Meteoro a caminho!" :
+        k === "eruption" ? "erupção vulcânica" :
+        k === "wildfire" ? "incêndio florestal" :
+        k === "storm" ? "tempestade" :
+        k === "lightning" ? "raio" :
+        k === "locusts" ? "praga de gafanhotos" : "deslizamento";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${name} ${intensity.toLowerCase()}`;
+    },
 
     rewardNewMember: "um novo membro da tribo",
     rewardAmount: (k, a) => `${a} ${k}`,
@@ -961,6 +1085,27 @@ const STRINGS: Record<Language, Strings> = {
       sn === "summer" ? "☀️" :
       sn === "autumn" ? "🍂" : "❄️",
     toastSeasonStart: (l) => `${l} commence`,
+    catastropheIcon: (k) =>
+      k === "quake" ? "🌐" : k === "flood" ? "🌊" : k === "drought" ? "🥵" :
+      k === "freeze" ? "🥶" : k === "meteor" ? "☄️" : k === "eruption" ? "🌋" :
+      k === "wildfire" ? "🔥" : k === "storm" ? "🌪️" : k === "lightning" ? "⚡" :
+      k === "locusts" ? "🦗" : "⛰️",
+    toastCatastrophe: (k, sev) => {
+      const intensity = sev === 3 ? "Dévastateur" : sev === 2 ? "Grave" : "Léger";
+      const name =
+        k === "quake" ? "séisme" :
+        k === "flood" ? "inondation" :
+        k === "drought" ? "sécheresse" :
+        k === "freeze" ? "vague de froid" :
+        k === "meteor" ? "Météorite en approche !" :
+        k === "eruption" ? "éruption volcanique" :
+        k === "wildfire" ? "feu de forêt" :
+        k === "storm" ? "tempête" :
+        k === "lightning" ? "foudre" :
+        k === "locusts" ? "nuée de criquets" : "glissement de terrain";
+      if (k === "meteor") return `☄️ ${name}`;
+      return `${name} ${intensity.toLowerCase()}`;
+    },
 
     rewardNewMember: "un nouveau membre de la tribu",
     rewardAmount: (k, a) => `${a} ${k}`,

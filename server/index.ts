@@ -392,6 +392,7 @@ function joinPlayer(
     tribeOrigin: [...world.sim.tribeOrigin],
     balancing: balancingSnapshotMsg(),
     resourceCapPerPerson: resourceCapsSnapshot(),
+    tileOverrides: world.sim.tileOverridesSnapshot(),
   });
 
   const newUnits = allUnits.filter((u) => u.owner === slotId);
@@ -493,6 +494,8 @@ function tick(): void {
   const treeGrowthEvents = world.sim.consumeTreeGrowthEvents();
   const tribeOrigin = [...world.sim.tribeOrigin];
   const winnerOrigin = world.sim.winnerOrigin();
+  const catastropheEvents = world.sim.consumeCatastropheEvents();
+  const tileOverrideEvents = world.sim.consumeTileOverrideEvents();
   const tickNo = world.sim.tick;
 
   for (const slot of world.players) {
@@ -584,6 +587,8 @@ function tick(): void {
       treeGrowthEvents,
       tribeOrigin,
       winnerOrigin,
+      catastropheEvents,
+      tileOverrides: tileOverrideEvents,
     });
   }
 

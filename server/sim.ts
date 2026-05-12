@@ -1958,6 +1958,8 @@ export class Sim {
         this.rallyAlliesToHunt(u, a);
         if (a.hp <= 0) {
           this.gainResource(u.owner, "fleisch", spec.meat, a.gx, a.gy);
+          const felleYield = Math.max(1, Math.round(spec.meat / 3));
+          this.gainResource(u.owner, "felle", felleYield, a.gx, a.gy);
           this.animals.delete(a.id);
           this.removedAnimalIds.push(a.id);
           u.huntTarget = null;

@@ -220,6 +220,7 @@ export interface Resources {
   fisch: number;
   stein: number;
   kreuter: number;
+  felle: number;
 }
 
 export const RESOURCE_KEYS: Array<keyof Resources> = [
@@ -231,6 +232,7 @@ export const RESOURCE_KEYS: Array<keyof Resources> = [
   "fisch",
   "stein",
   "kreuter",
+  "felle",
 ];
 
 export const RESOURCE_CAP_PER_PERSON: Resources = {
@@ -242,6 +244,7 @@ export const RESOURCE_CAP_PER_PERSON: Resources = {
   fisch: 4,
   stein: 5,
   kreuter: 3,
+  felle: 3,
 };
 
 export function resourceCap(
@@ -255,6 +258,7 @@ export function emptyResources(): Resources {
   return {
     holz: 0, wasser: 0, beeren: 0, pilze: 0,
     fleisch: 0, fisch: 0, stein: 0, kreuter: 0,
+    felle: 0,
   };
 }
 
@@ -404,6 +408,7 @@ export interface InitMessage {
   tribeOrigin: PlayerId[];
   balancing: BalancingSnapshotMsg;
   resourceCapPerPerson: Resources;
+  tileOverrides: TileOverrideEvent[];
 }
 
 export interface EncounterEvent {
@@ -431,6 +436,59 @@ export interface DamageEvent {
   gx: number;
   gy: number;
 }
+
+export type CatastropheKind =
+  | "quake"
+  | "flood"
+  | "drought"
+  | "freeze"
+  | "meteor"
+  | "eruption"
+  | "wildfire"
+  | "storm"
+  | "lightning"
+  | "locusts"
+  | "landslide";
+
+export type CatastropheSeverity = 1 | 2 | 3;
+
+export interface CatastropheEvent {
+  kind: CatastropheKind;
+  cx: number;
+  cy: number;
+  radius: number;
+  severity: CatastropheSeverity;
+  durationSec: number;
+  // For meteors: warning lead-time before impact (s). Renders an inbound visual.
+  leadSec?: number;
+}
+
+export type TileOverride = "flood" | "lava" | "ash" | "ice" | "crack";
+
+export interface TileOverrideEvent {
+  i: number;
+  j: number;
+  kind: TileOverride | null;
+}
+
+export const CATASTROPHE_DAILY_CHANCE: Record<CatastropheKind, Record<Season, number>> = {
+  quake:     { spring: 0.02, summer: 0.02, autumn: 0.02, winter: 0.02 },
+  flood:     { spring: 0.18, summer: 0.01, autumn: 0.06, winter: 0.02 },
+  drought:   { spring: 0.00, summer: 0.18, autumn: 0.04, winter: 0.00 },
+  freeze:    { spring: 0.00, summer: 0.00, autumn: 0.03, winter: 0.20 },
+  meteor:    { spring: 0.005, summer: 0.005, autumn: 0.005, winter: 0.005 },
+  eruption:  { spring: 0.03, summer: 0.04, autumn: 0.03, winter: 0.03 },
+  wildfire:  { spring: 0.03, summer: 0.22, autumn: 0.12, winter: 0.00 },
+  storm:     { spring: 0.10, summer: 0.06, autumn: 0.14, winter: 0.05 },
+  lightning: { spring: 0.04, summer: 0.06, autumn: 0.05, winter: 0.01 },
+  locusts:   { spring: 0.00, summer: 0.06, autumn: 0.04, winter: 0.00 },
+  landslide: { spring: 0.06, summer: 0.02, autumn: 0.03, winter: 0.02 },
+};
+
+export const CATASTROPHE_KINDS: CatastropheKind[] = [
+  "quake", "flood", "drought", "freeze", "meteor", "eruption",
+  "wildfire", "storm", "lightning", "locusts", "landslide",
+];
 
 export interface StateMessage {
   type: "state";
@@ -469,6 +527,8 @@ export interface StateMessage {
   treeGrowthEvents: TreeGrowthEvent[];
   tribeOrigin: PlayerId[];
   winnerOrigin: PlayerId | null;
+  catastropheEvents: CatastropheEvent[];
+  tileOverrides: TileOverrideEvent[];
 }
 
 export interface OpponentJoinedMessage {

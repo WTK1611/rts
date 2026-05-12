@@ -24,9 +24,13 @@ import {
   BalancingFieldMeta,
   BalancingUpdateMessage,
   CampfireSnapshot,
+  CatastropheEvent,
+  CatastropheKind,
   DropPileSnapshot,
   CAMPFIRE_RANGE,
   DAY_LENGTH_SEC,
+  TileOverride,
+  TileOverrideEvent,
   DayPhase,
   dayOfSeasonAt,
   emptyResources,
@@ -243,6 +247,7 @@ export class GameScene extends Phaser.Scene {
   private pendingArtifacts: ArtifactSnapshot[] = [];
   private dropPiles: Map<string, DropPile> = new Map();
   private pendingDropPiles: DropPileSnapshot[] = [];
+  private pendingTileOverrides: TileOverrideEvent[] = [];
   private chunks: Map<string, Chunk> = new Map();
 
   private hoverTile!: Phaser.GameObjects.Graphics;
@@ -411,6 +416,9 @@ export class GameScene extends Phaser.Scene {
       Object.assign(RESOURCE_CAP_PER_PERSON, data.init.resourceCapPerPerson);
     }
     this.applyClientProtocolBalance();
+    if (data.init.tileOverrides && data.init.tileOverrides.length > 0) {
+      this.pendingTileOverrides = data.init.tileOverrides;
+    }
   }
 
   private balancingFields: BalancingFieldMeta[] = [];
@@ -473,6 +481,10 @@ export class GameScene extends Phaser.Scene {
       this.spawnDropPileLocal(snap);
     }
     this.pendingDropPiles = [];
+    if (this.pendingTileOverrides.length > 0) {
+      this.applyTileOverrideEvents(this.pendingTileOverrides);
+      this.pendingTileOverrides = [];
+    }
 
     this.hoverTile = this.add.graphics();
     this.hoverTile.setDepth(-99999);
@@ -2915,6 +2927,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    if (msg.catastropheEvents && msg.catastropheEvents.length > 0) {
+      this.handleCatastropheEvents(msg.catastropheEvents);
+    }
+
+    if (msg.tileOverrides && msg.tileOverrides.length > 0) {
+      this.applyTileOverrideEvents(msg.tileOverrides);
+    }
+
     const myProgPrev = this.growthProgress[this.playerId] ?? 0;
     const myActivePrev = this.growthActive[this.playerId] ?? false;
     if (msg.growthProgress) this.growthProgress = msg.growthProgress;
@@ -3035,6 +3055,104 @@ export class GameScene extends Phaser.Scene {
         );
       }
     }
+  }
+
+  private handleCatastropheEvents(events: CatastropheEvent[]): void {
+    const s = t();
+    for (const ev of events) {
+      const icon = s.catastropheIcon(ev.kind);
+      const txt = s.toastCatastrophe(ev.kind, ev.severity);
+      this.showToast(`${icon} ${txt}`, "death");
+      this.spawnCatastropheFx(ev);
+    }
+  }
+
+  private spawnCatastropheFx(ev: CatastropheEvent): void {
+    const cam = this.cameras.main;
+    if (!cam) return;
+    // Camera shake intensity by kind + severity
+    const shakeKinds: Partial<Record<CatastropheKind, number>> = {
+      quake: 0.02,
+      eruption: 0.012,
+      meteor: 0.025,
+      landslide: 0.01,
+      storm: 0.005,
+      lightning: 0.008,
+    };
+    const shakeBase = shakeKinds[ev.kind];
+    if (shakeBase !== undefined) {
+      const dur = ev.kind === "quake" ? 700 + ev.severity * 350 : 500 + ev.severity * 200;
+      cam.shake(dur, shakeBase * ev.severity);
+    }
+    // World-space center for an overlay sprite
+    const sc = gridToScreen(ev.cx, ev.cy);
+    const baseColor =
+      ev.kind === "flood" ? 0x3a78b0 :
+      ev.kind === "wildfire" || ev.kind === "lightning" ? 0xff5a1a :
+      ev.kind === "eruption" || ev.kind === "meteor" ? 0xff8c2a :
+      ev.kind === "drought" ? 0xe1a23a :
+      ev.kind === "freeze" ? 0x9adff1 :
+      ev.kind === "storm" ? 0x556a78 :
+      ev.kind === "locusts" ? 0x8aa840 :
+      ev.kind === "landslide" ? 0x7a5a3a :
+      ev.kind === "quake" ? 0x9a7a5a : 0xffffff;
+    const radiusPx = Math.max(20, ev.radius * TILE_W * 0.5);
+    const g = this.add.circle(sc.x, sc.y, radiusPx, baseColor, 0.18);
+    g.setDepth(99999);
+    this.tweens.add({
+      targets: g,
+      alpha: 0,
+      scale: 1.3,
+      duration: Math.max(700, ev.durationSec * 200 || 1200),
+      onComplete: () => g.destroy(),
+    });
+    if (ev.kind === "meteor" && ev.leadSec && ev.leadSec > 0) {
+      // Incoming streak from upper-right toward impact center
+      const dx = 240;
+      const dy = -260;
+      const streak = this.add.line(sc.x + dx, sc.y + dy, 0, 0, -dx, -dy, 0xffe199, 0.85);
+      streak.setLineWidth(3);
+      streak.setDepth(100000);
+      this.tweens.add({
+        targets: streak,
+        x: sc.x,
+        y: sc.y,
+        alpha: 0,
+        duration: ev.leadSec * 1000,
+        onComplete: () => streak.destroy(),
+      });
+    }
+  }
+
+  private tileOverlaySprites: Map<string, Phaser.GameObjects.Rectangle> = new Map();
+
+  private applyTileOverrideEvents(events: TileOverrideEvent[]): void {
+    for (const ev of events) {
+      const key = `${ev.i},${ev.j}`;
+      const existing = this.tileOverlaySprites.get(key);
+      if (existing) {
+        existing.destroy();
+        this.tileOverlaySprites.delete(key);
+      }
+      if (ev.kind === null) continue;
+      this.spawnTileOverlay(ev.i, ev.j, ev.kind);
+    }
+  }
+
+  private spawnTileOverlay(i: number, j: number, kind: TileOverride): void {
+    const sc = gridToScreen(i + 0.5, j + 0.5);
+    const color =
+      kind === "flood" ? 0x356ea0 :
+      kind === "lava" ? 0xff5a1a :
+      kind === "ice" ? 0xb8e4f0 :
+      kind === "ash" ? 0x6a6055 :
+      kind === "crack" ? 0x1a1a1a : 0x808080;
+    const alpha = kind === "lava" ? 0.75 : kind === "crack" ? 0.85 : 0.55;
+    const w = TILE_W * 0.95;
+    const h = TILE_H * 0.95;
+    const r = this.add.rectangle(sc.x, sc.y, w, h, color, alpha);
+    r.setDepth(50);
+    this.tileOverlaySprites.set(`${i},${j}`, r);
   }
 
   private animalAt(i: number, j: number): string | null {
