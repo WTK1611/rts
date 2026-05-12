@@ -36,6 +36,7 @@ import {
   seasonRegrowMultiplier,
   seasonWaterMultiplier,
   emptyResources,
+  FishKind,
   FishSnapshot,
   Footprint,
   FOOTPRINT_LIFETIME_TICKS,
@@ -73,6 +74,8 @@ import {
   hasBushAt,
   hasCactusAt,
   hasFishAt,
+  hasSharkAt,
+  hasWhaleAt,
   hasKreuterAt,
   hasMushroomAt,
   hasStoneAt,
@@ -183,6 +186,7 @@ export interface SimAnimal {
 
 export interface SimFish {
   id: string;
+  kind: FishKind;
   gx: number;
   gy: number;
   homeI: number;
@@ -582,25 +586,31 @@ export class Sim {
     let count = 0;
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
-        if (!hasFishAt(this.seed, i, j)) continue;
+        let kind: FishKind | null = null;
+        if (hasFishAt(this.seed, i, j)) kind = "small";
+        else if (hasWhaleAt(this.seed, i, j)) kind = "whale";
+        else if (hasSharkAt(this.seed, i, j)) kind = "shark";
+        if (!kind) continue;
         const id = `f${this.nextFishIdx++}`;
         const ang = rand01(this.seed ^ 0xf15a, i, j) * Math.PI * 2;
         const ageR = rand01(this.seed ^ 0xf15c, i, j);
+        const speedMult = kind === "whale" ? 0.4 : kind === "shark" ? 0.75 : 1;
         this.fishes.set(id, {
           id,
+          kind,
           gx: i + 0.5,
           gy: j + 0.5,
           homeI: i,
           homeJ: j,
-          vx: Math.cos(ang) * BAL.fishSpeed,
-          vy: Math.sin(ang) * BAL.fishSpeed,
+          vx: Math.cos(ang) * BAL.fishSpeed * speedMult,
+          vy: Math.sin(ang) * BAL.fishSpeed * speedMult,
           turnTimer: rand01(this.seed ^ 0xf15b, i, j) *
             (BAL.fishTurnIntervalMax - BAL.fishTurnIntervalMin) +
             BAL.fishTurnIntervalMin,
           ageSec: BAL.fishMatureAgeSec + ageR * 30,
           breedTimer: -BAL.fishBreedIntervalSec * ageR,
         });
-        count++;
+        if (kind === "small") count++;
       }
     }
     this.fishCap = Math.max(80, Math.ceil(count * BAL.fishDensityCapFactor));
@@ -609,7 +619,7 @@ export class Sim {
   fishesSnapshot(): FishSnapshot[] {
     const out: FishSnapshot[] = [];
     for (const f of this.fishes.values()) {
-      out.push({ id: f.id, gx: f.gx, gy: f.gy });
+      out.push({ id: f.id, gx: f.gx, gy: f.gy, kind: f.kind });
     }
     return out;
   }
@@ -618,7 +628,7 @@ export class Sim {
     const out: FishSnapshot[] = [];
     for (const id of ids) {
       const f = this.fishes.get(id);
-      if (f) out.push({ id: f.id, gx: f.gx, gy: f.gy });
+      if (f) out.push({ id: f.id, gx: f.gx, gy: f.gy, kind: f.kind });
     }
     return out;
   }
@@ -642,7 +652,7 @@ export class Sim {
     const ti = Math.floor(f.gx);
     const tj = Math.floor(f.gy);
     let ang = Math.random() * Math.PI * 2;
-    if (Math.random() < BAL.fishShoreBias) {
+    if (f.kind === "small" && Math.random() < BAL.fishShoreBias) {
       const dirs: Array<[number, number]> = [];
       for (let dj = -1; dj <= 1; dj++) {
         for (let di = -1; di <= 1; di++) {
@@ -656,8 +666,9 @@ export class Sim {
         ang = Math.atan2(dy, dx);
       }
     }
-    f.vx = Math.cos(ang) * BAL.fishSpeed;
-    f.vy = Math.sin(ang) * BAL.fishSpeed;
+    const speedMult = f.kind === "whale" ? 0.4 : f.kind === "shark" ? 0.75 : 1;
+    f.vx = Math.cos(ang) * BAL.fishSpeed * speedMult;
+    f.vy = Math.sin(ang) * BAL.fishSpeed * speedMult;
     f.turnTimer = BAL.fishTurnIntervalMin +
       Math.random() * (BAL.fishTurnIntervalMax - BAL.fishTurnIntervalMin);
   }
@@ -671,9 +682,11 @@ export class Sim {
       const homeDx = (f.homeI + 0.5) - f.gx;
       const homeDy = (f.homeJ + 0.5) - f.gy;
       const homeDist = Math.hypot(homeDx, homeDy);
-      if (homeDist > BAL.fishHomeRadius) {
-        f.vx = (homeDx / homeDist) * BAL.fishSpeed;
-        f.vy = (homeDy / homeDist) * BAL.fishSpeed;
+      const homeRadius = f.kind === "whale" ? BAL.fishHomeRadius * 1.5 : BAL.fishHomeRadius;
+      if (homeDist > homeRadius) {
+        const speedMult = f.kind === "whale" ? 0.4 : f.kind === "shark" ? 0.75 : 1;
+        f.vx = (homeDx / homeDist) * BAL.fishSpeed * speedMult;
+        f.vy = (homeDy / homeDist) * BAL.fishSpeed * speedMult;
       }
 
       const nx = f.gx + f.vx * dt;
@@ -700,6 +713,7 @@ export class Sim {
       const cellSize = 2;
       const buckets: Map<string, SimFish[]> = new Map();
       for (const f of this.fishes.values()) {
+        if (f.kind !== "small") continue;
         if (f.ageSec < BAL.fishMatureAgeSec) continue;
         const ci = Math.floor(f.gx / cellSize);
         const cj = Math.floor(f.gy / cellSize);
@@ -710,6 +724,7 @@ export class Sim {
       }
 
       for (const f of this.fishes.values()) {
+        if (f.kind !== "small") continue;
         if (f.ageSec < BAL.fishMatureAgeSec) continue;
         const ci = Math.floor(f.gx / cellSize);
         const cj = Math.floor(f.gy / cellSize);
@@ -741,6 +756,7 @@ export class Sim {
               const ang = Math.random() * Math.PI * 2;
               newborns.push({
                 id,
+                kind: "small",
                 gx: f.gx,
                 gy: f.gy,
                 homeI: ti,
@@ -2881,6 +2897,7 @@ export class Sim {
     let caught: SimFish | null = null;
     let bestD = Infinity;
     for (const f of this.fishes.values()) {
+      if (f.kind !== "small") continue;
       const fi = Math.floor(f.gx);
       const fj = Math.floor(f.gy);
       if (!this.isWaterTileAt(fi, fj)) continue;

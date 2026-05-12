@@ -300,10 +300,13 @@ export interface AnimalSnapshot {
   maturity: number;
 }
 
+export type FishKind = "small" | "shark" | "whale";
+
 export interface FishSnapshot {
   id: string;
   gx: number;
   gy: number;
+  kind?: FishKind;
 }
 
 export interface RemovedObject {

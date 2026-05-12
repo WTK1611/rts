@@ -546,7 +546,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.pendingAnimals = [];
     for (const snap of this.pendingFishes) {
-      this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy));
+      this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy, snap.kind));
     }
     this.pendingFishes = [];
     for (const snap of this.pendingCampfires) {
@@ -2973,7 +2973,7 @@ export class GameScene extends Phaser.Scene {
       for (const snap of msg.fishes) {
         const f = this.fishes.get(snap.id);
         if (f) f.setTarget(snap.gx, snap.gy);
-        else this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy));
+        else this.fishes.set(snap.id, new Fish(this, snap.id, snap.gx, snap.gy, snap.kind));
       }
     }
     if (msg.campfires) {

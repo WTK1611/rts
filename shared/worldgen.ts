@@ -486,6 +486,31 @@ export function hasFishAt(seed: number, i: number, j: number): boolean {
   return rand01(seed ^ 0xf15, i, j) < (b === "river" ? 0.22 : 0.28);
 }
 
+const DEEP_WATER_LEVEL = 0.18;
+
+export type WaterDepth = "none" | "shallow" | "deep";
+
+export function waterDepthAt(seed: number, i: number, j: number): WaterDepth {
+  const b = biomeAt(seed, i, j);
+  if (b !== "lake" && b !== "river") return "none";
+  if (b === "river") return "shallow";
+  return elevationAt(seed, i, j) < DEEP_WATER_LEVEL ? "deep" : "shallow";
+}
+
+export function hasSharkAt(seed: number, i: number, j: number): boolean {
+  const d = waterDepthAt(seed, i, j);
+  if (d === "none") return false;
+  if (hasFishAt(seed, i, j)) return false;
+  return rand01(seed ^ 0x54a8, i, j) < (d === "deep" ? 0.020 : 0.010);
+}
+
+export function hasWhaleAt(seed: number, i: number, j: number): boolean {
+  if (waterDepthAt(seed, i, j) !== "deep") return false;
+  if (hasFishAt(seed, i, j)) return false;
+  if (hasSharkAt(seed, i, j)) return false;
+  return rand01(seed ^ 0xa1e, i, j) < 0.008;
+}
+
 export function fishIdAt(i: number, j: number): string {
   return `f_${i}_${j}`;
 }
