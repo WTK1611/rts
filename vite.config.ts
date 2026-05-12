@@ -1,8 +1,16 @@
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync, existsSync } from "node:fs";
+
+const buildNumber = existsSync("./VERSION")
+  ? readFileSync("./VERSION", "utf-8").trim() || "dev"
+  : "dev";
 
 export default defineConfig({
   server: { host: true, port: 5173 },
+  define: {
+    __APP_VERSION__: JSON.stringify(buildNumber),
+  },
   plugins: [
     VitePWA({
       registerType: "autoUpdate",

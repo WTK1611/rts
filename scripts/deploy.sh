@@ -23,7 +23,12 @@ VPS="root@${NBNL_VPS1_IP}"
 WEBROOT="/var/www/vhosts/tobis.io/${DOMAIN}/"
 SRV_DIR="/root/rts/"
 
-echo "[deploy] 1/4 build"
+VERSION_FILE="$ROOT_DIR/VERSION"
+[ -f "$VERSION_FILE" ] || echo 0 > "$VERSION_FILE"
+NEW_VERSION=$(($(cat "$VERSION_FILE") + 1))
+echo "$NEW_VERSION" > "$VERSION_FILE"
+
+echo "[deploy] 1/4 build (v$NEW_VERSION)"
 npm run build
 
 echo "[deploy] 2/4 frontend → ${VPS}:${WEBROOT}"
