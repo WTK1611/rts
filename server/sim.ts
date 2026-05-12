@@ -2475,15 +2475,18 @@ export class Sim {
   private tryAutoPick(u: SimUnit, ti: number, tj: number): void {
     if (hasTreeAt(this.seed, ti, tj)) {
       const k = objKey("tree", ti, tj);
-      if (
-        !this.removedKeys.has(k) &&
-        this.resourceRoom(u.owner, "holz") >= BAL.treeAutopickGain
-      ) {
-        this.autoPickAndRegrow(
-          u, "tree", ti, tj, "holz",
-          BAL.treeAutopickGain, D.treeRegrowTicks,
-        );
-        return;
+      if (!this.removedKeys.has(k)) {
+        // Felling a tree yields its full wood content (clamped to free room).
+        const full = treeWoodAt(this.seed, ti, tj);
+        const room = this.resourceRoom(u.owner, "holz");
+        const gain = Math.min(full, room);
+        if (gain > 0) {
+          this.autoPickAndRegrow(
+            u, "tree", ti, tj, "holz",
+            gain, D.treeRegrowTicks,
+          );
+          return;
+        }
       }
     }
     const season = seasonAt(this.gameTimeSec);
