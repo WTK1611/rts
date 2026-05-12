@@ -368,14 +368,6 @@ export class GameScene extends Phaser.Scene {
   private lastClickJ = -99999;
   private static readonly DOUBLE_CLICK_MS = 400;
 
-  private keyW!: Phaser.Input.Keyboard.Key;
-  private keyA!: Phaser.Input.Keyboard.Key;
-  private keyS!: Phaser.Input.Keyboard.Key;
-  private keyD!: Phaser.Input.Keyboard.Key;
-  private keyUp!: Phaser.Input.Keyboard.Key;
-  private keyDown!: Phaser.Input.Keyboard.Key;
-  private keyLeft!: Phaser.Input.Keyboard.Key;
-  private keyRight!: Phaser.Input.Keyboard.Key;
   private keyR!: Phaser.Input.Keyboard.Key;
   private keyF!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
@@ -503,6 +495,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  preload(): void {
+    if (!this.textures.exists("tex_wiese_src")) {
+      this.load.image("tex_wiese_src", "/image/tex_wiese.png");
+    }
+  }
+
   private balancingFields: BalancingFieldMeta[] = [];
   private balancingValues: Record<string, number> = {};
   private balancingExpandedGroups: Set<string> = new Set();
@@ -615,6 +613,8 @@ export class GameScene extends Phaser.Scene {
         tx.refresh();
       }
     }
+
+    this.buildWiesenTextures();
     this.snowParticles = this.add.particles(0, 0, "__snowflake", {
       x: { min: -20, max: 2600 },
       y: -8,
@@ -684,17 +684,9 @@ export class GameScene extends Phaser.Scene {
     );
 
     const kb = this.input.keyboard!;
-    this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    this.keyS = kb.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-    this.keyD = kb.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    this.keyUp = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
-    this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
-    this.keyLeft = kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
-    this.keyRight = kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
     this.keyR = kb.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyF = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F);
-    kb.addCapture("UP,DOWN,LEFT,RIGHT,R,F");
+    kb.addCapture("R,F");
     this.keyM = kb.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.keyM.on("down", () => this.toggleMinimap());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.P).on("down", () => this.togglePerf());
@@ -759,6 +751,12 @@ export class GameScene extends Phaser.Scene {
       this.minimapWrap.style.display = "none";
       this.setupPanelDrag(this.minimapWrap, "rts.minimap.position", {
         ignoreSelector: "canvas",
+      });
+    }
+    if (this.minimapCanvas) {
+      this.minimapCanvas.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        this.onMinimapClick(e);
       });
     }
     this.perfEl = document.getElementById("perf");
@@ -845,6 +843,13 @@ export class GameScene extends Phaser.Scene {
     this.updateDayNight();
     this.checkHelpTriggers(dt);
     this.updateInfoPanel(dt);
+    if (this.minimapVisible) {
+      this.minimapAccum += dt;
+      if (this.minimapAccum >= 0.1) {
+        this.minimapAccum = 0;
+        this.drawMinimap();
+      }
+    }
     if (this.nextGainExpiry > 0 && performance.now() >= this.nextGainExpiry) {
       if (this.pruneRecentGains()) this.updateHud();
     }
@@ -994,6 +999,10 @@ export class GameScene extends Phaser.Scene {
     if (this.minimapWrap) {
       this.minimapWrap.style.display = this.minimapVisible ? "block" : "none";
     }
+    if (this.minimapVisible) {
+      this.minimapAccum = 0;
+      this.drawMinimap();
+    }
   }
 
   private spectateBot(index: number): void {
@@ -1068,20 +1077,6 @@ export class GameScene extends Phaser.Scene {
 
   private applyCameraKeys(dt: number): void {
     const cam = this.cameras.main;
-
-    const right = this.keyD.isDown || this.keyRight.isDown;
-    const left = this.keyA.isDown || this.keyLeft.isDown;
-    const down = this.keyS.isDown || this.keyDown.isDown;
-    const up = this.keyW.isDown || this.keyUp.isDown;
-    const dx = (right ? 1 : 0) - (left ? 1 : 0);
-    const dy = (down ? 1 : 0) - (up ? 1 : 0);
-    if (dx !== 0 || dy !== 0) {
-      const panSpeed = 900 / cam.zoom;
-      this.camTargetX += dx * panSpeed * dt;
-      this.camTargetY += dy * panSpeed * dt;
-      this.userPanned = true;
-    }
-
     const zoomIn = this.keyR.isDown;
     const zoomOut = this.keyF.isDown;
     if (zoomIn !== zoomOut) {
@@ -1320,6 +1315,18 @@ export class GameScene extends Phaser.Scene {
     }
     rt.draw(g, -ofx, -ofy);
     g.destroy();
+
+    for (let dj = 0; dj < CHUNK_SIZE; dj++) {
+      for (let di = 0; di < CHUNK_SIZE; di++) {
+        const i = i0 + di;
+        const j = j0 + dj;
+        const texKey = this.wiesenTextureKey(i, j);
+        if (!texKey) continue;
+        const { x, y } = gridToScreen(i, j);
+        const h = heightAt(this.seed, i, j);
+        rt.draw(texKey, x - TILE_W / 2 - ofx, y - h - ofy);
+      }
+    }
 
     const winterRt = this.add.renderTexture(ofx, ofy, w, h);
     winterRt.setOrigin(0, 0);
@@ -1749,6 +1756,7 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0xd28a58, 0.4);
       g.fillCircle(x + dx + 1, cy + dy - 1.4, 1.2);
     } else if (biome === "wiesen") {
+      if (this.wiesenTextureKey(i, j) !== null) return;
       const bladeShades = [0x6cbf6c, 0x4d8a4d, 0x2e5a2e, 0x83cc83];
       const bladeCount = 4 + ((decor >> 7) & 0x3);
       const cxR = Math.round(x);
@@ -1796,6 +1804,123 @@ export class GameScene extends Phaser.Scene {
   private isWaterAt(i: number, j: number): boolean {
     const b = biomeAt(this.seed, i, j);
     return b === "lake" || b === "river";
+  }
+
+  private buildWiesenTextures(): void {
+    const KEYS = ["tex_wiesen_a", "tex_wiesen_b", "tex_wiesen_c", "tex_wiesen_d"];
+    const SEEDS = [0xc0ffee, 0x1337c0de, 0xfeedface, 0xbadf00d];
+    const SAMPLE_FRACS: Array<[number, number]> = [
+      [0.05, 0.10],
+      [0.55, 0.20],
+      [0.20, 0.65],
+      [0.70, 0.70],
+    ];
+    const src = this.textures.exists("tex_wiese_src")
+      ? (this.textures.get("tex_wiese_src").getSourceImage() as
+          | HTMLImageElement
+          | HTMLCanvasElement)
+      : null;
+    const srcReady =
+      !!src && (src as HTMLImageElement).width > 0 && (src as HTMLImageElement).height > 0;
+    // Each tile shows ~2× the source resolution of grass detail so features
+    // are recognisable at iso scale instead of pixel-sized noise.
+    const SAMPLE_SCALE = 2;
+    for (let v = 0; v < KEYS.length; v++) {
+      const key = KEYS[v];
+      if (this.textures.exists(key)) continue;
+      const tx = this.textures.createCanvas(key, TILE_W, TILE_H);
+      if (!tx) continue;
+      const ctx = tx.getContext();
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(TILE_W / 2, 0);
+      ctx.lineTo(TILE_W, TILE_H / 2);
+      ctx.lineTo(TILE_W / 2, TILE_H);
+      ctx.lineTo(0, TILE_H / 2);
+      ctx.closePath();
+      ctx.clip();
+
+      if (srcReady) {
+        const sw = (src as HTMLImageElement).width;
+        const sh = (src as HTMLImageElement).height;
+        const cropW = Math.min(sw, TILE_W * SAMPLE_SCALE);
+        const cropH = Math.min(sh, TILE_H * SAMPLE_SCALE);
+        const sx = Math.max(0, Math.min(sw - cropW, Math.round(sw * SAMPLE_FRACS[v][0])));
+        const sy = Math.max(0, Math.min(sh - cropH, Math.round(sh * SAMPLE_FRACS[v][1])));
+        ctx.drawImage(src as CanvasImageSource, sx, sy, cropW, cropH, 0, 0, TILE_W, TILE_H);
+      } else {
+        let state = SEEDS[v] >>> 0;
+        const rng = (): number => {
+          state = (state + 0x6d2b79f5) >>> 0;
+          let t = state;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        const grd = ctx.createLinearGradient(0, 0, 0, TILE_H);
+        grd.addColorStop(0, "#4a8047");
+        grd.addColorStop(1, "#2e5a2e");
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, TILE_W, TILE_H);
+        const speckle = ["#3a6e3a", "#56995a", "#284f28", "#4d8a4d", "#6cbf6c"];
+        for (let i = 0; i < 260; i++) {
+          const px = (rng() * TILE_W) | 0;
+          const py = (rng() * TILE_H) | 0;
+          ctx.fillStyle = speckle[(rng() * speckle.length) | 0];
+          ctx.globalAlpha = 0.25 + rng() * 0.45;
+          ctx.fillRect(px, py, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        const blades = ["#6cbf6c", "#4d8a4d", "#2e5a2e", "#83cc83", "#5fa55f", "#3a6e3a"];
+        for (let i = 0; i < 55; i++) {
+          const px = (rng() * TILE_W) | 0;
+          const py = (rng() * TILE_H) | 0;
+          const tall = 2 + ((rng() * 2) | 0);
+          ctx.fillStyle = blades[(rng() * blades.length) | 0];
+          ctx.fillRect(px, py - tall, 1, tall);
+        }
+        for (let i = 0; i < 4; i++) {
+          if (rng() > 0.55) continue;
+          const px = (rng() * TILE_W) | 0;
+          const py = (rng() * TILE_H) | 0;
+          const yellow = rng() < 0.5;
+          ctx.fillStyle = "#3d6e3d";
+          ctx.fillRect(px, py - 1, 1, 2);
+          ctx.fillStyle = yellow ? "#f2e07a" : "#d47ab0";
+          ctx.fillRect(px - 1, py - 2, 3, 1);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(px, py - 2, 1, 1);
+        }
+      }
+
+      ctx.restore();
+      tx.refresh();
+    }
+  }
+
+  private wiesenTextureKey(i: number, j: number): string | null {
+    if (biomeAt(this.seed, i, j) !== "wiesen") return null;
+    if (this.isWaterAt(i, j)) return null;
+    if (
+      this.isWaterAt(i - 1, j - 1) ||
+      this.isWaterAt(i, j - 1) ||
+      this.isWaterAt(i + 1, j) ||
+      this.isWaterAt(i + 1, j + 1) ||
+      this.isWaterAt(i, j + 1) ||
+      this.isWaterAt(i - 1, j) ||
+      this.isWaterAt(i - 1, j + 1) ||
+      this.isWaterAt(i + 1, j - 1)
+    ) {
+      return null;
+    }
+    const hN = heightAt(this.seed, i, j);
+    const hE = heightAt(this.seed, i + 1, j);
+    const hS = heightAt(this.seed, i + 1, j + 1);
+    const hW = heightAt(this.seed, i, j + 1);
+    if (hN !== hE || hE !== hS || hS !== hW) return null;
+    const v = (tileVariant(this.seed, i, j) ^ (i * 73856093) ^ (j * 19349663)) & 3;
+    return ["tex_wiesen_a", "tex_wiesen_b", "tex_wiesen_c", "tex_wiesen_d"][v];
   }
 
   private edgeWavePoints(
@@ -2446,7 +2571,7 @@ export class GameScene extends Phaser.Scene {
           // Eraser nutzt jetzt direkt UI-Kamera-Koords (Zoom 1, kein Scroll).
           er.clear();
           er.fillStyle(0xffffff, moonAlpha);
-          er.fillCircle(moonPos.x, moonPos.y, 60 + 30 * brightFrac);
+          er.fillCircle(moonPos.x, moonPos.y, 90 + 45 * brightFrac);
           this.nightOverlay.erase(er);
         }
       }
@@ -2472,7 +2597,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawMoon(g: Phaser.GameObjects.Graphics, cx: number, cy: number): void {
-    const r = 14;
+    const r = 22;
     const phase = this.moonPhase();
     const theta = phase * 2 * Math.PI;
     const cosT = Math.cos(theta);
@@ -2481,23 +2606,23 @@ export class GameScene extends Phaser.Scene {
     const brightFrac = (1 - cosT) / 2;
 
     // Always: faint disc outline so the moon's location stays visible.
-    g.lineStyle(1, 0xb8b0a0, 0.35);
+    g.lineStyle(1.5, 0xb8b0a0, 0.35);
     g.strokeCircle(cx, cy, r);
 
     if (brightFrac < 0.02) return; // new moon — nothing more to draw
 
     // Outer glow scales with brightness.
     g.fillStyle(0xfff4d6, 0.35 * brightFrac);
-    g.fillCircle(cx, cy, 26);
+    g.fillCircle(cx, cy, 40);
     g.fillStyle(0xfff4d6, 0.55 * brightFrac);
-    g.fillCircle(cx, cy, 18);
+    g.fillCircle(cx, cy, 28);
     // Bright disc + craters.
     g.fillStyle(0xfffae8, 1);
     g.fillCircle(cx, cy, r);
     g.fillStyle(0xc8c0a0, 0.8);
-    g.fillCircle(cx - 4, cy - 3, 3);
-    g.fillCircle(cx + 3, cy + 4, 2);
-    g.fillCircle(cx + 5, cy - 4, 1.5);
+    g.fillCircle(cx - 6, cy - 5, 4.5);
+    g.fillCircle(cx + 5, cy + 6, 3);
+    g.fillCircle(cx + 8, cy - 6, 2.5);
 
     if (brightFrac > 0.98) return; // full moon — no occluder
 
@@ -2531,10 +2656,9 @@ export class GameScene extends Phaser.Scene {
   private drawCelestial(t: number, w: number, h: number): void {
     const g = this.celestialGfx;
     g.clear();
-    const cam = this.cameras.main;
-    const z = cam.zoom;
-    g.setScale(1 / z);
-    g.setPosition((w * (z - 1)) / (2 * z), (h * (z - 1)) / (2 * z));
+    // Sonne/Mond liegen auf der UI-Kamera (Zoom 1, Scroll 0). Hier KEINE
+    // Kompensation der Hauptkamera-Zoomstufe — sonst wandert/skaliert das
+    // Himmelsobjekt beim Zoomen.
     const pos = this.celestialScreenPos(t, w, h);
     if (!pos) return;
     if (pos.isNight) {
@@ -2552,13 +2676,13 @@ export class GameScene extends Phaser.Scene {
       }
       const s = this.seasonSunScale();
       g.fillStyle(sunColor, 0.18);
-      g.fillCircle(pos.x, pos.y, 50 * s);
+      g.fillCircle(pos.x, pos.y, 75 * s);
       g.fillStyle(sunColor, 0.4);
-      g.fillCircle(pos.x, pos.y, 32 * s);
+      g.fillCircle(pos.x, pos.y, 48 * s);
       g.fillStyle(sunColor, 1);
-      g.fillCircle(pos.x, pos.y, 20 * s);
+      g.fillCircle(pos.x, pos.y, 30 * s);
       g.fillStyle(0xfff8d0, 1);
-      g.fillCircle(pos.x, pos.y, 13 * s);
+      g.fillCircle(pos.x, pos.y, 20 * s);
     }
   }
 
@@ -2632,9 +2756,25 @@ export class GameScene extends Phaser.Scene {
     ctx.fillStyle = "#0a0e0a";
     ctx.fillRect(0, 0, MINIMAP_PX, MINIMAP_PX);
 
-    const cam = this.cameras.main;
-    const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
-    const { gx: ccx, gy: ccy } = screenToGrid(center.x, center.y);
+    let ccx = 0;
+    let ccy = 0;
+    let n = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      ccx += u.gx;
+      ccy += u.gy;
+      n++;
+    }
+    if (n > 0) {
+      ccx /= n;
+      ccy /= n;
+    } else {
+      const cam = this.cameras.main;
+      const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+      const g = screenToGrid(center.x, center.y);
+      ccx = g.gx;
+      ccy = g.gy;
+    }
     const half = MINIMAP_RANGE / 2;
     const i0 = Math.floor(ccx - half);
     const i1 = Math.ceil(ccx + half);
@@ -2725,16 +2865,6 @@ export class GameScene extends Phaser.Scene {
       ctx.arc(x, y, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    const tl = cam.getWorldPoint(0, 0);
-    const br = cam.getWorldPoint(cam.width, cam.height);
-    const { gx: tlgx, gy: tlgy } = screenToGrid(tl.x, tl.y);
-    const { gx: brgx, gy: brgy } = screenToGrid(br.x, br.y);
-    const a = toMini(Math.min(tlgx, brgx), Math.min(tlgy, brgy));
-    const b = toMini(Math.max(tlgx, brgx), Math.max(tlgy, brgy));
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
   }
 
   private onMinimapClick(e: MouseEvent | PointerEvent): void {
@@ -2743,8 +2873,24 @@ export class GameScene extends Phaser.Scene {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const cam = this.cameras.main;
-    const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
-    const { gx: ccx, gy: ccy } = screenToGrid(center.x, center.y);
+    let ccx = 0;
+    let ccy = 0;
+    let n = 0;
+    for (const u of this.units.values()) {
+      if (u.owner !== this.playerId) continue;
+      ccx += u.gx;
+      ccy += u.gy;
+      n++;
+    }
+    if (n > 0) {
+      ccx /= n;
+      ccy /= n;
+    } else {
+      const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+      const g = screenToGrid(center.x, center.y);
+      ccx = g.gx;
+      ccy = g.gy;
+    }
     const half = MINIMAP_RANGE / 2;
     const tgx = ccx + (mx / MINIMAP_PX_PER_TILE - half);
     const tgy = ccy + (my / MINIMAP_PX_PER_TILE - half);
