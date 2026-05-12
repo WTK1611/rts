@@ -2529,10 +2529,6 @@ export class Sim {
   }
 
   cmdHarvest(owner: PlayerId, unitIds: string[], i: number, j: number): void {
-    if (this.isNight()) {
-      this.cmdMove(owner, unitIds, i, j);
-      return;
-    }
     const kind = this.objectKindAt(i, j);
     if (!kind) {
       this.cmdMove(owner, unitIds, i, j);
